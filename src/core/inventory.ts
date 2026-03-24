@@ -1,4 +1,5 @@
 import { Peripheral } from "./peripheral";
+import {InventoryError} from "./errors";
 
 export interface ItemSummary {
 	name: string;
@@ -41,6 +42,15 @@ export class Inventory {
 	}
 
 	public getItem(slot: number): ItemDetail | undefined {
+		if (slot < 1 || slot > this.size()) {
+			throw new InventoryError(`Slot ${slot} is out of bounds for inventory '${this.name}'`, {
+				inventory: this.name,
+				slot,
+				size: this.size(),
+				action: "get_item",
+			});
+		}
+
 		return this.peripheralRef.getItemDetail(slot);
 	}
 
@@ -90,10 +100,28 @@ export class Inventory {
 	}
 
 	public pushTo(target: Inventory, fromSlot: number, limit?: number, toSlot?: number): number {
+		if (fromSlot < 1 || fromSlot > this.size()) {
+			throw new InventoryError(`Cannot push from invalid slot ${fromSlot}`, {
+				inventory: this.name,
+				target: target.name,
+				fromSlot,
+				action: "push_to",
+			});
+		}
+
 		return this.peripheralRef.pushItems(target.name, fromSlot, limit, toSlot);
 	}
 
 	public pullFrom(source: Inventory, fromSlot: number, limit?: number, toSlot?: number): number {
+		if (fromSlot < 1 || fromSlot > source.size()) {
+			throw new InventoryError(`Cannot pull from invalid slot ${fromSlot}`, {
+				inventory: this.name,
+				source: source.name,
+				fromSlot,
+				action: "pull_from",
+			});
+		}
+
 		return this.peripheralRef.pullItems(source.name, fromSlot, limit, toSlot);
 	}
 

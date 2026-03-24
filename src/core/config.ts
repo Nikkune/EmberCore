@@ -1,4 +1,5 @@
 import { Logger } from "./logger";
+import {ConfigError} from "./errors";
 
 const log = new Logger("Config", "info");
 
@@ -17,7 +18,10 @@ export class Config {
 		const file = fs.open(path, "r") as ReadHandle | undefined;
 
 		if (!file) {
-			error(`Failed to open config file '${path}'`, 2);
+			throw new ConfigError(`Failed to open config file '${path}'`, {
+				path,
+				action: "open_read",
+			});
 		}
 
 		const content = file.readAll();
@@ -50,7 +54,10 @@ export class Config {
 		const file = fs.open(path, "w") as WriteHandle | undefined;
 
 		if (!file) {
-			error(`Failed to write config file '${path}'`, 2);
+			throw new ConfigError(`Failed to write config file '${path}'`, {
+				path,
+				action: "open_write",
+			});
 		}
 
 		file.write(textutils.serialise(data));

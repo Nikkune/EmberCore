@@ -1,14 +1,8 @@
 import {Logger} from "./logger";
 import {assertNotNil} from "./assert";
+import {PeripheralError} from "./errors";
 
 const log = new Logger('Peripheral', 'info');
-
-export class PeripheralError extends Error {
-	public constructor(message: string) {
-		super(message);
-		this.name = 'PeripheralError';
-	}
-}
 
 export class Peripheral {
 	public static list(): string[] {
@@ -64,7 +58,10 @@ export class Peripheral {
 				action: 'require',
 				status: 'failed'
 			});
-			throw new PeripheralError(message);
+			throw new PeripheralError(message, {
+				side,
+				action: 'require',
+			});
 		}
 
 		return wrapped;
@@ -96,10 +93,15 @@ export class Peripheral {
 				side,
 				action: 'require_type',
 				status: 'failed',
-				expected: expectedType,
-				actual: actualType ?? 'nil',
+				expectedType,
+				actualType: actualType ?? 'nil',
 			});
-			throw new PeripheralError(message);
+			throw new PeripheralError(message, {
+				side,
+				action: 'require_type',
+				expectedType,
+				actualType: actualType ?? 'nil',
+			});
 		}
 
 		const wrapped = this.wrap<T>(side);
@@ -142,11 +144,14 @@ export class Peripheral {
 		if (wrapped === undefined) {
 			const message = `No peripheral found with type '${expectedType}'`;
 			log.error(message, {
-				type: expectedType,
+				expectedType,
 				action: 'require_by_type',
 				status: 'failed',
 			});
-			throw new PeripheralError(message);
+			throw new PeripheralError(message, {
+				expectedType,
+				action: 'require_by_type',
+			});
 		}
 
 		return wrapped;
@@ -169,11 +174,14 @@ export class Peripheral {
 		if (!side) {
 			const message = `No peripheral name found with type '${expectedType}'`;
 			log.error(message, {
-				type: expectedType,
+				expectedType,
 				action: 'require_name_by_type',
 				status: 'failed',
 			});
-			throw new PeripheralError(message);
+			throw new PeripheralError(message, {
+				expectedType,
+				action: 'require_name_by_type',
+			});
 		}
 
 		return side;
