@@ -1,0 +1,110 @@
+import { Peripheral } from "./peripheral";
+
+export interface FluidStack {
+	name: string;
+	amount: number;
+	displayName?: string;
+}
+
+export interface FluidTank {
+	name?: string;
+	amount?: number;
+	capacity?: number;
+	displayName?: string;
+}
+
+function mapToFluidTank(raw: LuaMap<AnyNotNil, any> | undefined): FluidTank | undefined {
+	if (!raw) {
+		return undefined;
+	}
+
+	return {
+		name: raw.get("name") as string | undefined,
+		amount: raw.get("amount") as number | undefined,
+		capacity: raw.get("capacity") as number | undefined,
+		displayName: raw.get("displayName") as string | undefined,
+	};
+}
+
+export class Tank {
+	public constructor(
+		public readonly name: string,
+		private readonly peripheralRef: FluidStorage,
+	) {}
+
+	public static fromName(name: string): Tank {
+		const peripheral = Peripheral.require<FluidStorage>(name);
+		return new Tank(name, peripheral);
+	}
+
+	public list(): (FluidTank | undefined)[] {
+		const rawTanks = this.peripheralRef.tanks();
+		const result: (FluidTank | undefined)[] = [];
+
+		for (const raw of rawTanks) {
+			result.push(mapToFluidTank(raw));
+		}
+
+		return result;
+	}
+
+	public isEmpty(): boolean {
+		for (const tank of this.list()) {
+			if (tank && (tank.amount ?? 0) > 0) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	public getTotalAmount(): number {
+		let total = 0;
+
+		for (const tank of this.list()) {
+			if (tank?.amount) {
+				total += tank.amount;
+			}
+		}
+
+		return total;
+	}
+
+	public getAmount(fluidName: string): number {
+		let total = 0;
+
+		for (const tank of this.list()) {
+			if (tank?.name === fluidName && tank.amount) {
+				total += tank.amount;
+			}
+		}
+
+		return total;
+	}
+
+	public hasFluid(fluidName: string): boolean {
+		return this.getAmount(fluidName) > 0;
+	}
+
+	public getFluids(): FluidStack[] {
+		const result: FluidStack[] = [];
+
+		for (const tank of this.list()) {
+			if (tank?.name && (tank.amount ?? 0) > 0) {
+				result.push({
+					name: tank.name,
+					amount: tank.amount ?? 0,
+				});
+			}
+		}
+
+		return result;
+	}
+
+	public pushTo(target: Tank, limit: number, fluidName: string): number {
+		return this.peripheralRef.pushFluid(target.name, limit, fluidName);
+	}
+
+	public pullFrom(source: Tank, limit: number, fluidName: string): number {
+		return this.peripheralRef.pullFluid(source.name, limit, fluidName);
+	}
+}
