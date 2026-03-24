@@ -82,6 +82,8 @@ export class Loop {
 			);
 		}
 
+		let lastError: EmberError | undefined;
+
 		for (let attempt = 1; attempt <= attempts; attempt++) {
 			const result = task();
 
@@ -98,6 +100,8 @@ export class Loop {
 				return result;
 			}
 
+			lastError = result.error;
+
 			log.warn("Retry attempt failed", {
 				action: "retry",
 				label,
@@ -113,6 +117,7 @@ export class Loop {
 		}
 
 		return Results.err(
+			lastError ??
 			new RuntimeError("All retry attempts failed", {
 				action: "retry",
 				label,
