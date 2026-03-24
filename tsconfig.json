@@ -21,6 +21,6 @@
     "luaTarget": "5.2",
     "luaLibImport": "inline"
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src"],
   "exclude": ["dist", "node_modules"]
 }
