@@ -2,7 +2,7 @@ name: Release Lua
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
@@ -49,27 +49,44 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          rm -rf .publish
+          rm -rf .publish-worktree .publish
           mkdir -p .publish
 
           cp -r luas/. .publish/
           cp -r manifests .publish/manifests
-
-          git switch --orphan lua-temp
-          git rm -rf . || true
-
-          cp -r .publish/. .
-          rm -rf .publish
-
-          cat > README.md <<'EOF'
+          
+          cat > .publish/README.md <<'EOF'
           # EmberCore Lua Runtime
-
+          
           This branch is auto-generated from main.
           It contains only Lua runtime files and manifests.
           EOF
+          
+          touch .publish/.nojekyll
+          
+          # Prépare une worktree dédiée sur la branche lua
+          if git ls-remote --exit-code --heads origin lua; then
+            git worktree add .publish-worktree origin/lua
+          else
+            git worktree add --detach .publish-worktree
+            cd .publish-worktree
+            git checkout --orphan lua
+            cd ..
+          fi
 
-          touch .nojekyll
+          # Nettoie totalement la worktree
+          find .publish-worktree -mindepth 1 -maxdepth 1 \
+            ! -name ".git" \
+            -exec rm -rf {} +
 
+          # Copie uniquement le runtime voulu
+          cp -r .publish/. .publish-worktree/
+
+          cd .publish-worktree
           git add .
           git commit -m "chore(lua): publish runtime from ${GITHUB_SHA}" || echo "Nothing to commit"
           git push origin HEAD:lua --force
+          cd ..
+
+          git worktree remove .publish-worktree --force
+          rm -rf .publish
