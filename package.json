@@ -17,6 +17,10 @@
 
     "generate:manifests": "npm run clean:manifests && node build-scripts/generate-manifests.js",
 
+    "run:bump": "npm run build:scripts && node build-scripts/version/run-bump.js",
+
+    "prepare:release": "npm run build && npm run build:scripts && npm run run:bump && npm run generate:manifests",
+
     "lint": "eslint src --ext .ts",
     "format": "prettier --write ."
   },
