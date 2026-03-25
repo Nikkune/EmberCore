@@ -1,6 +1,6 @@
 {
   "name": "embercore",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "A TypeScript-powered automation core for ComputerCraft, compiled to Lua.",
   "author": "Nikkune",
   "license": "MIT",
