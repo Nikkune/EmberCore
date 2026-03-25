@@ -1,5 +1,7 @@
 {
   "name": "UI",
   "version": "0.1.0",
-  "dependencies": []
+  "dependencies": [
+    "core/peripheral"
+  ]
 }
