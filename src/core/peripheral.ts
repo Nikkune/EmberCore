@@ -2,19 +2,37 @@ import {Logger} from "./logger";
 import {assertNotNil} from "./assert";
 import {PeripheralError} from "./errors";
 
+
 const log = new Logger('Peripheral', 'info');
+
+export type Side = "back" | "bottom" | "front" | "left" | "right" | "top";
+export type PeripheralName = Side | string;
+
+const SIDES: Side[] = ['back', 'bottom', 'front', 'left', 'right', 'top'];
+
+export function isSide(value: string): value is Side {
+	return SIDES.includes(value as Side);
+}
+
+export function getSides(): Side[] {
+	return [...SIDES];
+}
 
 export class Peripheral {
 	public static list(): string[] {
 		return peripheral.getNames();
 	}
 
-	public static has(side: string): boolean {
-		return peripheral.isPresent(side);
+	public static listSides(): Side[] {
+		return getSides();
 	}
 
-	public static getType(side: string): string | undefined {
-		const value = peripheral.getType(side);
+	public static has(name: PeripheralName): boolean {
+		return peripheral.isPresent(name);
+	}
+
+	public static getType(name: PeripheralName): string | undefined {
+		const value = peripheral.getType(name);
 
 		if (value === undefined || value === null) {
 			return undefined;
@@ -27,12 +45,12 @@ export class Peripheral {
 		return value as unknown as string;
 	}
 
-	public static wrap<T>(side: string): T | undefined {
-		const wrapped = peripheral.wrap(side);
+	public static wrap<T>(name: PeripheralName): T | undefined {
+		const wrapped = peripheral.wrap(name);
 
 		if (wrapped === undefined || wrapped === null) {
 			log.debug('Peripheral wrap failed', {
-				side,
+				name,
 				action: 'wrap',
 				status: 'missing'
 			});
@@ -40,7 +58,7 @@ export class Peripheral {
 		}
 
 		log.debug('Peripheral wrapped', {
-			side,
+			name,
 			action: 'wrap',
 			status: 'ok'
 		})
@@ -48,18 +66,18 @@ export class Peripheral {
 		return wrapped as T;
 	}
 
-	public static require<T>(side: string): T {
-		const wrapped = Peripheral.wrap<T>(side);
+	public static require<T>(name: PeripheralName): T {
+		const wrapped = Peripheral.wrap<T>(name);
 
 		if (wrapped === undefined) {
-			const message = `Peripheral not found on side '${side}'`;
+			const message = `Peripheral not found on side '${name}'`;
 			log.error(message, {
-				side,
+				name,
 				action: 'require',
 				status: 'failed'
 			});
 			throw new PeripheralError(message, {
-				side,
+				name,
 				action: 'require',
 			});
 		}
@@ -67,12 +85,12 @@ export class Peripheral {
 		return wrapped;
 	}
 
-	public static wrapType<T>(side: string, expectedType: string): T | undefined {
-		const actualType = this.getType(side);
+	public static wrapType<T>(name: PeripheralName, expectedType: string): T | undefined {
+		const actualType = this.getType(name);
 
 		if (actualType !== expectedType) {
 			log.debug('Peripheral type mismatch', {
-				side,
+				name,
 				action: 'wrapType',
 				status: 'failed',
 				expected: expectedType,
@@ -81,34 +99,34 @@ export class Peripheral {
 			return undefined;
 		}
 
-		return this.wrap<T>(side);
+		return this.wrap<T>(name);
 	}
 
-	public static requireType<T>(side: string, expectedType: string): T {
-		const actualType = this.getType(side);
+	public static requireType<T>(name: PeripheralName, expectedType: string): T {
+		const actualType = this.getType(name);
 
 		if (actualType !== expectedType) {
-			const message = `Peripheral on side '${side}' has type '${actualType ?? 'nil'}', expected '${expectedType}'`;
+			const message = `Peripheral on side '${name}' has type '${actualType ?? 'nil'}', expected '${expectedType}'`;
 			log.error(message, {
-				side,
+				name,
 				action: 'require_type',
 				status: 'failed',
 				expectedType,
 				actualType: actualType ?? 'nil',
 			});
 			throw new PeripheralError(message, {
-				side,
+				name,
 				action: 'require_type',
 				expectedType,
 				actualType: actualType ?? 'nil',
 			});
 		}
 
-		const wrapped = this.wrap<T>(side);
-		assertNotNil(wrapped, `Peripheral on side '${side}' could not be wrapped`);
+		const wrapped = this.wrap<T>(name);
+		assertNotNil(wrapped, `Peripheral on side '${name}' could not be wrapped`);
 
 		log.debug('Peripheral type validated', {
-			side,
+			name,
 			action: 'require_type',
 			status: 'ok',
 			expected: expectedType
