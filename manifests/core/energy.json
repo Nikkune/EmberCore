@@ -1,0 +1,13 @@
+{
+  "manifestVersion": 1,
+  "type": "component",
+  "id": "core/energy",
+  "name": "Energy",
+  "version": "1.0.0",
+  "files": [
+    "core/energy.lua"
+  ],
+  "dependencies": [
+    "core/peripheral"
+  ]
+}

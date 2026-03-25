@@ -1,0 +1,15 @@
+{
+  "manifestVersion": 1,
+  "type": "component",
+  "id": "core/peripheral",
+  "name": "Peripheral",
+  "version": "1.0.0",
+  "files": [
+    "core/peripheral.lua"
+  ],
+  "dependencies": [
+    "core/assert",
+    "core/errors",
+    "core/logger"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "manifestVersion": 1,
+  "type": "component",
+  "id": "modules/ui",
+  "name": "UI",
+  "version": "0.1.0",
+  "files": [
+    "modules/ui/types.lua"
+  ],
+  "dependencies": []
+}

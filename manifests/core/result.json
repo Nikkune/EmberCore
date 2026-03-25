@@ -1,0 +1,13 @@
+{
+  "manifestVersion": 1,
+  "type": "component",
+  "id": "core/result",
+  "name": "Result",
+  "version": "1.0.0",
+  "files": [
+    "core/result.lua"
+  ],
+  "dependencies": [
+    "core/errors"
+  ]
+}

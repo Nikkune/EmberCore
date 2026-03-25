@@ -1,0 +1,15 @@
+{
+  "manifestVersion": 1,
+  "type": "component",
+  "id": "core/loop",
+  "name": "Loop",
+  "version": "1.0.0",
+  "files": [
+    "core/loop.lua"
+  ],
+  "dependencies": [
+    "core/errors",
+    "core/logger",
+    "core/result"
+  ]
+}

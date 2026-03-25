@@ -1,0 +1,11 @@
+{
+  "manifestVersion": 1,
+  "type": "component",
+  "id": "core/logger",
+  "name": "Logger",
+  "version": "1.0.0",
+  "files": [
+    "core/logger.lua"
+  ],
+  "dependencies": []
+}

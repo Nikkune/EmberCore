@@ -1,0 +1,14 @@
+{
+  "manifestVersion": 1,
+  "type": "component",
+  "id": "core/tank",
+  "name": "Tank",
+  "version": "1.0.0",
+  "files": [
+    "core/tank.lua"
+  ],
+  "dependencies": [
+    "core/errors",
+    "core/peripheral"
+  ]
+}

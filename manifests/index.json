@@ -1,0 +1,22 @@
+{
+  "manifestVersion": 1,
+  "repository": "Nikkune/EmberCore",
+  "branch": "lua",
+  "generatedAt": "2026-03-25T15:06:43.239Z",
+  "components": {
+    "core/assert": "manifests/core/assert.json",
+    "core/config": "manifests/core/config.json",
+    "core/energy": "manifests/core/energy.json",
+    "core/errors": "manifests/core/errors.json",
+    "core/inventory": "manifests/core/inventory.json",
+    "core/logger": "manifests/core/logger.json",
+    "core/loop": "manifests/core/loop.json",
+    "core/parallel": "manifests/core/parallel.json",
+    "core/peripheral": "manifests/core/peripheral.json",
+    "core/result": "manifests/core/result.json",
+    "core/table": "manifests/core/table.json",
+    "core/tank": "manifests/core/tank.json",
+    "modules/ui": "manifests/modules/ui.json"
+  },
+  "projects": {}
+}

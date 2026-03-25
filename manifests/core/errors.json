@@ -1,0 +1,11 @@
+{
+  "manifestVersion": 1,
+  "type": "component",
+  "id": "core/errors",
+  "name": "Errors",
+  "version": "1.0.0",
+  "files": [
+    "core/errors.lua"
+  ],
+  "dependencies": []
+}

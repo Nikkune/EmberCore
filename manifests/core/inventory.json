@@ -1,0 +1,14 @@
+{
+  "manifestVersion": 1,
+  "type": "component",
+  "id": "core/inventory",
+  "name": "Inventory",
+  "version": "1.0.0",
+  "files": [
+    "core/inventory.lua"
+  ],
+  "dependencies": [
+    "core/errors",
+    "core/peripheral"
+  ]
+}

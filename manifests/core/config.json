@@ -1,0 +1,14 @@
+{
+  "manifestVersion": 1,
+  "type": "component",
+  "id": "core/config",
+  "name": "Config",
+  "version": "1.0.0",
+  "files": [
+    "core/config.lua"
+  ],
+  "dependencies": [
+    "core/errors",
+    "core/logger"
+  ]
+}
