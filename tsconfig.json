@@ -1,26 +1,7 @@
 {
-  "compilerOptions": {
-    "target": "ESNext",
-    "module": "ESNext",
-    "lib": ["ESNext"],
-
-    "rootDir": "src",
-    "outDir": "dist",
-
-    "strict": true,
-    "noEmitOnError": true,
-    "forceConsistentCasingInFileNames": true,
-    "skipLibCheck": true,
-
-    "types": [
-      "@typescript-to-lua/language-extensions",
-      "@mechazawa/cc-types"
-    ]
-  },
-  "tstl": {
-    "luaTarget": "5.2",
-    "luaLibImport": "inline"
-  },
-  "include": ["src"],
-  "exclude": ["dist", "node_modules"]
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.scripts.json" },
+    { "path": "./tsconfig.lua.json" }
+  ]
 }

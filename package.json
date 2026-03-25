@@ -6,8 +6,17 @@
   "license": "MIT",
   "private": true,
   "scripts": {
-    "clean": "rimraf dist",
-    "build": "npm run clean && tstl",
+    "clean": "npm run clean:dist && npm run clean:scripts && npm run clean:manifests",
+    "clean:dist": "rimraf dist",
+    "clean:scripts": "rimraf build-scripts",
+    "clean:manifests": "rimraf manifests",
+
+    "build": "npm run clean:dist && tstl -p tsconfig.lua.json",
+    "build:scripts": "npm run clean:scripts && tsc -p tsconfig.scripts.json",
+    "build:all": "npm run build && npm run build:scripts && npm run generate:manifests",
+
+    "generate:manifests": "npm run clean:manifests && node build-scripts/generate-manifests.js",
+
     "lint": "eslint src --ext .ts",
     "format": "prettier --write ."
   },
@@ -18,6 +27,7 @@
     "eslint": "^10.1.0",
     "prettier": "^3.8.1",
     "rimraf": "^6.1.3",
+    "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
     "typescript-to-lua": "^1.34.0"
   }
