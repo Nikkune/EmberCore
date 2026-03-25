@@ -2,7 +2,7 @@
   "manifestVersion": 1,
   "repository": "Nikkune/EmberCore",
   "branch": "lua",
-  "generatedAt": "2026-03-25T15:06:43.239Z",
+  "generatedAt": "2026-03-25T15:16:02.191Z",
   "components": {
     "core/assert": "manifests/core/assert.json",
     "core/config": "manifests/core/config.json",
