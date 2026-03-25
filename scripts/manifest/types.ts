@@ -38,3 +38,15 @@ export interface IndexManifest {
 }
 
 export type AnyManifest = ComponentManifest | ProjectManifest;
+
+export type ComponentMeta = Pick<
+	ComponentManifest,
+	"name" | "version" | "dependencies"
+>
+
+export type ProjectMeta = Pick<
+	ProjectManifest,
+	"name" | "version" | "dependencies" | "install"
+>
+
+export type AnyMeta = ComponentMeta | ProjectMeta;

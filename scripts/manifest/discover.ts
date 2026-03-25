@@ -1,4 +1,4 @@
-import {AnyManifest, ComponentManifest, ProjectManifest} from "./types";
+import {AnyManifest, ComponentManifest, ComponentMeta, ProjectManifest, ProjectMeta} from "./types";
 import * as fs from "fs";
 import * as path from "node:path";
 import {componentManifest, projectManifest} from "./builder";
@@ -7,16 +7,6 @@ export interface DiscoverOptions {
 	srcDir: string;
 	distDir: string;
 	version: string;
-}
-
-interface ComponentMeta {
-	name?: string;
-	version?: string;
-	dependencies: string[];
-}
-
-interface ProjectMeta extends ComponentMeta {
-	install?: ProjectManifest["install"];
 }
 
 function readJsonIfExists<T>(filePath: string): T | undefined {
