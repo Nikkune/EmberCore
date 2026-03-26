@@ -1,4 +1,4 @@
-import {type AnyManifest, type ComponentManifest, type IndexManifest, MANIFEST_VERSION, type ManifestId, type ProjectManifest} from "./types";
+import {type AnyManifest, type ComponentManifest, type IndexManifest, MANIFEST_VERSION, type ManifestId, type ProjectManifest} from "./manifestTypes";
 
 export interface ValidationIssue {
 	message: string;

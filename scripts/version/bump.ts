@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import {AnyMeta} from "../manifest/types";
+import {AnyMeta} from "../manifest/manifestTypes";
 import {bumpPatch, hasManualVersionChange} from "./semver";
 
 export interface BumpTarget {

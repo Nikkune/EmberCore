@@ -1,5 +1,5 @@
 import {buildManifests,} from "./manifest/builder";
-import type {AnyManifest} from "./manifest/types";
+import type {AnyManifest} from "./manifest/manifestTypes";
 import {discoverManifests} from "./manifest/discover";
 
 const manifests: AnyManifest[] = discoverManifests({

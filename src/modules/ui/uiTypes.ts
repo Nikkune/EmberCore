@@ -22,7 +22,14 @@ export interface Padding {
 	left: number;
 }
 
-export type PaddingLike = number | Partial<Padding>;
+export interface PaddingAlt {
+	x?: number;
+	y?: number;
+	vertical?: number;
+	horizontal?: number;
+}
+
+export type PaddingLike = number | Padding | PaddingAlt;
 
 // =========================
 // Alignment

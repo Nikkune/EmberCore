@@ -1,4 +1,4 @@
-import {AnyManifest, ComponentManifest, ComponentMeta, ProjectManifest, ProjectMeta} from "./types";
+import {AnyManifest, ComponentManifest, ComponentMeta, ProjectManifest, ProjectMeta} from "./manifestTypes";
 import * as fs from "fs";
 import * as path from "node:path";
 import {componentManifest, projectManifest} from "./builder";

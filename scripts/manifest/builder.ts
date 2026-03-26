@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import {type AnyManifest, type ComponentManifest, type IndexManifest, MANIFEST_VERSION, type ManifestId, type ProjectManifest,} from "./types";
+import {type AnyManifest, type ComponentManifest, type IndexManifest, MANIFEST_VERSION, type ManifestId, type ProjectManifest,} from "./manifestTypes";
 import {assertValidIndexManifest, assertValidManifestCollection,} from "./validate";
 
 export interface BuildManifestOptions {
