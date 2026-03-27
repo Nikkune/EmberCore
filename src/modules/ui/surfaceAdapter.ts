@@ -1,5 +1,10 @@
 import {Color, Point, Rect, Size} from "./uiTypes";
-import {UISurfaceAdapter} from "./uiRuntime";
+
+export interface UISurfaceAdapter {
+	getSize(): { width: number; height: number };
+
+	clear(backgroundColor?: number): void;
+}
 
 export interface TerminalLike {
 	getSize(): [number, number];

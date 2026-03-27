@@ -1,10 +1,5 @@
 import type {DirtyRegion, InvalidationRequest, LayoutConstraints, RenderContext, SurfaceKind, Theme, UIComponent, UIContext, UIEvent, UIEventBus,} from "./uiTypes";
-
-export interface UISurfaceAdapter {
-	getSize(): { width: number; height: number };
-
-	clear(backgroundColor?: number): void;
-}
+import type {UIDrawSurface} from "./surfaceAdapter";
 
 export interface UIInvalidator {
 	invalidate(request?: InvalidationRequest): void;
@@ -14,7 +9,7 @@ export interface UIRuntimeOptions {
 	root: UIComponent;
 	eventBus: UIEventBus;
 	theme: Theme;
-	surface: UISurfaceAdapter;
+	surface: UIDrawSurface;
 	surfaceKind: SurfaceKind;
 }
 
@@ -28,7 +23,7 @@ export interface UIRenderResult {
 export class UIRuntime implements UIInvalidator {
 	private readonly root: UIComponent;
 	private readonly eventBus: UIEventBus;
-	private readonly surface: UISurfaceAdapter;
+	private readonly surface: UIDrawSurface;
 	private readonly surfaceKind: SurfaceKind;
 	private theme: Theme;
 
@@ -95,10 +90,11 @@ export class UIRuntime implements UIInvalidator {
 			activeElement: this.activeElement,
 		};
 
-		const renderContext: RenderContext = {
+		const renderContext: RenderContext<UIDrawSurface> = {
 			surface: this.surfaceKind,
 			theme: this.theme,
 			tick: this.tick,
+			draw: this.surface,
 		};
 
 		this.root.measure(constraints, uiContext);

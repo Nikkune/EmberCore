@@ -396,10 +396,11 @@ export interface UIEventBus extends EventDispatcher {
 export type SurfaceKind = 'terminal' | 'monitor';
 export type InvalidationReason = 'mount' | 'layout' | 'state' | 'theme' | "event" | "manual";
 
-export interface RenderContext {
+export interface RenderContext<TDraw = unknown> {
 	surface: SurfaceKind;
 	theme: Theme;
 	tick: number;
+	draw: TDraw;
 }
 
 export interface DirtyRegion extends Rect {
