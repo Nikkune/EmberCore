@@ -1,5 +1,4 @@
-import type {BaseProps, ComponentKind, InvalidationRequest, LayoutConstraints, MeasuredSize, Point, Rect, RenderContext, UIComponent, UIContext, UIEvent, UIEventBus, UIEventHandler, UIEventMap,} from "../types/uiTypes";
-import type {UIInvalidator} from "./uiRuntime";
+import type {BaseProps, ComponentKind, InvalidationRequest, LayoutConstraints, MeasuredSize, Point, Rect, RenderContext, UIComponent, UIContext, UIEvent, UIEventBus, UIEventHandler, UIEventMap, UIInvalidator,} from "../types/uiTypes";
 
 let componentIdCounter = 0;
 
@@ -8,7 +7,7 @@ function createComponentId(kind: ComponentKind): string {
 	return `ui_${kind}_${componentIdCounter}`;
 }
 
-export abstract class BaseComponent<TProps extends BaseProps = BaseProps> implements UIComponent {
+export abstract class BaseComponent<TProps extends BaseProps = BaseProps, TDraw = unknown> implements UIComponent<TDraw> {
 	public readonly id: string;
 	public readonly kind: ComponentKind;
 	public rect: Rect = {x: 1, y: 1, width: 0, height: 0};
@@ -84,7 +83,7 @@ export abstract class BaseComponent<TProps extends BaseProps = BaseProps> implem
 		context: UIContext,
 	): MeasuredSize;
 
-	public abstract render(context: RenderContext): void;
+	public abstract render(context: RenderContext<TDraw>): void;
 
 	private bindEventHandlers(handlers?: UIEventMap): void {
 		if (!handlers || !this.eventBus) {

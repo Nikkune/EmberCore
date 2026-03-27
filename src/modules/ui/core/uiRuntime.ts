@@ -1,9 +1,5 @@
-import type {DirtyRegion, InvalidationRequest, LayoutConstraints, RenderContext, SurfaceKind, Theme, UIComponent, UIContext, UIEvent, UIEventBus,} from "../types/uiTypes";
+import type {DirtyRegion, InvalidationRequest, LayoutConstraints, RenderContext, SurfaceKind, Theme, UIComponent, UIContext, UIEvent, UIEventBus, UIInvalidator,} from "../types/uiTypes";
 import type {UIDrawSurface} from "../render/surfaceAdapter";
-
-export interface UIInvalidator {
-	invalidate(request?: InvalidationRequest): void;
-}
 
 export interface UIRuntimeOptions {
 	root: UIComponent;

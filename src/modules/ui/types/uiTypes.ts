@@ -417,6 +417,10 @@ export interface UIContext {
 	activeElement?: string;
 }
 
+export interface UIInvalidator {
+	invalidate(request?: InvalidationRequest): void;
+}
+
 // ============================================================
 // Base component contracts
 // ============================================================
@@ -475,8 +479,8 @@ export interface Layoutable {
 	layout(rect: Rect, context: UIContext): void;
 }
 
-export interface Renderable {
-	render(context: RenderContext): void;
+export interface Renderable<TDraw = unknown> {
+	render(context: RenderContext<TDraw>): void;
 }
 
 export interface Interactive {
@@ -485,7 +489,7 @@ export interface Interactive {
 	dispatch(event: UIEvent, context: UIContext): boolean;
 }
 
-export interface UIComponent extends Measurable, Layoutable, Renderable, Interactive {
+export interface UIComponent<TDraw = unknown> extends Measurable, Layoutable, Renderable<TDraw>, Interactive {
 	readonly id: string;
 	readonly kind: ComponentKind;
 	readonly rect: Rect;
@@ -629,8 +633,13 @@ export interface StackStyle extends BoxStyle {
 }
 
 // ============================================================
-// Component props
+// Component
 // ============================================================
+
+export interface ComponentDependencies {
+	eventBus?: UIEventBus;
+	invalidator?: UIInvalidator;
+}
 
 export interface LabelProps extends BaseProps {
 	text: string;
