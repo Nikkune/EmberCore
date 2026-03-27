@@ -553,22 +553,22 @@ export interface ProgressBarStyle extends BoxStyle {
 	emptyColor?: Color;
 	labelStyle?: TextStyle;
 	showPercentage?: boolean;
-	charFilled?: string;
-	charEmpty?: string;
+	characterFilled?: string;
+	characterEmpty?: string;
 }
 
 export interface CheckboxStyle extends BoxStyle {
 	text?: TextStyle;
 	checkColor?: Color;
-	checkedChar?: string;
-	uncheckedChar?: string;
+	checkedCharacter?: string;
+	uncheckedCharacter?: string;
 }
 
 export interface RadioStyle extends BoxStyle {
 	text?: TextStyle;
 	dotColor?: Color;
-	selectedChar?: string;
-	unselectedChar?: string;
+	selectedCharacter?: string;
+	unselectedCharacter?: string;
 }
 
 export interface BadgeStyle extends BoxStyle {
@@ -579,7 +579,7 @@ export interface BadgeStyle extends BoxStyle {
 export interface SeparatorStyle {
 	foregroundColor?: Color;
 	backgroundColor?: Color;
-	char?: string;
+	character?: string;
 	labelStyle?: TextStyle;
 }
 
