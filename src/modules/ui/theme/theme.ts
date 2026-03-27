@@ -1,4 +1,4 @@
-import type {BorderCharacters, BorderPreset, Theme, ThemeComponentStyles,} from "./uiTypes";
+import type {BorderCharacters, BorderPreset, Theme, ThemeComponentStyles,} from "../types/uiTypes";
 
 const ASCII_BORDER: BorderCharacters = {
 	topLeft: "+",

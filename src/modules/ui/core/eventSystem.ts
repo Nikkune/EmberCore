@@ -1,4 +1,4 @@
-import type {EventDispatchResult, EventSubscription, EventSubscriptionOptions, UIEvent, UIEventBus, UIEventHandler, UIEventName,} from "./uiTypes";
+import type {EventDispatchResult, EventSubscription, EventSubscriptionOptions, UIEvent, UIEventBus, UIEventHandler, UIEventName,} from "../types/uiTypes";
 
 interface InternalEventSubscription extends EventSubscription<UIEvent> {
 	readonly handler: UIEventHandler<UIEvent>;

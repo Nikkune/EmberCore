@@ -1,4 +1,4 @@
-import type {BorderCharacters, BoxStyle, Color, Insets, PaddingLike, Point, Rect, RenderContext, TextStyle, TextWrap,} from "./uiTypes";
+import type {BorderCharacters, BoxStyle, Color, Insets, PaddingLike, Point, Rect, RenderContext, TextStyle, TextWrap,} from "../types/uiTypes";
 import type {UIDrawSurface} from "./surfaceAdapter";
 
 export interface ClipTextResult {

@@ -1,4 +1,4 @@
-import {Color, Point, Rect, Size} from "./uiTypes";
+import {Color, Point, Rect, Size} from "../types/uiTypes";
 
 export interface UISurfaceAdapter {
 	getSize(): { width: number; height: number };
