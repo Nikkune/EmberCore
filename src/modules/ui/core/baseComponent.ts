@@ -1,4 +1,4 @@
-import type {BaseProps, ComponentKind, InvalidationRequest, LayoutConstraints, MeasuredSize, Point, Rect, RenderContext, UIComponent, UIContext, UIEvent, UIEventBus, UIEventHandler, UIEventMap, UIInvalidator,} from "../types/uiTypes";
+import type {BaseProps, ComponentKind, InvalidationRequest, LayoutConstraints, MeasuredSize, Point, Rect, RenderContext, UIComponent, UIContext, UIEvent, UIEventBus, UIEventHandler, UIEventMap, UIInvalidator,} from "@modules/ui";
 
 let componentIdCounter = 0;
 
@@ -26,8 +26,12 @@ export abstract class BaseComponent<TProps extends BaseProps = BaseProps, TDraw 
 	) {
 		this.kind = kind;
 		this.props = props;
-		this.eventBus = eventBus;
-		this.invalidator = invalidator;
+		if (eventBus !== undefined) {
+			this.eventBus = eventBus;
+		}
+		if (invalidator !== undefined) {
+			this.invalidator = invalidator;
+		}
 		this.id = props.id ?? createComponentId(kind);
 
 		this.bindEventHandlers(props.on);

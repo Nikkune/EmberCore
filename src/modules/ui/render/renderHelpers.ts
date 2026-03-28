@@ -1,5 +1,6 @@
-import type {BorderCharacters, BoxStyle, Color, Insets, PaddingLike, Point, Rect, RenderContext, TextStyle, TextWrap,} from "../types/uiTypes";
-import type {UIDrawSurface} from "./surfaceAdapter";
+import type {BorderCharacters, BoxStyle, Color, Insets, PaddingLike, Point, Rect, RenderContext, TextStyle, TextWrap, UIDrawSurface} from "@modules/ui";
+import {makeColorOptions} from "@modules/ui";
+import {createOptions} from "@utils/helpers";
 
 export interface ClipTextResult {
 	text: string;
@@ -309,6 +310,8 @@ export function drawTextLine(
 
 	const clipRect = options.clipRect;
 
+	const withColorsOptions = makeColorOptions(options.style)
+
 	if (clipRect) {
 		const clipped = clipTextToRect(options.position, aligned, clipRect);
 
@@ -317,10 +320,7 @@ export function drawTextLine(
 		}
 
 		draw.withColors(
-			{
-				foreground: options.style?.foregroundColor,
-				background: options.style?.backgroundColor,
-			},
+			withColorsOptions,
 			() => {
 				draw.writeAt(
 					{
@@ -336,10 +336,7 @@ export function drawTextLine(
 	}
 
 	draw.withColors(
-		{
-			foreground: options.style?.foregroundColor,
-			background: options.style?.backgroundColor,
-		},
+		withColorsOptions,
 		() => {
 			draw.writeAt(options.position, aligned);
 		},
@@ -450,7 +447,7 @@ export function wrapText(
 	const result: WrappedLine[] = [];
 
 	for (let sourceLineIndex = 0; sourceLineIndex < sourceLines.length; sourceLineIndex += 1) {
-		const sourceLine = sourceLines[sourceLineIndex];
+		const sourceLine = sourceLines[sourceLineIndex]!;
 
 		if (wrap === "none") {
 			pushWrappedLine(result, sourceLine, sourceLineIndex);
@@ -502,10 +499,14 @@ export function resolveTextLines(
 
 		if (ellipsis && height > 0) {
 			const lastIndex = lines.length - 1;
-			lines[lastIndex] = {
-				...lines[lastIndex],
-				text: applyEllipsis(lines[lastIndex].text, width),
-			};
+			const lastLine = lines[lastIndex];
+
+			if (lastLine) {
+				lines[lastIndex] = {
+					...lastLine,
+					text: applyEllipsis(lastLine.text, width),
+				};
+			}
 		}
 	}
 
@@ -533,33 +534,43 @@ export function drawText(
 	}
 
 	if (options.fillBackground && style?.backgroundColor !== undefined) {
-		fillRect(draw, {
-			rect: options.rect,
-			backgroundColor: style.backgroundColor,
-			clipRect,
-		});
+		fillRect(
+			draw,
+			createOptions<FillRectOptions>({
+				rect: options.rect,
+				backgroundColor: style.backgroundColor
+			})
+				.with('clipRect', clipRect)
+				.done());
 	}
 
-	const lines = resolveTextLines({
-		text: options.text,
-		width: options.rect.width,
-		height: options.rect.height,
-		style,
-	});
+	const lines = resolveTextLines(
+		createOptions<ResolveTextLinesOptions>({
+			text: options.text,
+			width: options.rect.width,
+			height: options.rect.height,
+		})
+			.with('style', style)
+			.done()
+	);
 
 	const maxLines = Math.min(lines.length, options.rect.height);
 
 	for (let index = 0; index < maxLines; index += 1) {
-		drawTextLine(draw, {
-			position: {
-				x: options.rect.x,
-				y: options.rect.y + index,
-			},
-			width: options.rect.width,
-			text: lines[index].text,
-			style,
-			clipRect,
-		});
+		drawTextLine(
+			draw,
+			createOptions<DrawTextLineOptions>({
+				position: {
+					x: options.rect.x,
+					y: options.rect.y + index,
+				},
+				width: options.rect.width,
+				text: lines[index]!.text,
+			})
+				.with('style', style)
+				.with('clipRect', clipRect)
+				.done()
+		);
 	}
 }
 
@@ -592,16 +603,17 @@ export function drawHorizontalLine(
 	backgroundColor?: Color,
 	clipRect?: Rect,
 ): void {
-	drawTextLine(draw, {
-		position,
-		width,
-		text: repeat(character, width),
-		style: {
-			foregroundColor,
-			backgroundColor,
-		},
-		clipRect,
-	});
+	drawTextLine(
+		draw,
+		createOptions<DrawTextLineOptions>({
+			position: position,
+			width: width,
+			text: repeat(character, width),
+			style: makeColorOptions({foregroundColor, backgroundColor}),
+		})
+			.with('clipRect', clipRect)
+			.done()
+	);
 }
 
 export function drawVerticalLine(
@@ -614,19 +626,20 @@ export function drawVerticalLine(
 	clipRect?: Rect,
 ): void {
 	for (let index = 0; index < height; index += 1) {
-		drawTextLine(draw, {
-			position: {
-				x: position.x,
-				y: position.y + index,
-			},
-			width: 1,
-			text: character,
-			style: {
-				foregroundColor,
-				backgroundColor,
-			},
-			clipRect,
-		});
+		drawTextLine(
+			draw,
+			createOptions<DrawTextLineOptions>({
+				position: {
+					x: position.x,
+					y: position.y + index,
+				},
+				width: 1,
+				text: character,
+				style: makeColorOptions({foregroundColor, backgroundColor}),
+			})
+				.with('clipRect', clipRect)
+				.done()
+		);
 	}
 }
 
@@ -641,16 +654,18 @@ export function drawBorder(
 	}
 
 	if (rect.width === 1 && rect.height === 1) {
-		drawTextLine(draw, {
-			position: {x: rect.x, y: rect.y},
-			width: 1,
-			text: border.topLeft,
-			style: {
-				foregroundColor,
-				backgroundColor,
-			},
-			clipRect,
-		});
+		drawTextLine(
+			draw,
+			createOptions<DrawTextLineOptions>({
+				position: {x: rect.x, y: rect.y},
+				width: 1,
+				text: border.topLeft,
+				style: makeColorOptions({foregroundColor, backgroundColor}),
+			})
+				.with('clipRect', clipRect)
+				.done()
+		);
+
 		return;
 	}
 
@@ -661,16 +676,17 @@ export function drawBorder(
 				? border.topLeft
 				: border.topLeft + repeat(border.horizontal, middleWidth) + border.topRight;
 
-		drawTextLine(draw, {
-			position: {x: rect.x, y: rect.y},
-			width: rect.width,
-			text: top,
-			style: {
-				foregroundColor,
-				backgroundColor,
-			},
-			clipRect,
-		});
+		drawTextLine(
+			draw,
+			createOptions<DrawTextLineOptions>({
+				position: {x: rect.x, y: rect.y},
+				width: rect.width,
+				text: top,
+				style: makeColorOptions({foregroundColor, backgroundColor}),
+			})
+				.with('clipRect', clipRect)
+				.done()
+		);
 
 		return;
 	}
@@ -689,65 +705,70 @@ export function drawBorder(
 			repeat(border.horizontal, Math.max(0, rect.width - 2)) +
 			border.bottomRight;
 
-	drawTextLine(draw, {
-		position: {x: rect.x, y: rect.y},
-		width: rect.width,
-		text: top,
-		style: {
-			foregroundColor,
-			backgroundColor,
-		},
-		clipRect,
-	});
+	drawTextLine(
+		draw,
+		createOptions<DrawTextLineOptions>({
+			position: {x: rect.x, y: rect.y},
+			width: rect.width,
+			text: top,
+			style: makeColorOptions({foregroundColor, backgroundColor}),
+		})
+			.with('clipRect', clipRect)
+			.done()
+	);
 
-	drawTextLine(draw, {
-		position: {x: rect.x, y: rect.y + rect.height - 1},
-		width: rect.width,
-		text: bottom,
-		style: {
-			foregroundColor,
-			backgroundColor,
-		},
-		clipRect,
-	});
+	drawTextLine(
+		draw,
+		createOptions<DrawTextLineOptions>({
+			position: {x: rect.x, y: rect.y + rect.height - 1},
+			width: rect.width,
+			text: bottom,
+			style: makeColorOptions({foregroundColor, backgroundColor}),
+		})
+			.with('clipRect', clipRect)
+			.done()
+	);
 
 	for (let row = 1; row < rect.height - 1; row += 1) {
 		if (rect.width === 1) {
-			drawTextLine(draw, {
-				position: {x: rect.x, y: rect.y + row},
-				width: 1,
-				text: border.vertical,
-				style: {
-					foregroundColor,
-					backgroundColor,
-				},
-				clipRect,
-			});
+			drawTextLine(
+				draw,
+				createOptions<DrawTextLineOptions>({
+					position: {x: rect.x, y: rect.y + row},
+					width: 1,
+					text: border.vertical,
+					style: makeColorOptions({foregroundColor, backgroundColor}),
+				})
+					.with('clipRect', clipRect)
+					.done()
+			);
 
 			continue;
 		}
 
-		drawTextLine(draw, {
-			position: {x: rect.x, y: rect.y + row},
-			width: 1,
-			text: border.vertical,
-			style: {
-				foregroundColor,
-				backgroundColor,
-			},
-			clipRect,
-		});
+		drawTextLine(
+			draw,
+			createOptions<DrawTextLineOptions>({
+				position: {x: rect.x, y: rect.y + row},
+				width: 1,
+				text: border.vertical,
+				style: makeColorOptions({foregroundColor, backgroundColor}),
+			})
+				.with('clipRect', clipRect)
+				.done()
+		);
 
-		drawTextLine(draw, {
-			position: {x: rect.x + rect.width - 1, y: rect.y + row},
-			width: 1,
-			text: border.vertical,
-			style: {
-				foregroundColor,
-				backgroundColor,
-			},
-			clipRect,
-		});
+		drawTextLine(
+			draw,
+			createOptions<DrawTextLineOptions>({
+				position: {x: rect.x + rect.width - 1, y: rect.y + row},
+				width: 1,
+				text: border.vertical,
+				style: makeColorOptions({foregroundColor, backgroundColor}),
+			})
+				.with('clipRect', clipRect)
+				.done()
+		);
 	}
 }
 
@@ -761,22 +782,30 @@ export function drawBox(
 	const borderStyle = style?.border;
 
 	if (backgroundColor !== undefined) {
-		fillRect(draw, {
-			rect: options.rect,
-			backgroundColor,
-			foregroundColor,
-			clipRect: options.clipRect,
-		});
+		fillRect(
+			draw,
+			createOptions<FillRectOptions>({
+				rect: options.rect,
+				backgroundColor
+			})
+				.with('foregroundColor', foregroundColor)
+				.with('clipRect', options.clipRect)
+				.done()
+		);
 	}
 
 	if (borderStyle?.enabled && options.borderCharacters) {
-		drawBorder(draw, {
-			rect: options.rect,
-			border: options.borderCharacters,
-			foregroundColor: borderStyle.foregroundColor ?? foregroundColor,
-			backgroundColor: borderStyle.backgroundColor ?? backgroundColor,
-			clipRect: options.clipRect,
-		});
+		drawBorder(
+			draw,
+			createOptions<DrawBorderOptions>({
+				rect: options.rect,
+				border: options.borderCharacters,
+			})
+				.with('clipRect', options.clipRect)
+				.with('backgroundColor', borderStyle.backgroundColor ?? backgroundColor)
+				.with('foregroundColor', borderStyle.foregroundColor ?? foregroundColor)
+				.done()
+		);
 	}
 
 	return getInnerRect(options.rect, style);

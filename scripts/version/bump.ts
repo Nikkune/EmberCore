@@ -48,7 +48,7 @@ export function loadPreviousVersions(filePath: string): PreviousVersionMap {
 
 export function savePreviousVersions(filePath: string, versions: PreviousVersionMap): void {
 	const dir = path.dirname(filePath);
-	fs.mkdirSync(dir, { recursive: true });
+	fs.mkdirSync(dir, {recursive: true});
 	writeJsonFile(filePath, versions);
 }
 
@@ -90,12 +90,13 @@ export function bumpMetaVersions(
 			id: target.id,
 			metaPath: target.metaPath,
 			changed: target.changed,
-			previousVersion,
 			currentVersion,
 			nextVersion,
 			bumped,
 			manual,
 		};
+
+		if (previousVersion) item.previousVersion = previousVersion;
 
 		if (bumped) {
 			updated.push(item);

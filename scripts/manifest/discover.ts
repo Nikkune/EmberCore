@@ -1,5 +1,5 @@
 import {AnyManifest, ComponentManifest, ComponentMeta, ProjectManifest, ProjectMeta} from "./manifestTypes";
-import * as fs from "fs";
+import * as fs from "node:fs";
 import * as path from "node:path";
 import {componentManifest, projectManifest} from "./builder";
 
@@ -140,15 +140,19 @@ function discoverProjects(options: DiscoverOptions): ProjectManifest[] {
 
 		const id = `projects/${projectName}`;
 
-		const manifest = projectManifest({
+		const input: Omit<ProjectManifest, "manifestVersion" | "type"> = {
 			id,
 			name: meta?.name ?? capitalize(projectName),
 			version: meta?.version ?? options.version,
 			entry: relativeToDist(options.distDir, mainPath),
 			files,
 			dependencies: meta?.dependencies ?? [],
-			install: meta?.install,
-		})
+		}
+
+		if (meta?.install)
+			input.install = meta.install;
+
+		const manifest = projectManifest(input)
 
 		manifests.push(manifest);
 	}

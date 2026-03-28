@@ -8,3 +8,5 @@ export * from "./render/renderHelpers";
 export * from "./render/surfaceAdapter";
 
 export * from "./theme/theme";
+
+export * from "./utils/options";

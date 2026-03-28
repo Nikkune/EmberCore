@@ -59,6 +59,7 @@ function detectModuleTarget(srcDir: string, relativePath: string): BumpTarget | 
 	}
 
 	const moduleName = match[1];
+	if (!moduleName) return undefined;
 	const metaPath = path.join(srcDir, "modules", moduleName, `${moduleName}.manifest.json`);
 
 	if (!fileExists(metaPath)) {
@@ -79,7 +80,8 @@ function detectProjectTarget(srcDir: string, relativePath: string): BumpTarget |
 	}
 
 	const projectName = match[1];
-	const metaPath = path.join(srcDir, "projects", projectName, "project.manifest.json");
+	if (!projectName) return undefined;
+	const metaPath = path.join(srcDir, "projects", projectName, `${projectName}.manifest.json`);
 
 	if (!fileExists(metaPath)) {
 		return undefined;

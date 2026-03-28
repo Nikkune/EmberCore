@@ -1,5 +1,5 @@
-import type {DirtyRegion, InvalidationRequest, LayoutConstraints, RenderContext, SurfaceKind, Theme, UIComponent, UIContext, UIEvent, UIEventBus, UIInvalidator,} from "../types/uiTypes";
-import type {UIDrawSurface} from "../render/surfaceAdapter";
+import type {DirtyRegion, InvalidationRequest, LayoutConstraints, RenderContext, SurfaceKind, Theme, UIComponent, UIContext, UIDrawSurface, UIEvent, UIEventBus, UIInvalidator,} from "@modules/ui";
+import {createOptions} from "@utils/helpers";
 
 export interface UIRuntimeOptions {
 	root: UIComponent;
@@ -80,11 +80,12 @@ export class UIRuntime implements UIInvalidator {
 			maxHeight: height,
 		};
 
-		const uiContext: UIContext = {
+		const uiContext: UIContext = createOptions<UIContext>({
 			theme: this.theme,
-			surface: this.surfaceKind,
-			activeElement: this.activeElement,
-		};
+			surface: this.surfaceKind
+		})
+			.with('activeElement', this.activeElement)
+			.done();
 
 		const renderContext: RenderContext<UIDrawSurface> = {
 			surface: this.surfaceKind,
@@ -151,7 +152,8 @@ export class UIRuntime implements UIInvalidator {
 	}
 
 	public setActiveElement(elementId?: string): void {
-		this.activeElement = elementId;
+		if (elementId !== undefined)
+			this.activeElement = elementId;
 	}
 
 	private dispatchToRoot(event: UIEvent): boolean {
@@ -161,11 +163,12 @@ export class UIRuntime implements UIInvalidator {
 			}
 		}
 
-		const uiContext: UIContext = {
+		const uiContext: UIContext = createOptions<UIContext>({
 			theme: this.theme,
-			surface: this.surfaceKind,
-			activeElement: this.activeElement,
-		};
+			surface: this.surfaceKind
+		})
+			.with('activeElement', this.activeElement)
+			.done();
 
 		const handled = this.root.dispatch(event, uiContext);
 

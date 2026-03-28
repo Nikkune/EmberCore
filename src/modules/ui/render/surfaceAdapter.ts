@@ -1,4 +1,5 @@
-import {Color, Point, Rect, Size} from "../types/uiTypes";
+import type {Color, Point, Rect, Size} from "@modules/ui";
+import {makeColorOptions} from "@modules/ui";
 
 export interface UISurfaceAdapter {
 	getSize(): { width: number; height: number };
@@ -65,8 +66,8 @@ export interface UIDrawSurface extends UISurfaceAdapter {
 
 	withColors(
 		options: {
-			foreground?: number;
-			background?: number;
+			foregroundColor?: number;
+			backgroundColor?: number;
 		},
 		fn: () => void,
 	): void;
@@ -122,7 +123,7 @@ export class ComputerCraftSurfaceAdapter implements UIDrawSurface {
 			return;
 		}
 
-		this.withColors({background: backgroundColor}, () => {
+		this.withColors({backgroundColor: backgroundColor}, () => {
 			this.target.clear();
 		});
 	}
@@ -135,7 +136,7 @@ export class ComputerCraftSurfaceAdapter implements UIDrawSurface {
 		const currentCursor = this.getCursor();
 
 		this.withColors(
-			{background: backgroundColor},
+			makeColorOptions({backgroundColor}),
 			() => {
 				this.target.setCursorPos(1, y);
 				this.target.clearLine();
@@ -193,14 +194,11 @@ export class ComputerCraftSurfaceAdapter implements UIDrawSurface {
 			return;
 		}
 
-		const fillCharacter = character.length > 0 ? character[0] : " ";
+		const fillCharacter = character.length > 0 ? character[0]! : " ";
 		const line = repeat(fillCharacter, rect.width);
 
 		this.withColors(
-			{
-				background: backgroundColor,
-				foreground: foregroundColor,
-			},
+			makeColorOptions({backgroundColor, foregroundColor}),
 			() => {
 				for (let row = 0; row < rect.height; row += 1) {
 					this.writeAt(
@@ -224,10 +222,7 @@ export class ComputerCraftSurfaceAdapter implements UIDrawSurface {
 
 		if (rect.width === 1 && rect.height === 1) {
 			this.withColors(
-				{
-					background: backgroundColor,
-					foreground: foregroundColor,
-				},
+				makeColorOptions({backgroundColor, foregroundColor}),
 				() => {
 					this.writeAt({x: rect.x, y: rect.y}, character[0] ?? "#");
 				},
@@ -236,13 +231,10 @@ export class ComputerCraftSurfaceAdapter implements UIDrawSurface {
 			return;
 		}
 
-		const strokeCharacter = character.length > 0 ? character[0] : "#";
+		const strokeCharacter = character.length > 0 ? character[0]! : "#";
 
 		this.withColors(
-			{
-				background: backgroundColor,
-				foreground: foregroundColor,
-			},
+			makeColorOptions({backgroundColor, foregroundColor}),
 			() => {
 				const horizontal = repeat(strokeCharacter, rect.width);
 
@@ -290,20 +282,20 @@ export class ComputerCraftSurfaceAdapter implements UIDrawSurface {
 
 	public withColors(
 		options: {
-			foreground?: number;
-			background?: number;
+			foregroundColor?: number;
+			backgroundColor?: number;
 		},
 		fn: () => void,
 	): void {
 		const previousForeground = this.getForegroundColor();
 		const previousBackground = this.getBackgroundColor();
 
-		if (options.foreground !== undefined) {
-			this.setForegroundColor(options.foreground);
+		if (options.foregroundColor !== undefined) {
+			this.setForegroundColor(options.foregroundColor);
 		}
 
-		if (options.background !== undefined) {
-			this.setBackgroundColor(options.background);
+		if (options.backgroundColor !== undefined) {
+			this.setBackgroundColor(options.backgroundColor);
 		}
 
 		try {

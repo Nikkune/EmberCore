@@ -1,3 +1,5 @@
+import {assignIfDefined} from "@utils/helpers";
+
 export interface ErrorContext {
 	[key: string]: unknown;
 }
@@ -10,10 +12,10 @@ export class EmberError extends Error {
 		super(message);
 		this.name = "EmberError";
 		this.code = code;
-		this.context = context;
+		assignIfDefined(this, 'context', context);
 	}
 
-	public toString(): string {
+	public override toString(): string {
 		return `[${this.code}] ${this.message}`;
 	}
 }

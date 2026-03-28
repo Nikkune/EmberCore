@@ -1,8 +1,6 @@
-import {BaseComponent} from "../core/baseComponent";
-import {mergeComponentStyle} from "../theme/theme";
-import {drawText, resolveTextLines} from "../render/renderHelpers";
-import type {ComponentDependencies, LabelProps, LayoutConstraints, MeasuredSize, RenderContext, TextStyle, UIContext} from "../types/uiTypes";
-import type {UIDrawSurface} from "../render/surfaceAdapter";
+import type {ComponentDependencies, DrawTextOptions, LabelProps, LayoutConstraints, MeasuredSize, RenderContext, ResolveTextLinesOptions, TextStyle, UIContext, UIDrawSurface} from "@modules/ui";
+import {BaseComponent, drawText, mergeComponentStyle, resolveTextLines} from "@modules/ui";
+import {createOptions} from "@utils/helpers";
 
 export class LabelComponent extends BaseComponent<LabelProps, UIDrawSurface> {
 	public constructor(props: LabelProps, dependencies: ComponentDependencies = {}) {
@@ -15,11 +13,14 @@ export class LabelComponent extends BaseComponent<LabelProps, UIDrawSurface> {
 
 		if (availableWidth <= 0) return {width: constraints.minWidth, height: constraints.minHeight};
 
-		const lines = resolveTextLines({
-			text: this.props.text,
-			width: availableWidth,
-			style
-		});
+		const lines = resolveTextLines(
+			createOptions<ResolveTextLinesOptions>({
+				text: this.props.text,
+				width: availableWidth,
+			})
+				.with('style', style)
+				.done()
+		);
 
 		let measuredWidth = 0;
 
@@ -38,11 +39,16 @@ export class LabelComponent extends BaseComponent<LabelProps, UIDrawSurface> {
 
 		const style = this.getResolvedStyle(context.theme);
 
-		drawText(context, {
-			rect: this.rect,
-			text: this.props.text,
-			style,
-		})
+
+		drawText(
+			context,
+			createOptions<DrawTextOptions>({
+				rect: this.rect,
+				text: this.props.text,
+			})
+				.with('style', style)
+				.done()
+		)
 	}
 
 	private getResolvedStyle(theme: UIContext["theme"]): TextStyle | undefined {

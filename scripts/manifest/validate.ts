@@ -12,7 +12,14 @@ export interface ValidationResult {
 }
 
 function issue(message: string, manifestId?: ManifestId, field?: string): ValidationIssue {
-	return {message, manifestId, field};
+	const issue: ValidationIssue = {message};
+	if (manifestId) {
+		issue.manifestId = manifestId;
+	}
+	if (field) {
+		issue.field = field;
+	}
+	return issue;
 }
 
 function isNonEmptyString(value: unknown): value is string {
@@ -160,7 +167,7 @@ export function validateIndexManifest(index: IndexManifest): ValidationResult {
 		}
 	}
 
-	if (typeof index.projects !== "object" || index.components === null) {
+	if (typeof index.projects !== "object" || index.projects === null) {
 		issues.push(issue("Index manifest projects must be an object", undefined, "projects"))
 	} else {
 		for (const id in index.projects) {

@@ -1,15 +1,13 @@
-import {BaseComponent} from "../core/baseComponent";
-import {mergeComponentStyle} from "../theme/theme";
-import type {ComponentDependencies, LayoutConstraints, MeasuredSize, RenderContext, SeparatorProps, SeparatorStyle, UIContext} from "../types/uiTypes";
-import type {UIDrawSurface} from "../render/surfaceAdapter";
-import {drawHorizontalLine, drawTextLine} from "../render/renderHelpers";
+import type {ComponentDependencies, DrawTextLineOptions, LayoutConstraints, MeasuredSize, RenderContext, SeparatorProps, SeparatorStyle, TextStyle, UIContext, UIDrawSurface} from "@modules/ui";
+import {BaseComponent, drawHorizontalLine, drawTextLine, mergeComponentStyle} from "@modules/ui";
+import {createOptions} from "@utils/helpers";
 
 export class SeparatorComponent extends BaseComponent<SeparatorProps, UIDrawSurface> {
 	public constructor(props: SeparatorProps, dependencies: ComponentDependencies = {}) {
 		super('separator', props, dependencies.eventBus, dependencies.invalidator);
 	}
 
-	public measure(constraints: LayoutConstraints, context: UIContext): MeasuredSize {
+	public measure(constraints: LayoutConstraints): MeasuredSize {
 		const label = this.props.label ?? '';
 		const width = this.resolveAvailableWidth(constraints, label.length);
 		const height = Math.max(constraints.minHeight, Math.min(1, constraints.maxHeight));
@@ -33,16 +31,22 @@ export class SeparatorComponent extends BaseComponent<SeparatorProps, UIDrawSurf
 		const labelWidth = Math.min(labelText.length, this.rect.width);
 		const labelX = this.rect.x + Math.max(0, Math.floor((this.rect.width - labelWidth) / 2));
 
-		drawTextLine(context.draw, {
-			position: {x: labelX, y},
-			width: labelWidth,
-			text: labelText,
-			style: {
-				foregroundColor: style?.labelStyle?.foregroundColor ?? style?.foregroundColor,
-				backgroundColor: style?.labelStyle?.backgroundColor ?? style?.backgroundColor,
-				alignment: 'left',
-			},
-		});
+		drawTextLine(
+			context.draw,
+			createOptions<DrawTextLineOptions>({
+				position: {x: labelX, y},
+				width: labelWidth,
+				text: labelText,
+			})
+				.with('style',
+					createOptions<TextStyle>({
+						alignment: 'left',
+					})
+						.with('foregroundColor', style?.labelStyle?.foregroundColor ?? style?.foregroundColor)
+						.with('backgroundColor', style?.labelStyle?.backgroundColor ?? style?.backgroundColor)
+						.done()
+				)
+				.done());
 	}
 
 	private getResolvedStyle(theme: UIContext["theme"]): SeparatorStyle | undefined {
@@ -59,6 +63,6 @@ export class SeparatorComponent extends BaseComponent<SeparatorProps, UIDrawSurf
 
 		if (!value || value.length === 0) return '-';
 
-		return value[0];
+		return value[0]!;
 	}
 }

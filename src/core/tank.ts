@@ -1,5 +1,6 @@
-import { Peripheral } from "./peripheral";
+import {Peripheral} from "./peripheral";
 import {TankError} from "./errors";
+import {createOptions} from "@utils/helpers";
 
 export interface FluidStack {
 	name: string;
@@ -19,19 +20,20 @@ function mapToFluidTank(raw: LuaMap<AnyNotNil, any> | undefined): FluidTank | un
 		return undefined;
 	}
 
-	return {
-		name: raw.get("name") as string | undefined,
-		amount: raw.get("amount") as number | undefined,
-		capacity: raw.get("capacity") as number | undefined,
-		displayName: raw.get("displayName") as string | undefined,
-	};
+	return createOptions<FluidTank>({})
+		.with('name', raw.get("name"))
+		.with('amount', raw.get("amount"))
+		.with('capacity', raw.get("capacity"))
+		.with('displayName', raw.get("displayName"))
+		.done();
 }
 
 export class Tank {
 	public constructor(
 		public readonly name: string,
 		private readonly peripheralRef: FluidStorage,
-	) {}
+	) {
+	}
 
 	public static fromName(name: string): Tank {
 		const peripheral = Peripheral.require<FluidStorage>(name);

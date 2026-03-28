@@ -33,7 +33,7 @@ function getManifestRelativePath(manifest: AnyManifest): string {
 	}
 
 	const [group, ...rest] = parts;
-	return path.posix.join(group, `${rest.join("__")}.json`);
+	return path.posix.join(group!, `${rest.join("__")}.json`);
 }
 
 function isProjectManifest(manifest: AnyManifest): manifest is ProjectManifest {
@@ -97,11 +97,16 @@ export function buildManifests(
 		writtenFiles.push(absolutePath);
 	}
 
-	const index = buildIndexManifest(manifests, {
+	const manifestsOptions: Omit<BuildManifestOptions, "outputDir"> = {
 		repository: options.repository,
-		branch: options.branch,
-		generatedAt: options.generatedAt,
-	});
+		 branch: options.branch,
+	};
+
+	if (options.generatedAt) {
+		manifestsOptions.generatedAt = options.generatedAt;
+	}
+
+	const index = buildIndexManifest(manifests, manifestsOptions);
 
 	const indexPath = path.join(manifestsRoot, "index.json");
 	writeJsonFile(indexPath, index);

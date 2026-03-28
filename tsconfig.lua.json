@@ -2,7 +2,6 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "module": "ESNext",
-    "moduleResolution": "node",
 
     "rootDir": "src",
     "outDir": "luas",
@@ -10,7 +9,6 @@
 
     "esModuleInterop": false,
     "removeComments": true,
-
     "noEmit": false,
 
     "types": [
@@ -20,7 +18,8 @@
     "paths": {
       "@core/*": ["src/core/*"],
       "@modules/*": ["src/modules/*"],
-      "@projects/*": ["src/projects/*"]
+      "@projects/*": ["src/projects/*"],
+      "@utils/*": ["src/utils/*"],
     }
   },
   "tstl": {

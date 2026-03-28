@@ -1,4 +1,4 @@
-import type {EventDispatchResult, EventSubscription, EventSubscriptionOptions, UIEvent, UIEventBus, UIEventHandler, UIEventName,} from "../types/uiTypes";
+import type {EventDispatchResult, EventSubscription, EventSubscriptionOptions, UIEvent, UIEventBus, UIEventHandler, UIEventName,} from "@modules/ui";
 
 interface InternalEventSubscription extends EventSubscription<UIEvent> {
 	readonly handler: UIEventHandler<UIEvent>;
@@ -16,6 +16,7 @@ function createSubscriptionId(): string {
 
 class BasicEventSubscription<TEvent extends UIEvent = UIEvent> implements InternalEventSubscription {
 	public active = true;
+	public readonly targetId?: string;
 
 	public constructor(
 		public readonly id: string,
@@ -23,9 +24,11 @@ class BasicEventSubscription<TEvent extends UIEvent = UIEvent> implements Intern
 		private readonly handlerTyped: UIEventHandler<TEvent>,
 		private readonly owner: BasicUIEventBus,
 		public readonly once: boolean,
-		public readonly targetId: string | undefined,
 		public readonly order: number,
+		targetId?: string,
 	) {
+		if (targetId !== undefined)
+			this.targetId = targetId;
 	}
 
 	public unsubscribe(): void {
@@ -53,8 +56,8 @@ export class BasicUIEventBus implements UIEventBus {
 			handler,
 			this,
 			options.once ?? false,
-			options.targetId,
 			options.order ?? 0,
+			options.targetId,
 		);
 
 		const list = this.getOrCreateSubscriptions(type);
@@ -77,6 +80,8 @@ export class BasicUIEventBus implements UIEventBus {
 
 			for (let i = 0; i < list.length; i++) {
 				const subscription = list[i];
+
+				if (subscription === undefined) continue;
 
 				if (subscription.id !== subscriptionId) continue;
 
