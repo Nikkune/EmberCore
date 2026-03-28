@@ -1,6 +1,8 @@
 import { Logger } from "./logger";
-import { EmberError, RuntimeError } from "./errors";
-import { Result, Results } from "./result";
+import type { EmberError} from "./errors";
+import { RuntimeError } from "./errors";
+import type { Result} from "./result";
+import { Results } from "./result";
 
 const log = new Logger("Loop", "info");
 
