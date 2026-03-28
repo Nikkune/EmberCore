@@ -1,22 +1,27 @@
 {
+  "extends": "./tsconfig.json",
   "compilerOptions": {
-    "target": "ESNext",
     "module": "ESNext",
-    "lib": ["ESNext"],
+    "moduleResolution": "node",
 
     "rootDir": "src",
     "outDir": "luas",
+    "baseUrl": ".",
 
-    "strict": true,
     "esModuleInterop": false,
-    "forceConsistentCasingInFileNames": true,
-    "skipLibCheck": true,
-    "noEmitOnError": true,
+    "removeComments": true,
+
+    "noEmit": false,
 
     "types": [
       "@typescript-to-lua/language-extensions",
       "@mechazawa/cc-types"
-    ]
+    ],
+    "paths": {
+      "@core/*": ["src/core/*"],
+      "@modules/*": ["src/modules/*"],
+      "@projects/*": ["src/projects/*"]
+    }
   },
   "tstl": {
     "luaTarget": "5.2",
