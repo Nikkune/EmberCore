@@ -1,5 +1,5 @@
-import { ConfigError } from './errors';
-import { Logger } from './logger';
+import {ConfigError} from './errors';
+import {Logger}      from './logger';
 
 const log = new Logger('Config', 'info');
 
@@ -75,7 +75,8 @@ export class Config {
 		for (const key in defaults) {
 			if (loaded[key] !== undefined) {
 				result[key] = loaded[key];
-			} else {
+			}
+			else {
 				result[key] = (defaults as any)[key];
 			}
 		}

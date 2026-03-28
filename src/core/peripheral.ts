@@ -1,6 +1,6 @@
-import { assertNotNil } from './assert';
-import { PeripheralError } from './errors';
-import { Logger } from './logger';
+import {assertNotNil}    from './assert';
+import {PeripheralError} from './errors';
+import {Logger}          from './logger';
 
 const log = new Logger('Peripheral', 'info');
 
@@ -90,10 +90,10 @@ export class Peripheral {
 		if (actualType !== expectedType) {
 			log.debug('Peripheral type mismatch', {
 				name,
-				action: 'wrapType',
-				status: 'failed',
+				action:   'wrapType',
+				status:   'failed',
 				expected: expectedType,
-				actual: actualType ?? 'nil',
+				actual:   actualType ?? 'nil',
 			});
 			return undefined;
 		}
@@ -108,14 +108,14 @@ export class Peripheral {
 			const message = `Peripheral on side '${name}' has type '${actualType ?? 'nil'}', expected '${expectedType}'`;
 			log.error(message, {
 				name,
-				action: 'require_type',
-				status: 'failed',
+				action:     'require_type',
+				status:     'failed',
 				expectedType,
 				actualType: actualType ?? 'nil',
 			});
 			throw new PeripheralError(message, {
 				name,
-				action: 'require_type',
+				action:     'require_type',
 				expectedType,
 				actualType: actualType ?? 'nil',
 			});
@@ -126,8 +126,8 @@ export class Peripheral {
 
 		log.debug('Peripheral type validated', {
 			name,
-			action: 'require_type',
-			status: 'ok',
+			action:   'require_type',
+			status:   'ok',
 			expected: expectedType,
 		});
 
@@ -139,7 +139,7 @@ export class Peripheral {
 
 		if (wrapped === undefined || wrapped === null) {
 			log.debug('No peripheral found by type', {
-				type: expectedType,
+				type:   expectedType,
 				action: 'find_by_type',
 				status: 'missing',
 			});
@@ -147,7 +147,7 @@ export class Peripheral {
 		}
 
 		log.debug('Peripheral found by type', {
-			type: expectedType,
+			type:   expectedType,
 			action: 'find_by_type',
 			status: 'ok',
 		});

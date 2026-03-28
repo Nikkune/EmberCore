@@ -1,5 +1,9 @@
 {
-	"name": "Parallel",
-	"version": "1.0.0",
-	"dependencies": ["core/errors", "core/logger", "core/result"]
+	"name":         "Parallel",
+	"version":      "1.0.0",
+	"dependencies": [
+		"core/errors",
+		"core/logger",
+		"core/result"
+	]
 }

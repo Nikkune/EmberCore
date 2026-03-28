@@ -1,6 +1,5 @@
 import tseslint from '@typescript-eslint/eslint-plugin';
 import parser from '@typescript-eslint/parser';
-import eslintConfigPrettier from 'eslint-config-prettier';
 
 export default [
 	{
@@ -19,6 +18,15 @@ export default [
 			'@typescript-eslint': tseslint,
 		},
 		rules: {
+			'import/newline-after-import': ['error', {count: 1}],
+			'import/order': [
+				'error',
+				{
+					groups: ['builtin', 'external', 'internal', 'parent', 'sibling', 'index'],
+					'newlines-between': 'always',
+				},
+			],
+
 			'@typescript-eslint/consistent-type-imports': [
 				'error',
 				{
@@ -34,10 +42,17 @@ export default [
 					caughtErrorsIgnorePattern: '^_',
 				},
 			],
+			'@typescript-eslint/no-explicit-any': 'warn',
+
+			eqeqeq: ['error', 'always'],
+			'consistent-return': 'error',
+
+			'prefer-const': 'error',
+
 			'max-len': [
 				'error',
 				{
-					code: 120,
+					code: 140,
 					ignoreImports: true,
 					ignoreStrings: true,
 					ignoreTemplateLiterals: true,
@@ -45,5 +60,4 @@ export default [
 			],
 		},
 	},
-	eslintConfigPrettier,
 ];

@@ -1,8 +1,11 @@
-import type { Color, Point, Rect, Size } from '@modules/ui';
-import { makeColorOptions } from '@modules/ui';
+import type {Color, Point, Rect, Size} from '@modules/ui';
+import {makeColorOptions}              from '@modules/ui';
 
 export interface UISurfaceAdapter {
-	getSize(): { width: number; height: number };
+	getSize(): {
+		width: number;
+		height: number
+	};
 
 	clear(backgroundColor?: number): void;
 }
@@ -64,13 +67,10 @@ export interface UIDrawSurface extends UISurfaceAdapter {
 
 	getBackgroundColor(): number;
 
-	withColors(
-		options: {
-			foregroundColor?: number;
-			backgroundColor?: number;
-		},
-		fn: () => void,
-	): void;
+	withColors(options: {
+		foregroundColor?: number;
+		backgroundColor?: number;
+	}, fn: () => void): void;
 
 	isColorSupported(): boolean;
 }
@@ -123,7 +123,7 @@ export class ComputerCraftSurfaceAdapter implements UIDrawSurface {
 			return;
 		}
 
-		this.withColors({ backgroundColor: backgroundColor }, () => {
+		this.withColors({backgroundColor: backgroundColor}, () => {
 			this.target.clear();
 		});
 	}
@@ -135,7 +135,7 @@ export class ComputerCraftSurfaceAdapter implements UIDrawSurface {
 
 		const currentCursor = this.getCursor();
 
-		this.withColors(makeColorOptions({ backgroundColor }), () => {
+		this.withColors(makeColorOptions({backgroundColor}), () => {
 			this.target.setCursorPos(1, y);
 			this.target.clearLine();
 		});
@@ -150,7 +150,10 @@ export class ComputerCraftSurfaceAdapter implements UIDrawSurface {
 	public getCursor(): Point {
 		const [x, y] = this.target.getCursorPos();
 
-		return { x, y };
+		return {
+			x,
+			y,
+		};
 	}
 
 	public write(text: string): void {
@@ -182,11 +185,17 @@ export class ComputerCraftSurfaceAdapter implements UIDrawSurface {
 		}
 
 		const fillCharacter = character.length > 0 ? character[0]! : ' ';
-		const line = repeat(fillCharacter, rect.width);
+		const line          = repeat(fillCharacter, rect.width);
 
-		this.withColors(makeColorOptions({ backgroundColor, foregroundColor }), () => {
+		this.withColors(makeColorOptions({
+			backgroundColor,
+			foregroundColor,
+		}), () => {
 			for (let row = 0; row < rect.height; row += 1) {
-				this.writeAt({ x: rect.x, y: rect.y + row }, line);
+				this.writeAt({
+					x: rect.x,
+					y: rect.y + row,
+				}, line);
 			}
 		});
 	}
@@ -197,8 +206,14 @@ export class ComputerCraftSurfaceAdapter implements UIDrawSurface {
 		}
 
 		if (rect.width === 1 && rect.height === 1) {
-			this.withColors(makeColorOptions({ backgroundColor, foregroundColor }), () => {
-				this.writeAt({ x: rect.x, y: rect.y }, character[0] ?? '#');
+			this.withColors(makeColorOptions({
+				backgroundColor,
+				foregroundColor,
+			}), () => {
+				this.writeAt({
+					x: rect.x,
+					y: rect.y,
+				}, character[0] ?? '#');
 			});
 
 			return;
@@ -206,20 +221,35 @@ export class ComputerCraftSurfaceAdapter implements UIDrawSurface {
 
 		const strokeCharacter = character.length > 0 ? character[0]! : '#';
 
-		this.withColors(makeColorOptions({ backgroundColor, foregroundColor }), () => {
+		this.withColors(makeColorOptions({
+			backgroundColor,
+			foregroundColor,
+		}), () => {
 			const horizontal = repeat(strokeCharacter, rect.width);
 
-			this.writeAt({ x: rect.x, y: rect.y }, horizontal);
+			this.writeAt({
+				x: rect.x,
+				y: rect.y,
+			}, horizontal);
 
 			if (rect.height > 1) {
-				this.writeAt({ x: rect.x, y: rect.y + rect.height - 1 }, horizontal);
+				this.writeAt({
+					x: rect.x,
+					y: rect.y + rect.height - 1,
+				}, horizontal);
 			}
 
 			for (let row = 1; row < rect.height - 1; row += 1) {
-				this.writeAt({ x: rect.x, y: rect.y + row }, strokeCharacter);
+				this.writeAt({
+					x: rect.x,
+					y: rect.y + row,
+				}, strokeCharacter);
 
 				if (rect.width > 1) {
-					this.writeAt({ x: rect.x + rect.width - 1, y: rect.y + row }, strokeCharacter);
+					this.writeAt({
+						x: rect.x + rect.width - 1,
+						y: rect.y + row,
+					}, strokeCharacter);
 				}
 			}
 		});
@@ -241,13 +271,10 @@ export class ComputerCraftSurfaceAdapter implements UIDrawSurface {
 		return this.target.getBackgroundColor();
 	}
 
-	public withColors(
-		options: {
-			foregroundColor?: number;
-			backgroundColor?: number;
-		},
-		fn: () => void,
-	): void {
+	public withColors(options: {
+		foregroundColor?: number;
+		backgroundColor?: number;
+	}, fn: () => void): void {
 		const previousForeground = this.getForegroundColor();
 		const previousBackground = this.getBackgroundColor();
 

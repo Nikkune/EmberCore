@@ -1,7 +1,7 @@
-import * as fs from 'node:fs';
+import * as fs   from 'node:fs';
 import * as path from 'node:path';
 
-import type { BumpTarget } from './bump';
+import type {BumpTarget} from './bump';
 
 export interface DetectOptions {
 	srcDir: string;
@@ -38,7 +38,7 @@ function detectCoreTarget(srcDir: string, relativePath: string): BumpTarget | un
 		return undefined;
 	}
 
-	const name = match[1];
+	const name     = match[1];
 	const metaPath = path.join(srcDir, 'core', `${name}.manifest.json`);
 
 	if (!fileExists(metaPath)) {
@@ -46,7 +46,7 @@ function detectCoreTarget(srcDir: string, relativePath: string): BumpTarget | un
 	}
 
 	return {
-		id: `core/${name}`,
+		id:      `core/${name}`,
 		metaPath,
 		changed: true,
 	};
@@ -67,7 +67,7 @@ function detectModuleTarget(srcDir: string, relativePath: string): BumpTarget | 
 	}
 
 	return {
-		id: `modules/${moduleName}`,
+		id:      `modules/${moduleName}`,
 		metaPath,
 		changed: true,
 	};
@@ -88,7 +88,7 @@ function detectProjectTarget(srcDir: string, relativePath: string): BumpTarget |
 	}
 
 	return {
-		id: `projects/${projectName}`,
+		id:      `projects/${projectName}`,
 		metaPath,
 		changed: true,
 	};
@@ -97,11 +97,7 @@ function detectProjectTarget(srcDir: string, relativePath: string): BumpTarget |
 export function detectTargetFromFile(filePath: string, options: DetectOptions): BumpTarget | undefined {
 	const relativePath = normalizeRelativePath(filePath);
 
-	return (
-		detectCoreTarget(options.srcDir, relativePath) ??
-		detectModuleTarget(options.srcDir, relativePath) ??
-		detectProjectTarget(options.srcDir, relativePath)
-	);
+	return (detectCoreTarget(options.srcDir, relativePath) ?? detectModuleTarget(options.srcDir, relativePath) ?? detectProjectTarget(options.srcDir, relativePath));
 }
 
 export function detectTargetsFromFiles(filePaths: string[], options: DetectOptions): BumpTarget[] {

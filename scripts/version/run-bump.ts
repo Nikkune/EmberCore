@@ -1,8 +1,8 @@
 import * as path from 'node:path';
 
-import { bumpMetaVersions, collectCurrentVersions, loadPreviousVersions, savePreviousVersions } from './bump';
-import { detectTargetsFromFiles } from './detect';
-import { getChangedFilesSafe } from './git';
+import {bumpMetaVersions, collectCurrentVersions, loadPreviousVersions, savePreviousVersions} from './bump';
+import {detectTargetsFromFiles}                                                               from './detect';
+import {getChangedFilesSafe}                                                                  from './git';
 
 const SNAPSHOT_PATH = path.join('.cache', 'versions.json');
 
@@ -31,7 +31,7 @@ function main(): void {
 	}
 
 	const previousVersions = loadPreviousVersions(SNAPSHOT_PATH);
-	const result = bumpMetaVersions(targets, previousVersions);
+	const result           = bumpMetaVersions(targets, previousVersions);
 
 	console.log('');
 	console.log('Bump results:');
@@ -59,7 +59,8 @@ try {
 
 	if (error instanceof Error) {
 		console.error(error.message);
-	} else {
+	}
+	else {
 		console.error(String(error));
 	}
 

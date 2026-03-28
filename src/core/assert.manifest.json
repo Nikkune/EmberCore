@@ -1,5 +1,5 @@
 {
-	"name": "Assert",
-	"version": "1.0.0",
+	"name":         "Assert",
+	"version":      "1.0.0",
 	"dependencies": []
 }

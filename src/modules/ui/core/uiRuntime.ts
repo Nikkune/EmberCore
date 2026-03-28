@@ -1,18 +1,5 @@
-import type {
-	DirtyRegion,
-	InvalidationRequest,
-	LayoutConstraints,
-	RenderContext,
-	SurfaceKind,
-	Theme,
-	UIComponent,
-	UIContext,
-	UIDrawSurface,
-	UIEvent,
-	UIEventBus,
-	UIInvalidator,
-} from '@modules/ui';
-import { createOptions } from '@utils/helpers';
+import type {DirtyRegion, InvalidationRequest, LayoutConstraints, RenderContext, SurfaceKind, Theme, UIComponent, UIContext, UIDrawSurface, UIEvent, UIEventBus, UIInvalidator} from '@modules/ui';
+import {createOptions}                                                                                                                                                          from '@utils/helpers';
 
 export interface UIRuntimeOptions {
 	root: UIComponent;
@@ -36,21 +23,21 @@ export class UIRuntime implements UIInvalidator {
 	private readonly surfaceKind: SurfaceKind;
 	private theme: Theme;
 
-	private tick = 0;
-	private dirty = true;
-	private fullRedraw = true;
+	private tick                        = 0;
+	private dirty                       = true;
+	private fullRedraw                  = true;
 	private dirtyRegions: DirtyRegion[] = [];
 	private activeElement?: string;
 
 	public constructor(options: UIRuntimeOptions) {
-		this.root = options.root;
-		this.eventBus = options.eventBus;
-		this.theme = options.theme;
-		this.surface = options.surface;
+		this.root        = options.root;
+		this.eventBus    = options.eventBus;
+		this.theme       = options.theme;
+		this.surface     = options.surface;
 		this.surfaceKind = options.surfaceKind;
 	}
 
-	public invalidate(request: InvalidationRequest = { reason: 'manual' }): void {
+	public invalidate(request: InvalidationRequest = {reason: 'manual'}): void {
 		this.dirty = true;
 
 		if (!request.rect) {
@@ -66,7 +53,7 @@ export class UIRuntime implements UIInvalidator {
 
 		if (didDispatch) {
 			this.eventBus.dispatch(event);
-			this.invalidate({ reason: 'event' });
+			this.invalidate({reason: 'event'});
 		}
 
 		return didDispatch;
@@ -75,26 +62,29 @@ export class UIRuntime implements UIInvalidator {
 	public render(): UIRenderResult {
 		if (!this.dirty) {
 			return {
-				rendered: false,
-				tick: this.tick,
+				rendered:     false,
+				tick:         this.tick,
 				dirtyRegions: [],
-				fullRedraw: false,
+				fullRedraw:   false,
 			};
 		}
 
 		this.tick += 1;
 
-		const { width, height } = this.surface.getSize();
+		const {
+			      width,
+			      height,
+		      } = this.surface.getSize();
 
 		const constraints: LayoutConstraints = {
-			minWidth: 0,
+			minWidth:  0,
 			minHeight: 0,
-			maxWidth: width,
+			maxWidth:  width,
 			maxHeight: height,
 		};
 
 		const uiContext: UIContext = createOptions<UIContext>({
-			theme: this.theme,
+			theme:   this.theme,
 			surface: this.surfaceKind,
 		})
 			.with('activeElement', this.activeElement)
@@ -102,50 +92,47 @@ export class UIRuntime implements UIInvalidator {
 
 		const renderContext: RenderContext<UIDrawSurface> = {
 			surface: this.surfaceKind,
-			theme: this.theme,
-			tick: this.tick,
-			draw: this.surface,
+			theme:   this.theme,
+			tick:    this.tick,
+			draw:    this.surface,
 		};
 
 		this.root.measure(constraints, uiContext);
 
-		this.root.layout(
-			{
-				x: 1,
-				y: 1,
-				width,
-				height,
-			},
-			uiContext,
-		);
+		this.root.layout({
+			x: 1,
+			y: 1,
+			width,
+			height,
+		}, uiContext);
 
 		// V1.1: on garde les dirty regions, mais on fait encore un full redraw.
 		this.surface.clear(this.theme.palette.backgroundColor);
 		this.root.render(renderContext);
 
 		const result: UIRenderResult = {
-			rendered: true,
-			tick: this.tick,
+			rendered:     true,
+			tick:         this.tick,
 			dirtyRegions: [...this.dirtyRegions],
-			fullRedraw: this.fullRedraw || this.dirtyRegions.length > 0,
+			fullRedraw:   this.fullRedraw || this.dirtyRegions.length > 0,
 		};
 
-		this.dirty = false;
-		this.fullRedraw = false;
+		this.dirty        = false;
+		this.fullRedraw   = false;
 		this.dirtyRegions = [];
 
 		return result;
 	}
 
 	public forceRender(): UIRenderResult {
-		this.dirty = true;
+		this.dirty      = true;
 		this.fullRedraw = true;
 		return this.render();
 	}
 
 	public setTheme(theme: Theme): void {
 		this.theme = theme;
-		this.invalidate({ reason: 'theme' });
+		this.invalidate({reason: 'theme'});
 	}
 
 	public getTheme(): Theme {
@@ -170,13 +157,16 @@ export class UIRuntime implements UIInvalidator {
 
 	private dispatchToRoot(event: UIEvent): boolean {
 		if ('x' in event && 'y' in event) {
-			if (!this.root.hitTest({ x: event.x, y: event.y })) {
+			if (!this.root.hitTest({
+				x: event.x,
+				y: event.y,
+			})) {
 				return false;
 			}
 		}
 
 		const uiContext: UIContext = createOptions<UIContext>({
-			theme: this.theme,
+			theme:   this.theme,
 			surface: this.surfaceKind,
 		})
 			.with('activeElement', this.activeElement)

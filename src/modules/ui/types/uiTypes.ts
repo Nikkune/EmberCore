@@ -15,7 +15,8 @@ export interface Size {
 	height: number;
 }
 
-export interface Rect extends Point, Size {}
+export interface Rect extends Point, Size {
+}
 
 export interface Insets {
 	top: number;
@@ -33,15 +34,12 @@ export interface AxisSize {
 	maxHeight?: number;
 }
 
-export type PaddingLike =
-	| number
-	| Partial<Insets>
-	| {
-			x?: number;
-			y?: number;
-			horizontal?: number;
-			vertical?: number;
-	  };
+export type PaddingLike = | number | Partial<Insets> | {
+	x?: number;
+	y?: number;
+	horizontal?: number;
+	vertical?: number;
+};
 
 export type MarginLike = PaddingLike;
 
@@ -70,7 +68,8 @@ export interface MeasuredSize {
 	height: number;
 }
 
-export interface LayoutRect extends Rect {}
+export interface LayoutRect extends Rect {
+}
 
 export interface FlexItemOptions {
 	grow?: number;
@@ -217,19 +216,7 @@ export interface Theme {
 
 export type UIEventName = keyof UIEventMap;
 
-export type UIEvent =
-	| MouseClickEvent
-	| MouseScrollEvent
-	| KeyEvent
-	| CharEvent
-	| PasteEvent
-	| TimerEvent
-	| ChangeEvent
-	| ToggleEvent
-	| SelectEvent
-	| PageChangeEvent
-	| SubmitEvent
-	| CustomEvent;
+export type UIEvent = | MouseClickEvent | MouseScrollEvent | KeyEvent | CharEvent | PasteEvent | TimerEvent | ChangeEvent | ToggleEvent | SelectEvent | PageChangeEvent | SubmitEvent | CustomEvent;
 
 export type UIEventHandler<TEvent extends UIEvent = UIEvent> = (event: TEvent) => void;
 
@@ -352,17 +339,9 @@ export interface EventSubscriptionOptions {
 }
 
 export interface EventDispatcher {
-	subscribe<TEvent extends UIEvent>(
-		type: TEvent['type'],
-		handler: UIEventHandler<TEvent>,
-		options?: EventSubscriptionOptions,
-	): EventSubscription<TEvent>;
+	subscribe<TEvent extends UIEvent>(type: TEvent['type'], handler: UIEventHandler<TEvent>, options?: EventSubscriptionOptions): EventSubscription<TEvent>;
 
-	subscribeOnce<TEvent extends UIEvent>(
-		type: TEvent['type'],
-		handler: UIEventHandler<TEvent>,
-		options?: Omit<EventSubscriptionOptions, 'once'>,
-	): EventSubscription<TEvent>;
+	subscribeOnce<TEvent extends UIEvent>(type: TEvent['type'], handler: UIEventHandler<TEvent>, options?: Omit<EventSubscriptionOptions, 'once'>): EventSubscription<TEvent>;
 
 	unsubscribe(subscriptionId: string): boolean;
 
@@ -395,7 +374,8 @@ export interface RenderContext<TDraw = unknown> {
 	draw: TDraw;
 }
 
-export interface DirtyRegion extends Rect {}
+export interface DirtyRegion extends Rect {
+}
 
 export interface InvalidationRequest {
 	reason: InvalidationReason;
@@ -416,25 +396,7 @@ export interface UIInvalidator {
 // Base component contracts
 // ============================================================
 
-export type ComponentKind =
-	| 'button'
-	| 'progress_bar'
-	| 'table'
-	| 'box'
-	| 'grid'
-	| 'checkbox'
-	| 'radio'
-	| 'log_viewer'
-	| 'pagination'
-	| 'label'
-	| 'panel'
-	| 'separator'
-	| 'badge'
-	| 'list'
-	| 'status_bar'
-	| 'container'
-	| 'stack'
-	| 'custom';
+export type ComponentKind = | 'button' | 'progress_bar' | 'table' | 'box' | 'grid' | 'checkbox' | 'radio' | 'log_viewer' | 'pagination' | 'label' | 'panel' | 'separator' | 'badge' | 'list' | 'status_bar' | 'container' | 'stack' | 'custom';
 
 export interface BaseProps extends AxisSize {
 	id?: string;
@@ -527,7 +489,8 @@ export interface SelectionState<T = string> {
 // Component-specific styles
 // ============================================================
 
-export interface LabelStyle extends TextStyle {}
+export interface LabelStyle extends TextStyle {
+}
 
 export interface ButtonStyle extends BoxStyle {
 	text?: TextStyle;
@@ -615,7 +578,8 @@ export interface PaginationStyle extends BoxStyle {
 	showPrevNext?: boolean;
 }
 
-export interface ContainerStyle extends BoxStyle {}
+export interface ContainerStyle extends BoxStyle {
+}
 
 export interface StackStyle extends BoxStyle {
 	layout?: StackLayoutOptions;

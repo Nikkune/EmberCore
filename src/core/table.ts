@@ -51,7 +51,7 @@ export class TableUtils {
 		const result: Partial<T> = {};
 
 		for (const key in table) {
-			const typedKey = key as keyof T;
+			const typedKey   = key as keyof T;
 			result[typedKey] = table[typedKey];
 		}
 
@@ -63,7 +63,7 @@ export class TableUtils {
 
 		for (const key in override) {
 			const typedKey = key as keyof T;
-			const value = override[typedKey];
+			const value    = override[typedKey];
 
 			if (value !== undefined) {
 				result[typedKey] = value;
@@ -78,7 +78,7 @@ export class TableUtils {
 
 		for (const key in table) {
 			const typedKey = key as keyof T;
-			result[key] = mapper(table[typedKey], typedKey);
+			result[key]    = mapper(table[typedKey], typedKey);
 		}
 
 		return result;

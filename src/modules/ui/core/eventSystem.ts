@@ -1,12 +1,4 @@
-import type {
-	EventDispatchResult,
-	EventSubscription,
-	EventSubscriptionOptions,
-	UIEvent,
-	UIEventBus,
-	UIEventHandler,
-	UIEventName,
-} from '@modules/ui';
+import type {EventDispatchResult, EventSubscription, EventSubscriptionOptions, UIEvent, UIEventBus, UIEventHandler, UIEventName} from '@modules/ui';
 
 interface InternalEventSubscription extends EventSubscription<UIEvent> {
 	readonly handler: UIEventHandler<UIEvent>;
@@ -26,15 +18,7 @@ class BasicEventSubscription<TEvent extends UIEvent = UIEvent> implements Intern
 	public active = true;
 	public readonly targetId?: string;
 
-	public constructor(
-		public readonly id: string,
-		public readonly type: TEvent['type'],
-		private readonly handlerTyped: UIEventHandler<TEvent>,
-		private readonly owner: BasicUIEventBus,
-		public readonly once: boolean,
-		public readonly order: number,
-		targetId?: string,
-	) {
+	public constructor(public readonly id: string, public readonly type: TEvent['type'], private readonly handlerTyped: UIEventHandler<TEvent>, private readonly owner: BasicUIEventBus, public readonly once: boolean, public readonly order: number, targetId?: string) {
 		if (targetId !== undefined) this.targetId = targetId;
 	}
 
@@ -56,20 +40,8 @@ class BasicEventSubscription<TEvent extends UIEvent = UIEvent> implements Intern
 export class BasicUIEventBus implements UIEventBus {
 	private readonly subscriptions: Partial<Record<UIEventName, InternalEventSubscription[]>> = {};
 
-	public subscribe<TEvent extends UIEvent>(
-		type: TEvent['type'],
-		handler: UIEventHandler<TEvent>,
-		options: EventSubscriptionOptions = {},
-	): EventSubscription<TEvent> {
-		const subscription = new BasicEventSubscription<TEvent>(
-			createSubscriptionId(),
-			type,
-			handler,
-			this,
-			options.once ?? false,
-			options.order ?? 0,
-			options.targetId,
-		);
+	public subscribe<TEvent extends UIEvent>(type: TEvent['type'], handler: UIEventHandler<TEvent>, options: EventSubscriptionOptions = {}): EventSubscription<TEvent> {
+		const subscription = new BasicEventSubscription<TEvent>(createSubscriptionId(), type, handler, this, options.once ?? false, options.order ?? 0, options.targetId);
 
 		const list = this.getOrCreateSubscriptions(type);
 		list.push(subscription);
@@ -78,12 +50,11 @@ export class BasicUIEventBus implements UIEventBus {
 		return subscription;
 	}
 
-	public subscribeOnce<TEvent extends UIEvent>(
-		type: TEvent['type'],
-		handler: UIEventHandler<TEvent>,
-		options?: Omit<EventSubscriptionOptions, 'once'>,
-	): EventSubscription<TEvent> {
-		return this.subscribe(type, handler, { ...options, once: true });
+	public subscribeOnce<TEvent extends UIEvent>(type: TEvent['type'], handler: UIEventHandler<TEvent>, options?: Omit<EventSubscriptionOptions, 'once'>): EventSubscription<TEvent> {
+		return this.subscribe(type, handler, {
+			...options,
+			once: true,
+		});
 	}
 
 	public unsubscribe(subscriptionId: string): boolean {
@@ -113,16 +84,17 @@ export class BasicUIEventBus implements UIEventBus {
 	public dispatch<TEvent extends UIEvent>(event: TEvent): EventDispatchResult {
 		const list = this.subscriptions[event.type];
 
-		if (!list || list.length === 0)
+		if (!list || list.length === 0) {
 			return {
-				dispatched: false,
-				listenerCount: 0,
-				cancelled: event.cancelled ?? false,
+				dispatched:         false,
+				listenerCount:      0,
+				cancelled:          event.cancelled ?? false,
 				propagationStopped: event.propagationStopped ?? false,
 			};
+		}
 
 		let listenerCount = 0;
-		const snapshot = [...list];
+		const snapshot    = [...list];
 
 		for (const subscription of snapshot) {
 			if (!subscription.active) continue;
@@ -136,9 +108,9 @@ export class BasicUIEventBus implements UIEventBus {
 		}
 
 		return {
-			dispatched: listenerCount > 0,
+			dispatched:         listenerCount > 0,
 			listenerCount,
-			cancelled: event.cancelled ?? false,
+			cancelled:          event.cancelled ?? false,
 			propagationStopped: event.propagationStopped ?? false,
 		};
 	}
@@ -216,6 +188,6 @@ export function cancelEvent(event: UIEvent): void {
 }
 
 export function cancelAndStop(event: UIEvent): void {
-	event.cancelled = true;
+	event.cancelled          = true;
 	event.propagationStopped = true;
 }

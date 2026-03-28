@@ -1,4 +1,4 @@
-import { assignIfDefined } from '@utils/helpers';
+import {assignIfDefined} from '@utils/helpers';
 
 export interface ErrorContext {
 	[key: string]: unknown;
@@ -47,6 +47,7 @@ export class TankError extends EmberError {
 		this.name = 'TankError';
 	}
 }
+
 export class RuntimeError extends EmberError {
 	public constructor(message: string, context?: ErrorContext) {
 		super(message, 'RUNTIME_ERROR', context);

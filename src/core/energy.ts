@@ -1,10 +1,8 @@
-import { Peripheral } from './peripheral';
+import {Peripheral} from './peripheral';
 
 export class Energy {
-	public constructor(
-		public readonly name: string,
-		private readonly peripheralRef: EnergyStorage,
-	) {}
+	public constructor(public readonly name: string, private readonly peripheralRef: EnergyStorage) {
+	}
 
 	public static fromName(name: string): Energy {
 		const peripheral = Peripheral.require<EnergyStorage>(name);

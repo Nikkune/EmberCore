@@ -1,5 +1,5 @@
-import { InventoryError } from './errors';
-import { Peripheral } from './peripheral';
+import {InventoryError} from './errors';
+import {Peripheral}     from './peripheral';
 
 export interface ItemSummary {
 	name: string;
@@ -15,18 +15,19 @@ export interface ItemDetail extends ItemSummary {
 
 export interface InventoryPeripheral {
 	size(): number;
+
 	list(): LuaTable<number, ItemSummary>;
+
 	getItemDetail(slot: number): ItemDetail | undefined;
 
 	pushItems(toName: string, fromSlot: number, limit?: number, toSlot?: number): number;
+
 	pullItems(fromName: string, fromSlot: number, limit?: number, toSlot?: number): number;
 }
 
 export class Inventory {
-	public constructor(
-		public readonly name: string,
-		private readonly peripheralRef: InventoryPeripheral,
-	) {}
+	public constructor(public readonly name: string, private readonly peripheralRef: InventoryPeripheral) {
+	}
 
 	public static fromName(name: string): Inventory {
 		const peripheral = Peripheral.require<InventoryPeripheral>(name);
@@ -46,8 +47,8 @@ export class Inventory {
 			throw new InventoryError(`Slot ${slot} is out of bounds for inventory '${this.name}'`, {
 				inventory: this.name,
 				slot,
-				size: this.size(),
-				action: 'get_item',
+				size:      this.size(),
+				action:    'get_item',
 			});
 		}
 
@@ -76,7 +77,7 @@ export class Inventory {
 	}
 
 	public countItem(itemName: string): number {
-		let total = 0;
+		let total   = 0;
 		const items = this.list();
 
 		for (const [, item] of pairs(items)) {
@@ -89,7 +90,7 @@ export class Inventory {
 	}
 
 	public countAllItems(): number {
-		let total = 0;
+		let total   = 0;
 		const items = this.list();
 
 		for (const [, item] of pairs(items)) {
@@ -103,9 +104,9 @@ export class Inventory {
 		if (fromSlot < 1 || fromSlot > this.size()) {
 			throw new InventoryError(`Cannot push from invalid slot ${fromSlot}`, {
 				inventory: this.name,
-				target: target.name,
+				target:    target.name,
 				fromSlot,
-				action: 'push_to',
+				action:    'push_to',
 			});
 		}
 
@@ -116,9 +117,9 @@ export class Inventory {
 		if (fromSlot < 1 || fromSlot > source.size()) {
 			throw new InventoryError(`Cannot pull from invalid slot ${fromSlot}`, {
 				inventory: this.name,
-				source: source.name,
+				source:    source.name,
 				fromSlot,
-				action: 'pull_from',
+				action:    'pull_from',
 			});
 		}
 
@@ -159,7 +160,7 @@ export class Inventory {
 
 	public getUsedSlots(): number[] {
 		const result: number[] = [];
-		const items = this.list();
+		const items            = this.list();
 
 		for (const [slot] of pairs(items)) {
 			result.push(slot);

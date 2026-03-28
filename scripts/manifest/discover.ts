@@ -1,7 +1,7 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import { componentManifest, projectManifest } from './builder';
-import type { AnyManifest, ComponentManifest, ComponentMeta, ProjectManifest, ProjectMeta } from './manifestTypes';
+import * as fs                                                                            from 'node:fs';
+import * as path                                                                          from 'node:path';
+import {componentManifest, projectManifest}                                               from './builder';
+import type {AnyManifest, ComponentManifest, ComponentMeta, ProjectManifest, ProjectMeta} from './manifestTypes';
 
 export interface DiscoverOptions {
 	srcDir: string;
@@ -25,12 +25,13 @@ function listLuaFilesRecursive(dir: string): string[] {
 		return result;
 	}
 
-	for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+	for (const entry of fs.readdirSync(dir, {withFileTypes: true})) {
 		const fullPath = path.join(dir, entry.name);
 
 		if (entry.isDirectory()) {
 			result.push(...listLuaFilesRecursive(fullPath));
-		} else if (entry.isFile() && entry.name.endsWith('.lua')) {
+		}
+		else if (entry.isFile() && entry.name.endsWith('.lua')) {
 			result.push(fullPath);
 		}
 	}
@@ -63,16 +64,16 @@ function discoverCore(options: DiscoverOptions): ComponentManifest[] {
 		if (!file.endsWith('.lua')) continue;
 
 		const name = file.replace('.lua', '');
-		const id = `core/${name}`;
+		const id   = `core/${name}`;
 
 		const metaPath = path.join(options.srcDir, 'core', `${name}.manifest.json`);
-		const meta = readJsonIfExists<ComponentMeta>(metaPath);
+		const meta     = readJsonIfExists<ComponentMeta>(metaPath);
 
 		const manifest = componentManifest({
 			id,
-			name: meta?.name ?? capitalize(name),
-			version: meta?.version ?? options.version,
-			files: [`core/${file}`],
+			name:         meta?.name ?? capitalize(name),
+			version:      meta?.version ?? options.version,
+			files:        [`core/${file}`],
 			dependencies: meta?.dependencies ?? [],
 		});
 
@@ -98,14 +99,14 @@ function discoverModules(options: DiscoverOptions): ComponentManifest[] {
 		const files = listLuaFilesRecursive(moduleDistPath).map((file) => relativeToDist(options.distDir, file));
 
 		const metaPath = path.join(options.srcDir, 'modules', moduleName, `${moduleName}.manifest.json`);
-		const meta = readJsonIfExists<ComponentMeta>(metaPath);
+		const meta     = readJsonIfExists<ComponentMeta>(metaPath);
 
 		const id = `modules/${moduleName}`;
 
 		const manifest = componentManifest({
 			id,
-			name: meta?.name ?? capitalize(moduleName),
-			version: meta?.version ?? options.version,
+			name:         meta?.name ?? capitalize(moduleName),
+			version:      meta?.version ?? options.version,
 			files,
 			dependencies: meta?.dependencies ?? [],
 		});
@@ -136,15 +137,15 @@ function discoverProjects(options: DiscoverOptions): ProjectManifest[] {
 		const files = listLuaFilesRecursive(projectDistPath).map((file) => relativeToDist(options.distDir, file));
 
 		const metaPath = path.join(options.srcDir, 'projects', projectName, `${projectName}.manifest.json`);
-		const meta = readJsonIfExists<ProjectMeta>(metaPath);
+		const meta     = readJsonIfExists<ProjectMeta>(metaPath);
 
 		const id = `projects/${projectName}`;
 
 		const input: Omit<ProjectManifest, 'manifestVersion' | 'type'> = {
 			id,
-			name: meta?.name ?? capitalize(projectName),
-			version: meta?.version ?? options.version,
-			entry: relativeToDist(options.distDir, mainPath),
+			name:         meta?.name ?? capitalize(projectName),
+			version:      meta?.version ?? options.version,
+			entry:        relativeToDist(options.distDir, mainPath),
 			files,
 			dependencies: meta?.dependencies ?? [],
 		};
@@ -160,8 +161,8 @@ function discoverProjects(options: DiscoverOptions): ProjectManifest[] {
 }
 
 export function discoverManifests(options: DiscoverOptions): AnyManifest[] {
-	const core = discoverCore(options);
-	const modules = discoverModules(options);
+	const core     = discoverCore(options);
+	const modules  = discoverModules(options);
 	const projects = discoverProjects(options);
 
 	return [...core, ...modules, ...projects];

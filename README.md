@@ -79,7 +79,7 @@ Build and copy the generated Lua to your ComputerCraft computer.
 import {SmelteryController} from '../../modules/smeltery/controller';
 
 const controller = new SmelteryController({
-	input: 'minecraft:chest_0',
+	input:  'minecraft:chest_0',
 	output: 'minecraft:chest_1',
 });
 

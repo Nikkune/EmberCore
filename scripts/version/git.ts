@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import {execFileSync} from 'node:child_process';
 
 function normalizeLines(output: string): string[] {
 	return output
@@ -14,7 +14,7 @@ export interface GitChangedFilesOptions {
 }
 
 export function getChangedFiles(options: GitChangedFilesOptions = {}): string[] {
-	const cwd = options.cwd ?? process.cwd();
+	const cwd     = options.cwd ?? process.cwd();
 	const baseRef = options.baseRef;
 	const headRef = options.headRef;
 
@@ -22,9 +22,11 @@ export function getChangedFiles(options: GitChangedFilesOptions = {}): string[] 
 
 	if (baseRef && headRef) {
 		args = ['diff', '--name-only', `${baseRef}..${headRef}`];
-	} else if (baseRef) {
+	}
+	else if (baseRef) {
 		args = ['diff', '--name-only', `${baseRef}..HEAD`];
-	} else {
+	}
+	else {
 		args = ['diff', '--name-only', 'HEAD~1..HEAD'];
 	}
 

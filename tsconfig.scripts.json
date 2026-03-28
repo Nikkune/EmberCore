@@ -1,14 +1,20 @@
 {
-	"extends": "./tsconfig.json",
+	"extends":         "./tsconfig.json",
 	"compilerOptions": {
-		"module": "commonjs",
-		"types": ["node"],
-
-		"rootDir": "scripts",
-		"outDir": "build-scripts",
-
+		"module":          "commonjs",
+		"types":           [
+			"node"
+		],
+		"rootDir":         "scripts",
+		"outDir":          "build-scripts",
 		"esModuleInterop": true
 	},
-	"include": ["scripts/**/*.ts", "scripts/**/*.d.ts"],
-	"exclude": ["build-scripts", "node_modules"]
+	"include":         [
+		"scripts/**/*.ts",
+		"scripts/**/*.d.ts"
+	],
+	"exclude":         [
+		"build-scripts",
+		"node_modules"
+	]
 }

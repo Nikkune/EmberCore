@@ -1,30 +1,35 @@
 {
 	"compilerOptions": {
-		"target": "ESNext",
-		"lib": ["ESNext"],
-		"moduleResolution": "node",
-
-		"strict": true,
-		"exactOptionalPropertyTypes": true,
-		"isolatedModules": true,
-
-		"forceConsistentCasingInFileNames": true,
-		"skipLibCheck": true,
-		"verbatimModuleSyntax": true,
-
-		"allowUnusedLabels": false,
-		"allowUnreachableCode": false,
-
-		"noEmitOnError": true,
-		"noUnusedLocals": true,
-		"noUnusedParameters": true,
-		"noUncheckedSideEffectImports": true,
-		"noFallthroughCasesInSwitch": true,
-		"noUncheckedIndexedAccess": true,
+		"target":                             "ESNext",
+		"lib":                                [
+			"ESNext"
+		],
+		"moduleResolution":                   "node",
+		"strict":                             true,
+		"exactOptionalPropertyTypes":         true,
+		"isolatedModules":                    true,
+		"forceConsistentCasingInFileNames":   true,
+		"skipLibCheck":                       true,
+		"verbatimModuleSyntax":               true,
+		"allowUnusedLabels":                  false,
+		"allowUnreachableCode":               false,
+		"noEmitOnError":                      true,
+		"noUnusedLocals":                     true,
+		"noUnusedParameters":                 true,
+		"noUncheckedSideEffectImports":       true,
+		"noFallthroughCasesInSwitch":         true,
+		"noUncheckedIndexedAccess":           true,
 		"noPropertyAccessFromIndexSignature": true,
-		"noImplicitOverride": true,
-		"noImplicitReturns": true
+		"noImplicitOverride":                 true,
+		"noImplicitReturns":                  true
 	},
-	"files": [],
-	"references": [{ "path": "./tsconfig.lua.json" }, { "path": "./tsconfig.scripts.json" }]
+	"files":           [],
+	"references":      [
+		{
+			"path": "./tsconfig.lua.json"
+		},
+		{
+			"path": "./tsconfig.scripts.json"
+		}
+	]
 }

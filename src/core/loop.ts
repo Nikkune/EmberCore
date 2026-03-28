@@ -1,8 +1,8 @@
-import type { EmberError } from './errors';
-import { RuntimeError } from './errors';
-import { Logger } from './logger';
-import type { Result } from './result';
-import { Results } from './result';
+import type {EmberError} from './errors';
+import {RuntimeError}    from './errors';
+import {Logger}          from './logger';
+import type {Result}     from './result';
+import {Results}         from './result';
 
 const log = new Logger('Loop', 'info');
 
@@ -70,18 +70,16 @@ export class Loop {
 	}
 
 	public static retry<T>(task: LoopResultTask<T>, options: RetryOptions): Result<T, EmberError> {
-		const attempts = options.attempts;
+		const attempts     = options.attempts;
 		const delaySeconds = options.delaySeconds ?? 0;
-		const label = options.label ?? 'retry_task';
+		const label        = options.label ?? 'retry_task';
 
 		if (attempts <= 0) {
-			return Results.err(
-				new RuntimeError('Retry attempts must be greater than 0', {
-					attempts,
-					action: 'retry',
-					label,
-				}),
-			);
+			return Results.err(new RuntimeError('Retry attempts must be greater than 0', {
+				attempts,
+				action: 'retry',
+				label,
+			}));
 		}
 
 		let lastError: EmberError | undefined;
@@ -109,7 +107,7 @@ export class Loop {
 				label,
 				attempt,
 				attempts,
-				code: result.error.code,
+				code:   result.error.code,
 				status: 'failed',
 			});
 
@@ -118,14 +116,11 @@ export class Loop {
 			}
 		}
 
-		return Results.err(
-			lastError ??
-				new RuntimeError('All retry attempts failed', {
-					action: 'retry',
-					label,
-					attempts,
-					status: 'failed',
-				}),
-		);
+		return Results.err(lastError ?? new RuntimeError('All retry attempts failed', {
+			action: 'retry',
+			label,
+			attempts,
+			status: 'failed',
+		}));
 	}
 }

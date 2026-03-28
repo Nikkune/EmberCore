@@ -1,9 +1,9 @@
-import { buildManifests } from './manifest/builder';
-import { discoverManifests } from './manifest/discover';
-import type { AnyManifest } from './manifest/manifestTypes';
+import {buildManifests}    from './manifest/builder';
+import {discoverManifests} from './manifest/discover';
+import type {AnyManifest}  from './manifest/manifestTypes';
 
 const manifests: AnyManifest[] = discoverManifests({
-	srcDir: 'src',
+	srcDir:  'src',
 	distDir: 'luas',
 	version: '1.0.0',
 });
@@ -11,8 +11,8 @@ const manifests: AnyManifest[] = discoverManifests({
 try {
 	const result = buildManifests(manifests, {
 		repository: 'Nikkune/EmberCore',
-		branch: 'lua',
-		outputDir: 'manifests',
+		branch:     'lua',
+		outputDir:  'manifests',
 	});
 
 	console.log('Manifests generated successfully.');
@@ -24,7 +24,8 @@ try {
 
 	if (error instanceof Error) {
 		console.error(error.message);
-	} else {
+	}
+	else {
 		console.error(String(error));
 	}
 

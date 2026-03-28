@@ -1,11 +1,4 @@
-import {
-	type AnyManifest,
-	type ComponentManifest,
-	type IndexManifest,
-	MANIFEST_VERSION,
-	type ManifestId,
-	type ProjectManifest,
-} from './manifestTypes';
+import {type AnyManifest, type ComponentManifest, type IndexManifest, MANIFEST_VERSION, type ManifestId, type ProjectManifest} from './manifestTypes';
 
 export interface ValidationIssue {
 	message: string;
@@ -19,7 +12,7 @@ export interface ValidationResult {
 }
 
 function issue(message: string, manifestId?: ManifestId, field?: string): ValidationIssue {
-	const issue: ValidationIssue = { message };
+	const issue: ValidationIssue = {message};
 	if (manifestId) {
 		issue.manifestId = manifestId;
 	}
@@ -41,13 +34,7 @@ function validateBaseManifest(manifest: AnyManifest): ValidationIssue[] {
 	const issues: ValidationIssue[] = [];
 
 	if (manifest.manifestVersion !== MANIFEST_VERSION) {
-		issues.push(
-			issue(
-				`Unsupported manifestVersion ${manifest.manifestVersion}, expected '${MANIFEST_VERSION}'`,
-				manifest.id,
-				'manifestVersion',
-			),
-		);
+		issues.push(issue(`Unsupported manifestVersion ${manifest.manifestVersion}, expected '${MANIFEST_VERSION}'`, manifest.id, 'manifestVersion'));
 	}
 
 	if (!isNonEmptyString(manifest.id)) {
@@ -60,7 +47,8 @@ function validateBaseManifest(manifest: AnyManifest): ValidationIssue[] {
 
 	if (!Array.isArray(manifest.files) || manifest.files.length === 0) {
 		issues.push(issue('Manifest files must be a non-empty array', manifest.id, 'files'));
-	} else {
+	}
+	else {
 		for (const file of manifest.files) {
 			if (!isNonEmptyString(file)) {
 				issues.push(issue('Manifest file must contain only non-empty strings', manifest.id, 'files'));
@@ -71,7 +59,8 @@ function validateBaseManifest(manifest: AnyManifest): ValidationIssue[] {
 
 	if (!Array.isArray(manifest.dependencies)) {
 		issues.push(issue('Manifest dependencies must be an array', manifest.id, 'dependencies'));
-	} else {
+	}
+	else {
 		for (const dependency of manifest.dependencies) {
 			if (!isNonEmptyString(dependency)) {
 				issues.push(issue('Manifest dependencies must contain only non-empty strings', manifest.id, 'dependencies'));
@@ -91,7 +80,7 @@ function validateComponentManifest(manifest: ComponentManifest): ValidationIssue
 	const issues = validateBaseManifest(manifest);
 
 	if (manifest.type !== 'component') {
-		issues.push(issue("Component manifests must have type 'component'", manifest.id, 'type'));
+		issues.push(issue('Component manifests must have type \'component\'', manifest.id, 'type'));
 	}
 
 	return issues;
@@ -101,7 +90,7 @@ function validateProjectManifest(manifest: ProjectManifest): ValidationIssue[] {
 	const issues = validateBaseManifest(manifest);
 
 	if (manifest.type !== 'project') {
-		issues.push(issue("Project manifests must have type 'project'", manifest.id, 'type'));
+		issues.push(issue('Project manifests must have type \'project\'', manifest.id, 'type'));
 	}
 
 	if (!isNonEmptyString(manifest.entry)) {
@@ -138,9 +127,7 @@ export function validateIndexManifest(index: IndexManifest): ValidationResult {
 	const issues: ValidationIssue[] = [];
 
 	if (index.manifestVersion !== MANIFEST_VERSION) {
-		issues.push(
-			issue(`Unsupported manifest version ${index.manifestVersion}, expected ${MANIFEST_VERSION}`, undefined, 'manifestVersion'),
-		);
+		issues.push(issue(`Unsupported manifest version ${index.manifestVersion}, expected ${MANIFEST_VERSION}`, undefined, 'manifestVersion'));
 	}
 
 	if (!isNonEmptyString(index.repository)) {
@@ -157,7 +144,8 @@ export function validateIndexManifest(index: IndexManifest): ValidationResult {
 
 	if (typeof index.components !== 'object' || index.components === null) {
 		issues.push(issue('Index manifest components must be an object', undefined, 'components'));
-	} else {
+	}
+	else {
 		for (const id in index.components) {
 			const path = index.components[id];
 			if (!isNonEmptyString(id) || !isNonEmptyString(path)) {
@@ -168,7 +156,8 @@ export function validateIndexManifest(index: IndexManifest): ValidationResult {
 
 	if (typeof index.projects !== 'object' || index.projects === null) {
 		issues.push(issue('Index manifest projects must be an object', undefined, 'projects'));
-	} else {
+	}
+	else {
 		for (const id in index.projects) {
 			const path = index.projects[id];
 			if (!isNonEmptyString(id) || !isNonEmptyString(path)) {
@@ -185,7 +174,7 @@ export function validateIndexManifest(index: IndexManifest): ValidationResult {
 
 export function validateManifestCollection(manifests: AnyManifest[]): ValidationResult {
 	const issues: ValidationIssue[] = [];
-	const ids = new Set<ManifestId>();
+	const ids                       = new Set<ManifestId>();
 
 	for (const manifest of manifests) {
 		const result = validateManifest(manifest);
@@ -193,7 +182,8 @@ export function validateManifestCollection(manifests: AnyManifest[]): Validation
 
 		if (ids.has(manifest.id)) {
 			issues.push(issue(`Duplicate manifest id '${manifest.id}'`, manifest.id, 'id'));
-		} else {
+		}
+		else {
 			ids.add(manifest.id);
 		}
 	}
@@ -218,14 +208,14 @@ export function validateManifestCollection(manifests: AnyManifest[]): Validation
 
 export function detectDependencyCycles(manifests: AnyManifest[]): ValidationIssue[] {
 	const issues: ValidationIssue[] = [];
-	const manifestMap = new Map<ManifestId, AnyManifest>();
+	const manifestMap               = new Map<ManifestId, AnyManifest>();
 
 	for (const manifest of manifests) {
 		manifestMap.set(manifest.id, manifest);
 	}
 
 	const visiting = new Set<ManifestId>();
-	const visited = new Set<ManifestId>();
+	const visited  = new Set<ManifestId>();
 
 	function visit(id: ManifestId, trail: ManifestId[]): void {
 		if (visited.has(id)) {
@@ -234,7 +224,7 @@ export function detectDependencyCycles(manifests: AnyManifest[]): ValidationIssu
 
 		if (visiting.has(id)) {
 			const cycleStart = trail.indexOf(id);
-			const cycle = [...trail.slice(cycleStart), id];
+			const cycle      = [...trail.slice(cycleStart), id];
 			issues.push(issue(`Dependency cycle detected: ${cycle.join(' -> ')}`, id, 'dependencies'));
 			return;
 		}
@@ -267,7 +257,7 @@ export function assertValidManifestCollection(manifests: AnyManifest[]): void {
 	if (!result.ok) {
 		const lines = result.issues.map((entry) => {
 			const prefix = entry.manifestId ? `[${entry.manifestId}] ` : '';
-			const field = entry.field ? ` (${entry.field})` : '';
+			const field  = entry.field ? ` (${entry.field})` : '';
 			return `- ${prefix}${entry.message}${field}`;
 		});
 
@@ -281,7 +271,7 @@ export function assertValidIndexManifest(index: IndexManifest): void {
 	if (!result.ok) {
 		const lines = result.issues.map((entry) => {
 			const prefix = entry.manifestId ? `[${entry.manifestId}] ` : '';
-			const field = entry.field ? ` (${entry.field})` : '';
+			const field  = entry.field ? ` (${entry.field})` : '';
 			return `- ${prefix}${entry.message}${field}`;
 		});
 

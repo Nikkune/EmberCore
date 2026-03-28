@@ -1,8 +1,8 @@
-import type { EmberError } from './errors';
-import { RuntimeError } from './errors';
-import { Logger } from './logger';
-import type { Result } from './result';
-import { Results } from './result';
+import type {EmberError} from './errors';
+import {RuntimeError}    from './errors';
+import {Logger}          from './logger';
+import type {Result}     from './result';
+import {Results}         from './result';
 
 const log = new Logger('Parallel', 'info');
 
@@ -18,17 +18,17 @@ export class Parallel {
 		}
 
 		log.debug('Running parallel all', {
-			action: 'parallel_all',
+			action:    'parallel_all',
 			taskCount: tasks.length,
-			status: 'start',
+			status:    'start',
 		});
 
 		parallel.waitForAll(...tasks);
 
 		log.debug('Parallel all completed', {
-			action: 'parallel_all',
+			action:    'parallel_all',
 			taskCount: tasks.length,
-			status: 'done',
+			status:    'done',
 		});
 	}
 
@@ -40,18 +40,18 @@ export class Parallel {
 		}
 
 		log.debug('Running parallel any', {
-			action: 'parallel_any',
+			action:    'parallel_any',
 			taskCount: tasks.length,
-			status: 'start',
+			status:    'start',
 		});
 
 		const completedIndex = parallel.waitForAny(...tasks) as unknown as number;
 
 		log.debug('Parallel any completed', {
-			action: 'parallel_any',
+			action:    'parallel_any',
 			taskCount: tasks.length,
 			completedIndex,
-			status: 'done',
+			status:    'done',
 		});
 
 		return completedIndex;

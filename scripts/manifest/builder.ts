@@ -1,15 +1,8 @@
-import * as fs from 'node:fs';
+import * as fs   from 'node:fs';
 import * as path from 'node:path';
 
-import {
-	type AnyManifest,
-	type ComponentManifest,
-	type IndexManifest,
-	MANIFEST_VERSION,
-	type ManifestId,
-	type ProjectManifest,
-} from './manifestTypes';
-import { assertValidIndexManifest, assertValidManifestCollection } from './validate';
+import {type AnyManifest, type ComponentManifest, type IndexManifest, MANIFEST_VERSION, type ManifestId, type ProjectManifest} from './manifestTypes';
+import {assertValidIndexManifest, assertValidManifestCollection}                                                               from './validate';
 
 export interface BuildManifestOptions {
 	repository: string;
@@ -24,7 +17,7 @@ export interface BuildManifestResult {
 }
 
 function ensureDir(dirPath: string): void {
-	fs.mkdirSync(dirPath, { recursive: true });
+	fs.mkdirSync(dirPath, {recursive: true});
 }
 
 function writeJsonFile(filePath: string, data: unknown): void {
@@ -54,11 +47,11 @@ function isComponentManifest(manifest: AnyManifest): manifest is ComponentManife
 export function buildIndexManifest(manifests: AnyManifest[], options: Omit<BuildManifestOptions, 'outputDir'>): IndexManifest {
 	const index: IndexManifest = {
 		manifestVersion: MANIFEST_VERSION,
-		repository: options.repository,
-		branch: options.branch,
-		generatedAt: options.generatedAt ?? new Date().toISOString(),
-		components: {},
-		projects: {},
+		repository:      options.repository,
+		branch:          options.branch,
+		generatedAt:     options.generatedAt ?? new Date().toISOString(),
+		components:      {},
+		projects:        {},
 	};
 
 	for (const manifest of manifests) {
@@ -83,7 +76,7 @@ export function buildManifests(manifests: AnyManifest[], options: BuildManifestO
 	assertValidManifestCollection(manifests);
 
 	const writtenFiles: string[] = [];
-	const manifestsRoot = path.resolve(options.outputDir);
+	const manifestsRoot          = path.resolve(options.outputDir);
 
 	ensureDir(manifestsRoot);
 
@@ -97,7 +90,7 @@ export function buildManifests(manifests: AnyManifest[], options: BuildManifestO
 
 	const manifestsOptions: Omit<BuildManifestOptions, 'outputDir'> = {
 		repository: options.repository,
-		branch: options.branch,
+		branch:     options.branch,
 	};
 
 	if (options.generatedAt) {
@@ -119,16 +112,14 @@ export function buildManifests(manifests: AnyManifest[], options: BuildManifestO
 export function componentManifest(input: Omit<ComponentManifest, 'manifestVersion' | 'type'>): ComponentManifest {
 	return {
 		manifestVersion: MANIFEST_VERSION,
-		type: 'component',
-		...input,
+		type:            'component', ...input,
 	};
 }
 
 export function projectManifest(input: Omit<ProjectManifest, 'manifestVersion' | 'type'>): ProjectManifest {
 	return {
 		manifestVersion: MANIFEST_VERSION,
-		type: 'project',
-		...input,
+		type:            'project', ...input,
 	};
 }
 
