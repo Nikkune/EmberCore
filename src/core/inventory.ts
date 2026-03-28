@@ -1,5 +1,5 @@
-import { Peripheral } from "./peripheral";
-import {InventoryError} from "./errors";
+import { InventoryError } from './errors';
+import { Peripheral } from './peripheral';
 
 export interface ItemSummary {
 	name: string;
@@ -47,7 +47,7 @@ export class Inventory {
 				inventory: this.name,
 				slot,
 				size: this.size(),
-				action: "get_item",
+				action: 'get_item',
 			});
 		}
 
@@ -105,7 +105,7 @@ export class Inventory {
 				inventory: this.name,
 				target: target.name,
 				fromSlot,
-				action: "push_to",
+				action: 'push_to',
 			});
 		}
 
@@ -118,7 +118,7 @@ export class Inventory {
 				inventory: this.name,
 				source: source.name,
 				fromSlot,
-				action: "pull_from",
+				action: 'pull_from',
 			});
 		}
 

@@ -1,8 +1,5 @@
 {
-  "name": "Inventory",
-  "version": "1.0.0",
-  "dependencies": [
-    "core/errors",
-    "core/peripheral"
-  ]
+	"name": "Inventory",
+	"version": "1.0.0",
+	"dependencies": ["core/errors", "core/peripheral"]
 }

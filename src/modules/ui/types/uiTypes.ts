@@ -2,8 +2,8 @@
 // Core primitives
 // ============================================================
 
-export type Color = number
-export type Maybe<T> = T | undefined
+export type Color = number;
+export type Maybe<T> = T | undefined;
 
 export interface Point {
 	x: number;
@@ -15,8 +15,7 @@ export interface Size {
 	height: number;
 }
 
-export interface Rect extends Point, Size {
-}
+export interface Rect extends Point, Size {}
 
 export interface Insets {
 	top: number;
@@ -38,11 +37,11 @@ export type PaddingLike =
 	| number
 	| Partial<Insets>
 	| {
-	x?: number;
-	y?: number;
-	horizontal?: number;
-	vertical?: number;
-};
+			x?: number;
+			y?: number;
+			horizontal?: number;
+			vertical?: number;
+	  };
 
 export type MarginLike = PaddingLike;
 
@@ -54,13 +53,7 @@ export type HorizontalAlignment = 'start' | 'center' | 'end' | 'stretch';
 export type VerticalAlignment = 'start' | 'center' | 'end' | 'stretch';
 export type CrossAxisAlignment = 'start' | 'center' | 'end' | 'stretch';
 
-export type MainAxisAlignment =
-	| 'start'
-	| 'center'
-	| 'end'
-	| 'space-between'
-	| 'space-around'
-	| 'space-evenly';
+export type MainAxisAlignment = 'start' | 'center' | 'end' | 'space-between' | 'space-around' | 'space-evenly';
 
 export type Direction = 'row' | 'column';
 export type WrapMode = 'nowrap' | 'wrap';
@@ -77,8 +70,7 @@ export interface MeasuredSize {
 	height: number;
 }
 
-export interface LayoutRect extends Rect {
-}
+export interface LayoutRect extends Rect {}
 
 export interface FlexItemOptions {
 	grow?: number;
@@ -145,7 +137,7 @@ export interface BorderStyle {
 
 export interface FillStyle {
 	backgroundColor?: Color;
-	character?: string
+	character?: string;
 }
 
 export interface BoxStyle {
@@ -295,7 +287,7 @@ export interface ToggleEvent extends BaseUIEvent {
 }
 
 export interface SelectEvent<T = string> extends BaseUIEvent {
-	type: "select";
+	type: 'select';
 	value: T;
 	index?: number;
 }
@@ -338,7 +330,7 @@ export interface UIEventMap {
 
 export interface EventSubscription<TEvent extends UIEvent = UIEvent> {
 	readonly id: string;
-	readonly type: TEvent["type"];
+	readonly type: TEvent['type'];
 	readonly targetId?: string;
 	readonly once: boolean;
 	readonly active: boolean;
@@ -361,15 +353,15 @@ export interface EventSubscriptionOptions {
 
 export interface EventDispatcher {
 	subscribe<TEvent extends UIEvent>(
-		type: TEvent["type"],
+		type: TEvent['type'],
 		handler: UIEventHandler<TEvent>,
 		options?: EventSubscriptionOptions,
 	): EventSubscription<TEvent>;
 
 	subscribeOnce<TEvent extends UIEvent>(
-		type: TEvent["type"],
+		type: TEvent['type'],
 		handler: UIEventHandler<TEvent>,
-		options?: Omit<EventSubscriptionOptions, "once">,
+		options?: Omit<EventSubscriptionOptions, 'once'>,
 	): EventSubscription<TEvent>;
 
 	unsubscribe(subscriptionId: string): boolean;
@@ -394,7 +386,7 @@ export interface UIEventBus extends EventDispatcher {
 // ============================================================
 
 export type SurfaceKind = 'terminal' | 'monitor';
-export type InvalidationReason = 'mount' | 'layout' | 'state' | 'theme' | "event" | "manual";
+export type InvalidationReason = 'mount' | 'layout' | 'state' | 'theme' | 'event' | 'manual';
 
 export interface RenderContext<TDraw = unknown> {
 	surface: SurfaceKind;
@@ -403,8 +395,7 @@ export interface RenderContext<TDraw = unknown> {
 	draw: TDraw;
 }
 
-export interface DirtyRegion extends Rect {
-}
+export interface DirtyRegion extends Rect {}
 
 export interface InvalidationRequest {
 	reason: InvalidationReason;
@@ -412,7 +403,7 @@ export interface InvalidationRequest {
 }
 
 export interface UIContext {
-	theme: Theme
+	theme: Theme;
 	surface: SurfaceKind;
 	activeElement?: string;
 }
@@ -426,24 +417,24 @@ export interface UIInvalidator {
 // ============================================================
 
 export type ComponentKind =
-	| "button"
-	| "progress_bar"
-	| "table"
-	| "box"
-	| "grid"
-	| "checkbox"
-	| "radio"
-	| "log_viewer"
-	| "pagination"
-	| "label"
-	| "panel"
-	| "separator"
-	| "badge"
-	| "list"
-	| "status_bar"
-	| "container"
-	| "stack"
-	| "custom";
+	| 'button'
+	| 'progress_bar'
+	| 'table'
+	| 'box'
+	| 'grid'
+	| 'checkbox'
+	| 'radio'
+	| 'log_viewer'
+	| 'pagination'
+	| 'label'
+	| 'panel'
+	| 'separator'
+	| 'badge'
+	| 'list'
+	| 'status_bar'
+	| 'container'
+	| 'stack'
+	| 'custom';
 
 export interface BaseProps extends AxisSize {
 	id?: string;
@@ -536,8 +527,7 @@ export interface SelectionState<T = string> {
 // Component-specific styles
 // ============================================================
 
-export interface LabelStyle extends TextStyle {
-}
+export interface LabelStyle extends TextStyle {}
 
 export interface ButtonStyle extends BoxStyle {
 	text?: TextStyle;
@@ -573,7 +563,7 @@ export interface RadioStyle extends BoxStyle {
 
 export interface BadgeStyle extends BoxStyle {
 	text?: TextStyle;
-	tone?: "default" | "primary" | "success" | "warning" | "error" | "info";
+	tone?: 'default' | 'primary' | 'success' | 'warning' | 'error' | 'info';
 }
 
 export interface SeparatorStyle {
@@ -605,14 +595,14 @@ export interface StatusBarStyle extends BoxStyle {
 		text: string;
 		color?: Color;
 		backgroundColor?: Color;
-		alignment?: "left" | "center" | "right";
+		alignment?: 'left' | 'center' | 'right';
 		width?: number;
 	}>;
 }
 
 export interface LogViewerStyle extends BoxStyle {
 	lineStyle?: TextStyle;
-	levelColors?: Partial<Record<"debug" | "info" | "warn" | "error", Color>>;
+	levelColors?: Partial<Record<'debug' | 'info' | 'warn' | 'error', Color>>;
 	autoScroll?: boolean;
 	showTimestamp?: boolean;
 }
@@ -625,8 +615,7 @@ export interface PaginationStyle extends BoxStyle {
 	showPrevNext?: boolean;
 }
 
-export interface ContainerStyle extends BoxStyle {
-}
+export interface ContainerStyle extends BoxStyle {}
 
 export interface StackStyle extends BoxStyle {
 	layout?: StackLayoutOptions;
@@ -733,7 +722,7 @@ export interface TableProps<T = Record<string, unknown>> extends BaseProps {
 }
 
 export interface LogEntry {
-	level: "debug" | "info" | "warn" | "error";
+	level: 'debug' | 'info' | 'warn' | 'error';
 	message: string;
 	timestamp?: string;
 	meta?: Record<string, unknown>;
@@ -759,7 +748,7 @@ export interface StatusBarSegment {
 	color?: Color;
 	backgroundColor?: Color;
 	width?: number;
-	alignment?: "left" | "center" | "right";
+	alignment?: 'left' | 'center' | 'right';
 }
 
 export interface StatusBarProps extends BaseProps {

@@ -1,11 +1,10 @@
-import {Logger} from "./logger";
-import {assertNotNil} from "./assert";
-import {PeripheralError} from "./errors";
-
+import { assertNotNil } from './assert';
+import { PeripheralError } from './errors';
+import { Logger } from './logger';
 
 const log = new Logger('Peripheral', 'info');
 
-export type Side = "back" | "bottom" | "front" | "left" | "right" | "top";
+export type Side = 'back' | 'bottom' | 'front' | 'left' | 'right' | 'top';
 export type PeripheralName = Side | string;
 
 const SIDES: Side[] = ['back', 'bottom', 'front', 'left', 'right', 'top'];
@@ -52,7 +51,7 @@ export class Peripheral {
 			log.debug('Peripheral wrap failed', {
 				name,
 				action: 'wrap',
-				status: 'missing'
+				status: 'missing',
 			});
 			return undefined;
 		}
@@ -60,8 +59,8 @@ export class Peripheral {
 		log.debug('Peripheral wrapped', {
 			name,
 			action: 'wrap',
-			status: 'ok'
-		})
+			status: 'ok',
+		});
 
 		return wrapped as T;
 	}
@@ -74,7 +73,7 @@ export class Peripheral {
 			log.error(message, {
 				name,
 				action: 'require',
-				status: 'failed'
+				status: 'failed',
 			});
 			throw new PeripheralError(message, {
 				name,
@@ -94,7 +93,7 @@ export class Peripheral {
 				action: 'wrapType',
 				status: 'failed',
 				expected: expectedType,
-				actual: actualType ?? 'nil'
+				actual: actualType ?? 'nil',
 			});
 			return undefined;
 		}
@@ -129,8 +128,8 @@ export class Peripheral {
 			name,
 			action: 'require_type',
 			status: 'ok',
-			expected: expectedType
-		})
+			expected: expectedType,
+		});
 
 		return wrapped!;
 	}

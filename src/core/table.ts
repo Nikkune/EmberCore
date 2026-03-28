@@ -73,10 +73,7 @@ export class TableUtils {
 		return result;
 	}
 
-	public static mapValues<T extends object, U>(
-		table: T,
-		mapper: (value: T[keyof T], key: keyof T) => U,
-	): Record<string, U> {
+	public static mapValues<T extends object, U>(table: T, mapper: (value: T[keyof T], key: keyof T) => U): Record<string, U> {
 		const result: Record<string, U> = {};
 
 		for (const key in table) {

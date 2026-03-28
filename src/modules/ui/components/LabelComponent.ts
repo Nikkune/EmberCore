@@ -1,6 +1,17 @@
-import type {ComponentDependencies, DrawTextOptions, LabelProps, LayoutConstraints, MeasuredSize, RenderContext, ResolveTextLinesOptions, TextStyle, UIContext, UIDrawSurface} from "@modules/ui";
-import {BaseComponent, drawText, mergeComponentStyle, resolveTextLines} from "@modules/ui";
-import {createOptions} from "@utils/helpers";
+import type {
+	ComponentDependencies,
+	DrawTextOptions,
+	LabelProps,
+	LayoutConstraints,
+	MeasuredSize,
+	RenderContext,
+	ResolveTextLinesOptions,
+	TextStyle,
+	UIContext,
+	UIDrawSurface,
+} from '@modules/ui';
+import { BaseComponent, drawText, mergeComponentStyle, resolveTextLines } from '@modules/ui';
+import { createOptions } from '@utils/helpers';
 
 export class LabelComponent extends BaseComponent<LabelProps, UIDrawSurface> {
 	public constructor(props: LabelProps, dependencies: ComponentDependencies = {}) {
@@ -11,7 +22,7 @@ export class LabelComponent extends BaseComponent<LabelProps, UIDrawSurface> {
 		const style = this.getResolvedStyle(context.theme);
 		const availableWidth = this.resolveAvailableWidth(constraints);
 
-		if (availableWidth <= 0) return {width: constraints.minWidth, height: constraints.minHeight};
+		if (availableWidth <= 0) return { width: constraints.minWidth, height: constraints.minHeight };
 
 		const lines = resolveTextLines(
 			createOptions<ResolveTextLinesOptions>({
@@ -19,7 +30,7 @@ export class LabelComponent extends BaseComponent<LabelProps, UIDrawSurface> {
 				width: availableWidth,
 			})
 				.with('style', style)
-				.done()
+				.done(),
 		);
 
 		let measuredWidth = 0;
@@ -39,7 +50,6 @@ export class LabelComponent extends BaseComponent<LabelProps, UIDrawSurface> {
 
 		const style = this.getResolvedStyle(context.theme);
 
-
 		drawText(
 			context,
 			createOptions<DrawTextOptions>({
@@ -47,11 +57,11 @@ export class LabelComponent extends BaseComponent<LabelProps, UIDrawSurface> {
 				text: this.props.text,
 			})
 				.with('style', style)
-				.done()
-		)
+				.done(),
+		);
 	}
 
-	private getResolvedStyle(theme: UIContext["theme"]): TextStyle | undefined {
+	private getResolvedStyle(theme: UIContext['theme']): TextStyle | undefined {
 		return mergeComponentStyle(theme.components?.label, this.props.style);
 	}
 

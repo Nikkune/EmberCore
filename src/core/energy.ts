@@ -1,4 +1,4 @@
-import { Peripheral } from "./peripheral";
+import { Peripheral } from './peripheral';
 
 export class Energy {
 	public constructor(

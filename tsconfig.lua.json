@@ -1,31 +1,28 @@
 {
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "module": "ESNext",
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"module": "ESNext",
 
-    "rootDir": "src",
-    "outDir": "luas",
-    "baseUrl": ".",
+		"rootDir": "src",
+		"outDir": "luas",
+		"baseUrl": ".",
 
-    "esModuleInterop": false,
-    "removeComments": true,
-    "noEmit": false,
+		"esModuleInterop": false,
+		"removeComments": true,
+		"noEmit": false,
 
-    "types": [
-      "@typescript-to-lua/language-extensions",
-      "@mechazawa/cc-types"
-    ],
-    "paths": {
-      "@core/*": ["src/core/*"],
-      "@modules/*": ["src/modules/*"],
-      "@projects/*": ["src/projects/*"],
-      "@utils/*": ["src/utils/*"],
-    }
-  },
-  "tstl": {
-    "luaTarget": "5.2",
-    "luaLibImport": "inline"
-  },
-  "include": ["src/**/*.ts", "src/**/*.d.ts"],
-  "exclude": ["luas", "node_modules"]
+		"types": ["@typescript-to-lua/language-extensions", "@mechazawa/cc-types"],
+		"paths": {
+			"@core/*": ["src/core/*"],
+			"@modules/*": ["src/modules/*"],
+			"@projects/*": ["src/projects/*"],
+			"@utils/*": ["src/utils/*"]
+		}
+	},
+	"tstl": {
+		"luaTarget": "5.2",
+		"luaLibImport": "inline"
+	},
+	"include": ["src/**/*.ts", "src/**/*.d.ts"],
+	"exclude": ["luas", "node_modules"]
 }

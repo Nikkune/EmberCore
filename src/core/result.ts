@@ -1,4 +1,4 @@
-import { EmberError } from "./errors";
+import { EmberError } from './errors';
 
 export interface Ok<T> {
 	readonly ok: true;
@@ -84,7 +84,7 @@ export class Results {
 			}
 
 			return err(
-				new EmberError("Unknown error", "UNKNOWN_ERROR", {
+				new EmberError('Unknown error', 'UNKNOWN_ERROR', {
 					cause: tostring(caught),
 				}),
 			);

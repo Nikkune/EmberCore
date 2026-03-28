@@ -35,7 +35,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
+          
           if git diff --quiet; then
             echo "No changes to commit."
           else
@@ -48,10 +48,10 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
+          
           rm -rf .publish-worktree .publish
           mkdir -p .publish
-
+          
           cp -r luas/. .publish/
           cp -r manifests .publish/manifests
           
@@ -73,20 +73,20 @@ jobs:
             git checkout --orphan lua
             cd ..
           fi
-
+          
           # Nettoie totalement la worktree
           find .publish-worktree -mindepth 1 -maxdepth 1 \
             ! -name ".git" \
             -exec rm -rf {} +
-
+          
           # Copie uniquement le runtime voulu
           cp -r .publish/. .publish-worktree/
-
+          
           cd .publish-worktree
           git add .
           git commit -m "chore(lua): publish runtime from ${GITHUB_SHA}" || echo "Nothing to commit"
           git push origin HEAD:lua --force
           cd ..
-
+          
           git worktree remove .publish-worktree --force
           rm -rf .publish

@@ -1,7 +1,5 @@
 {
-  "name": "Result",
-  "version": "1.0.0",
-  "dependencies": [
-    "core/errors"
-  ]
+	"name": "Result",
+	"version": "1.0.0",
+	"dependencies": ["core/errors"]
 }

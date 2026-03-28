@@ -14,6 +14,6 @@ declare global {
 	}
 
 	namespace os {
-		function date(format: "*t", time?: number): DateTable;
+		function date(format: '*t', time?: number): DateTable;
 	}
 }

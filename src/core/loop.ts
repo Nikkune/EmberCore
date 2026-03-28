@@ -1,10 +1,10 @@
-import { Logger } from "./logger";
-import type { EmberError} from "./errors";
-import { RuntimeError } from "./errors";
-import type { Result} from "./result";
-import { Results } from "./result";
+import type { EmberError } from './errors';
+import { RuntimeError } from './errors';
+import { Logger } from './logger';
+import type { Result } from './result';
+import { Results } from './result';
 
-const log = new Logger("Loop", "info");
+const log = new Logger('Loop', 'info');
 
 export type LoopTask = () => void;
 export type LoopCondition = () => boolean;
@@ -19,9 +19,9 @@ export interface RetryOptions {
 export class Loop {
 	public static sleep(seconds: number): void {
 		if (seconds < 0) {
-			throw new RuntimeError("Sleep duration cannot be negative", {
+			throw new RuntimeError('Sleep duration cannot be negative', {
 				seconds,
-				action: "sleep",
+				action: 'sleep',
 			});
 		}
 
@@ -40,9 +40,9 @@ export class Loop {
 
 	public static every(intervalSeconds: number, task: LoopTask): never {
 		if (intervalSeconds < 0) {
-			throw new RuntimeError("Loop interval cannot be negative", {
+			throw new RuntimeError('Loop interval cannot be negative', {
 				intervalSeconds,
-				action: "every",
+				action: 'every',
 			});
 		}
 
@@ -54,9 +54,9 @@ export class Loop {
 
 	public static until(condition: LoopCondition, task: LoopTask, intervalSeconds = 0): void {
 		if (intervalSeconds < 0) {
-			throw new RuntimeError("Loop interval cannot be negative", {
+			throw new RuntimeError('Loop interval cannot be negative', {
 				intervalSeconds,
-				action: "until",
+				action: 'until',
 			});
 		}
 
@@ -72,13 +72,13 @@ export class Loop {
 	public static retry<T>(task: LoopResultTask<T>, options: RetryOptions): Result<T, EmberError> {
 		const attempts = options.attempts;
 		const delaySeconds = options.delaySeconds ?? 0;
-		const label = options.label ?? "retry_task";
+		const label = options.label ?? 'retry_task';
 
 		if (attempts <= 0) {
 			return Results.err(
-				new RuntimeError("Retry attempts must be greater than 0", {
+				new RuntimeError('Retry attempts must be greater than 0', {
 					attempts,
-					action: "retry",
+					action: 'retry',
 					label,
 				}),
 			);
@@ -91,11 +91,11 @@ export class Loop {
 
 			if (result.ok) {
 				if (attempt > 1) {
-					log.info("Retry succeeded", {
-						action: "retry",
+					log.info('Retry succeeded', {
+						action: 'retry',
 						label,
 						attempt,
-						status: "ok",
+						status: 'ok',
 					});
 				}
 
@@ -104,13 +104,13 @@ export class Loop {
 
 			lastError = result.error;
 
-			log.warn("Retry attempt failed", {
-				action: "retry",
+			log.warn('Retry attempt failed', {
+				action: 'retry',
 				label,
 				attempt,
 				attempts,
 				code: result.error.code,
-				status: "failed",
+				status: 'failed',
 			});
 
 			if (attempt < attempts && delaySeconds > 0) {
@@ -120,12 +120,12 @@ export class Loop {
 
 		return Results.err(
 			lastError ??
-			new RuntimeError("All retry attempts failed", {
-				action: "retry",
-				label,
-				attempts,
-				status: "failed",
-			}),
+				new RuntimeError('All retry attempts failed', {
+					action: 'retry',
+					label,
+					attempts,
+					status: 'failed',
+				}),
 		);
 	}
 }

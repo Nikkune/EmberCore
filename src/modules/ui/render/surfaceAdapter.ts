@@ -1,5 +1,5 @@
-import type {Color, Point, Rect, Size} from "@modules/ui";
-import {makeColorOptions} from "@modules/ui";
+import type { Color, Point, Rect, Size } from '@modules/ui';
+import { makeColorOptions } from '@modules/ui';
 
 export interface UISurfaceAdapter {
 	getSize(): { width: number; height: number };
@@ -76,7 +76,7 @@ export interface UIDrawSurface extends UISurfaceAdapter {
 }
 
 function repeat(value: string, count: number): string {
-	let result = "";
+	let result = '';
 
 	for (let index = 0; index < count; index += 1) {
 		result += value;
@@ -123,7 +123,7 @@ export class ComputerCraftSurfaceAdapter implements UIDrawSurface {
 			return;
 		}
 
-		this.withColors({backgroundColor: backgroundColor}, () => {
+		this.withColors({ backgroundColor: backgroundColor }, () => {
 			this.target.clear();
 		});
 	}
@@ -135,13 +135,10 @@ export class ComputerCraftSurfaceAdapter implements UIDrawSurface {
 
 		const currentCursor = this.getCursor();
 
-		this.withColors(
-			makeColorOptions({backgroundColor}),
-			() => {
-				this.target.setCursorPos(1, y);
-				this.target.clearLine();
-			},
-		);
+		this.withColors(makeColorOptions({ backgroundColor }), () => {
+			this.target.setCursorPos(1, y);
+			this.target.clearLine();
+		});
 
 		this.setCursor(currentCursor);
 	}
@@ -153,7 +150,7 @@ export class ComputerCraftSurfaceAdapter implements UIDrawSurface {
 	public getCursor(): Point {
 		const [x, y] = this.target.getCursorPos();
 
-		return {x, y};
+		return { x, y };
 	}
 
 	public write(text: string): void {
@@ -166,16 +163,11 @@ export class ComputerCraftSurfaceAdapter implements UIDrawSurface {
 		});
 	}
 
-	public blitAt(
-		position: Point,
-		text: string,
-		textColors: string,
-		backgroundColors: string,
-	): void {
+	public blitAt(position: Point, text: string, textColors: string, backgroundColors: string): void {
 		const target = this.target as Partial<StringBlitTerminalLike>;
 
 		this.withCursor(position, () => {
-			if (typeof target.blit === "function") {
+			if (typeof target.blit === 'function') {
 				target.blit(text, textColors, backgroundColors);
 				return;
 			}
@@ -184,84 +176,53 @@ export class ComputerCraftSurfaceAdapter implements UIDrawSurface {
 		});
 	}
 
-	public fillRect(
-		rect: Rect,
-		character = " ",
-		backgroundColor?: number,
-		foregroundColor?: number,
-	): void {
+	public fillRect(rect: Rect, character = ' ', backgroundColor?: number, foregroundColor?: number): void {
 		if (rect.width <= 0 || rect.height <= 0) {
 			return;
 		}
 
-		const fillCharacter = character.length > 0 ? character[0]! : " ";
+		const fillCharacter = character.length > 0 ? character[0]! : ' ';
 		const line = repeat(fillCharacter, rect.width);
 
-		this.withColors(
-			makeColorOptions({backgroundColor, foregroundColor}),
-			() => {
-				for (let row = 0; row < rect.height; row += 1) {
-					this.writeAt(
-						{x: rect.x, y: rect.y + row},
-						line,
-					);
-				}
-			},
-		);
+		this.withColors(makeColorOptions({ backgroundColor, foregroundColor }), () => {
+			for (let row = 0; row < rect.height; row += 1) {
+				this.writeAt({ x: rect.x, y: rect.y + row }, line);
+			}
+		});
 	}
 
-	public strokeRect(
-		rect: Rect,
-		character = "#",
-		backgroundColor?: number,
-		foregroundColor?: number,
-	): void {
+	public strokeRect(rect: Rect, character = '#', backgroundColor?: number, foregroundColor?: number): void {
 		if (rect.width <= 0 || rect.height <= 0) {
 			return;
 		}
 
 		if (rect.width === 1 && rect.height === 1) {
-			this.withColors(
-				makeColorOptions({backgroundColor, foregroundColor}),
-				() => {
-					this.writeAt({x: rect.x, y: rect.y}, character[0] ?? "#");
-				},
-			);
+			this.withColors(makeColorOptions({ backgroundColor, foregroundColor }), () => {
+				this.writeAt({ x: rect.x, y: rect.y }, character[0] ?? '#');
+			});
 
 			return;
 		}
 
-		const strokeCharacter = character.length > 0 ? character[0]! : "#";
+		const strokeCharacter = character.length > 0 ? character[0]! : '#';
 
-		this.withColors(
-			makeColorOptions({backgroundColor, foregroundColor}),
-			() => {
-				const horizontal = repeat(strokeCharacter, rect.width);
+		this.withColors(makeColorOptions({ backgroundColor, foregroundColor }), () => {
+			const horizontal = repeat(strokeCharacter, rect.width);
 
-				this.writeAt({x: rect.x, y: rect.y}, horizontal);
+			this.writeAt({ x: rect.x, y: rect.y }, horizontal);
 
-				if (rect.height > 1) {
-					this.writeAt(
-						{x: rect.x, y: rect.y + rect.height - 1},
-						horizontal,
-					);
+			if (rect.height > 1) {
+				this.writeAt({ x: rect.x, y: rect.y + rect.height - 1 }, horizontal);
+			}
+
+			for (let row = 1; row < rect.height - 1; row += 1) {
+				this.writeAt({ x: rect.x, y: rect.y + row }, strokeCharacter);
+
+				if (rect.width > 1) {
+					this.writeAt({ x: rect.x + rect.width - 1, y: rect.y + row }, strokeCharacter);
 				}
-
-				for (let row = 1; row < rect.height - 1; row += 1) {
-					this.writeAt(
-						{x: rect.x, y: rect.y + row},
-						strokeCharacter,
-					);
-
-					if (rect.width > 1) {
-						this.writeAt(
-							{x: rect.x + rect.width - 1, y: rect.y + row},
-							strokeCharacter,
-						);
-					}
-				}
-			},
-		);
+			}
+		});
 	}
 
 	public setForegroundColor(color: number): void {

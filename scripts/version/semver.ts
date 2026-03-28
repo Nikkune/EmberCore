@@ -4,7 +4,7 @@ export interface SemVer {
 	patch: number;
 }
 
-const SEMVER_REGEX = /^(\d+)\.(\d+)\.(\d+)$/
+const SEMVER_REGEX = /^(\d+)\.(\d+)\.(\d+)$/;
 
 export function parseSemVer(version: string): SemVer {
 	const match = version.match(SEMVER_REGEX);

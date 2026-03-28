@@ -1,6 +1,6 @@
-import {Peripheral} from "./peripheral";
-import {TankError} from "./errors";
-import {createOptions} from "@utils/helpers";
+import { createOptions } from '@utils/helpers';
+import { TankError } from './errors';
+import { Peripheral } from './peripheral';
 
 export interface FluidStack {
 	name: string;
@@ -21,10 +21,10 @@ function mapToFluidTank(raw: LuaMap<AnyNotNil, any> | undefined): FluidTank | un
 	}
 
 	return createOptions<FluidTank>({})
-		.with('name', raw.get("name"))
-		.with('amount', raw.get("amount"))
-		.with('capacity', raw.get("capacity"))
-		.with('displayName', raw.get("displayName"))
+		.with('name', raw.get('name'))
+		.with('amount', raw.get('amount'))
+		.with('capacity', raw.get('capacity'))
+		.with('displayName', raw.get('displayName'))
 		.done();
 }
 
@@ -32,8 +32,7 @@ export class Tank {
 	public constructor(
 		public readonly name: string,
 		private readonly peripheralRef: FluidStorage,
-	) {
-	}
+	) {}
 
 	public static fromName(name: string): Tank {
 		const peripheral = Peripheral.require<FluidStorage>(name);
@@ -59,7 +58,7 @@ export class Tank {
 				tank: this.name,
 				slot,
 				size: tanks.length,
-				action: "get_tank",
+				action: 'get_tank',
 			});
 		}
 
@@ -120,12 +119,12 @@ export class Tank {
 
 	public pushTo(target: Tank, limit: number, fluidName: string): number {
 		if (limit <= 0) {
-			throw new TankError("Fluid push limit must be greater than 0", {
+			throw new TankError('Fluid push limit must be greater than 0', {
 				tank: this.name,
 				target: target.name,
 				fluidName,
 				limit,
-				action: "push_to",
+				action: 'push_to',
 			});
 		}
 
@@ -134,12 +133,12 @@ export class Tank {
 
 	public pullFrom(source: Tank, limit: number, fluidName: string): number {
 		if (limit <= 0) {
-			throw new TankError("Fluid pull limit must be greater than 0", {
+			throw new TankError('Fluid pull limit must be greater than 0', {
 				tank: this.name,
 				source: source.name,
 				fluidName,
 				limit,
-				action: "pull_from",
+				action: 'pull_from',
 			});
 		}
 

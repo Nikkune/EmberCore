@@ -1,14 +1,14 @@
-import * as fs from "node:fs";
-import * as path from "node:path";
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
-import type { BumpTarget } from "./bump";
+import type { BumpTarget } from './bump';
 
 export interface DetectOptions {
 	srcDir: string;
 }
 
 function toPosixPath(value: string): string {
-	return value.split(path.sep).join("/");
+	return value.split(path.sep).join('/');
 }
 
 function normalizeRelativePath(filePath: string, cwd = process.cwd()): string {
@@ -39,7 +39,7 @@ function detectCoreTarget(srcDir: string, relativePath: string): BumpTarget | un
 	}
 
 	const name = match[1];
-	const metaPath = path.join(srcDir, "core", `${name}.manifest.json`);
+	const metaPath = path.join(srcDir, 'core', `${name}.manifest.json`);
 
 	if (!fileExists(metaPath)) {
 		return undefined;
@@ -60,7 +60,7 @@ function detectModuleTarget(srcDir: string, relativePath: string): BumpTarget | 
 
 	const moduleName = match[1];
 	if (!moduleName) return undefined;
-	const metaPath = path.join(srcDir, "modules", moduleName, `${moduleName}.manifest.json`);
+	const metaPath = path.join(srcDir, 'modules', moduleName, `${moduleName}.manifest.json`);
 
 	if (!fileExists(metaPath)) {
 		return undefined;
@@ -81,7 +81,7 @@ function detectProjectTarget(srcDir: string, relativePath: string): BumpTarget |
 
 	const projectName = match[1];
 	if (!projectName) return undefined;
-	const metaPath = path.join(srcDir, "projects", projectName, `${projectName}.manifest.json`);
+	const metaPath = path.join(srcDir, 'projects', projectName, `${projectName}.manifest.json`);
 
 	if (!fileExists(metaPath)) {
 		return undefined;
@@ -94,10 +94,7 @@ function detectProjectTarget(srcDir: string, relativePath: string): BumpTarget |
 	};
 }
 
-export function detectTargetFromFile(
-	filePath: string,
-	options: DetectOptions,
-): BumpTarget | undefined {
+export function detectTargetFromFile(filePath: string, options: DetectOptions): BumpTarget | undefined {
 	const relativePath = normalizeRelativePath(filePath);
 
 	return (
@@ -107,10 +104,7 @@ export function detectTargetFromFile(
 	);
 }
 
-export function detectTargetsFromFiles(
-	filePaths: string[],
-	options: DetectOptions,
-): BumpTarget[] {
+export function detectTargetsFromFiles(filePaths: string[], options: DetectOptions): BumpTarget[] {
 	const targets: BumpTarget[] = [];
 
 	for (const filePath of filePaths) {

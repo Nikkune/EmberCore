@@ -1,5 +1,18 @@
-import type {DirtyRegion, InvalidationRequest, LayoutConstraints, RenderContext, SurfaceKind, Theme, UIComponent, UIContext, UIDrawSurface, UIEvent, UIEventBus, UIInvalidator,} from "@modules/ui";
-import {createOptions} from "@utils/helpers";
+import type {
+	DirtyRegion,
+	InvalidationRequest,
+	LayoutConstraints,
+	RenderContext,
+	SurfaceKind,
+	Theme,
+	UIComponent,
+	UIContext,
+	UIDrawSurface,
+	UIEvent,
+	UIEventBus,
+	UIInvalidator,
+} from '@modules/ui';
+import { createOptions } from '@utils/helpers';
 
 export interface UIRuntimeOptions {
 	root: UIComponent;
@@ -37,7 +50,7 @@ export class UIRuntime implements UIInvalidator {
 		this.surfaceKind = options.surfaceKind;
 	}
 
-	public invalidate(request: InvalidationRequest = {reason: "manual"}): void {
+	public invalidate(request: InvalidationRequest = { reason: 'manual' }): void {
 		this.dirty = true;
 
 		if (!request.rect) {
@@ -53,7 +66,7 @@ export class UIRuntime implements UIInvalidator {
 
 		if (didDispatch) {
 			this.eventBus.dispatch(event);
-			this.invalidate({reason: "event"});
+			this.invalidate({ reason: 'event' });
 		}
 
 		return didDispatch;
@@ -71,7 +84,7 @@ export class UIRuntime implements UIInvalidator {
 
 		this.tick += 1;
 
-		const {width, height} = this.surface.getSize();
+		const { width, height } = this.surface.getSize();
 
 		const constraints: LayoutConstraints = {
 			minWidth: 0,
@@ -82,7 +95,7 @@ export class UIRuntime implements UIInvalidator {
 
 		const uiContext: UIContext = createOptions<UIContext>({
 			theme: this.theme,
-			surface: this.surfaceKind
+			surface: this.surfaceKind,
 		})
 			.with('activeElement', this.activeElement)
 			.done();
@@ -132,7 +145,7 @@ export class UIRuntime implements UIInvalidator {
 
 	public setTheme(theme: Theme): void {
 		this.theme = theme;
-		this.invalidate({reason: "theme"});
+		this.invalidate({ reason: 'theme' });
 	}
 
 	public getTheme(): Theme {
@@ -152,20 +165,19 @@ export class UIRuntime implements UIInvalidator {
 	}
 
 	public setActiveElement(elementId?: string): void {
-		if (elementId !== undefined)
-			this.activeElement = elementId;
+		if (elementId !== undefined) this.activeElement = elementId;
 	}
 
 	private dispatchToRoot(event: UIEvent): boolean {
-		if ("x" in event && "y" in event) {
-			if (!this.root.hitTest({x: event.x, y: event.y})) {
+		if ('x' in event && 'y' in event) {
+			if (!this.root.hitTest({ x: event.x, y: event.y })) {
 				return false;
 			}
 		}
 
 		const uiContext: UIContext = createOptions<UIContext>({
 			theme: this.theme,
-			surface: this.surfaceKind
+			surface: this.surfaceKind,
 		})
 			.with('activeElement', this.activeElement)
 			.done();

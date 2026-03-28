@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync } from 'node:child_process';
 
 function normalizeLines(output: string): string[] {
 	return output
@@ -21,43 +21,43 @@ export function getChangedFiles(options: GitChangedFilesOptions = {}): string[] 
 	let args: string[];
 
 	if (baseRef && headRef) {
-		args = ["diff", "--name-only", `${baseRef}..${headRef}`];
+		args = ['diff', '--name-only', `${baseRef}..${headRef}`];
 	} else if (baseRef) {
-		args = ["diff", "--name-only", `${baseRef}..HEAD`];
+		args = ['diff', '--name-only', `${baseRef}..HEAD`];
 	} else {
-		args = ["diff", "--name-only", "HEAD~1..HEAD"];
+		args = ['diff', '--name-only', 'HEAD~1..HEAD'];
 	}
 
-	const output = execFileSync("git", args, {
+	const output = execFileSync('git', args, {
 		cwd,
-		encoding: "utf-8",
+		encoding: 'utf-8',
 	});
 
 	return normalizeLines(output);
 }
 
 export function getStagedFiles(cwd = process.cwd()): string[] {
-	const output = execFileSync("git", ["diff", "--cached", "--name-only"], {
+	const output = execFileSync('git', ['diff', '--cached', '--name-only'], {
 		cwd,
-		encoding: "utf-8",
+		encoding: 'utf-8',
 	});
 
 	return normalizeLines(output);
 }
 
 export function getUncommittedFiles(cwd = process.cwd()): string[] {
-	const output = execFileSync("git", ["diff", "--name-only"], {
+	const output = execFileSync('git', ['diff', '--name-only'], {
 		cwd,
-		encoding: "utf-8",
+		encoding: 'utf-8',
 	});
 
 	return normalizeLines(output);
 }
 
 export function getTrackedFiles(cwd = process.cwd()): string[] {
-	const output = execFileSync("git", ["ls-files"], {
+	const output = execFileSync('git', ['ls-files'], {
 		cwd,
-		encoding: "utf-8",
+		encoding: 'utf-8',
 	});
 
 	return normalizeLines(output);

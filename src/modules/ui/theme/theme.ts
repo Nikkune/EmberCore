@@ -1,25 +1,25 @@
-import type {BorderCharacters, BorderPreset, Theme, ThemeComponentStyles,} from "../types/uiTypes";
+import type { BorderCharacters, BorderPreset, Theme, ThemeComponentStyles } from '@modules/ui';
 
 const ASCII_BORDER: BorderCharacters = {
-	topLeft: "+",
-	topRight: "+",
-	bottomLeft: "+",
-	bottomRight: "+",
-	horizontal: "-",
-	vertical: "|",
+	topLeft: '+',
+	topRight: '+',
+	bottomLeft: '+',
+	bottomRight: '+',
+	horizontal: '-',
+	vertical: '|',
 };
 
 const SINGLE_BORDER: BorderCharacters = {
-	topLeft: "┌",
-	topRight: "┐",
-	bottomLeft: "└",
-	bottomRight: "┘",
-	horizontal: "─",
-	vertical: "│",
+	topLeft: '┌',
+	topRight: '┐',
+	bottomLeft: '└',
+	bottomRight: '┘',
+	horizontal: '─',
+	vertical: '│',
 };
 
 export const defaultTheme: Theme = {
-	name: "default",
+	name: 'default',
 	palette: {
 		backgroundColor: colors.black,
 		surface: colors.black,
@@ -43,17 +43,11 @@ export const defaultTheme: Theme = {
 	components: {},
 };
 
-export function getBorderCharacters(
-	theme: Theme,
-	preset: BorderPreset = "ascii",
-): BorderCharacters {
+export function getBorderCharacters(theme: Theme, preset: BorderPreset = 'ascii'): BorderCharacters {
 	return theme.borders[preset];
 }
 
-export function mergeComponentStyle<TStyle>(
-	base: TStyle | undefined,
-	override: Partial<TStyle> | undefined,
-): TStyle | undefined {
+export function mergeComponentStyle<TStyle>(base: TStyle | undefined, override: Partial<TStyle> | undefined): TStyle | undefined {
 	if (!base && !override) {
 		return undefined;
 	}

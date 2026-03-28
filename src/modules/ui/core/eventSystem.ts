@@ -1,4 +1,12 @@
-import type {EventDispatchResult, EventSubscription, EventSubscriptionOptions, UIEvent, UIEventBus, UIEventHandler, UIEventName,} from "@modules/ui";
+import type {
+	EventDispatchResult,
+	EventSubscription,
+	EventSubscriptionOptions,
+	UIEvent,
+	UIEventBus,
+	UIEventHandler,
+	UIEventName,
+} from '@modules/ui';
 
 interface InternalEventSubscription extends EventSubscription<UIEvent> {
 	readonly handler: UIEventHandler<UIEvent>;
@@ -20,15 +28,18 @@ class BasicEventSubscription<TEvent extends UIEvent = UIEvent> implements Intern
 
 	public constructor(
 		public readonly id: string,
-		public readonly type: TEvent["type"],
+		public readonly type: TEvent['type'],
 		private readonly handlerTyped: UIEventHandler<TEvent>,
 		private readonly owner: BasicUIEventBus,
 		public readonly once: boolean,
 		public readonly order: number,
 		targetId?: string,
 	) {
-		if (targetId !== undefined)
-			this.targetId = targetId;
+		if (targetId !== undefined) this.targetId = targetId;
+	}
+
+	public get handler(): UIEventHandler<UIEvent> {
+		return this.handlerTyped as UIEventHandler<UIEvent>;
 	}
 
 	public unsubscribe(): void {
@@ -40,16 +51,16 @@ class BasicEventSubscription<TEvent extends UIEvent = UIEvent> implements Intern
 	public setActive(active: boolean): void {
 		this.active = active;
 	}
-
-	public get handler(): UIEventHandler<UIEvent> {
-		return this.handlerTyped as UIEventHandler<UIEvent>;
-	}
 }
 
 export class BasicUIEventBus implements UIEventBus {
 	private readonly subscriptions: Partial<Record<UIEventName, InternalEventSubscription[]>> = {};
 
-	public subscribe<TEvent extends UIEvent>(type: TEvent["type"], handler: UIEventHandler<TEvent>, options: EventSubscriptionOptions = {}): EventSubscription<TEvent> {
+	public subscribe<TEvent extends UIEvent>(
+		type: TEvent['type'],
+		handler: UIEventHandler<TEvent>,
+		options: EventSubscriptionOptions = {},
+	): EventSubscription<TEvent> {
 		const subscription = new BasicEventSubscription<TEvent>(
 			createSubscriptionId(),
 			type,
@@ -67,8 +78,12 @@ export class BasicUIEventBus implements UIEventBus {
 		return subscription;
 	}
 
-	public subscribeOnce<TEvent extends UIEvent>(type: TEvent["type"], handler: UIEventHandler<TEvent>, options?: Omit<EventSubscriptionOptions, "once">): EventSubscription<TEvent> {
-		return this.subscribe(type, handler, {...options, once: true});
+	public subscribeOnce<TEvent extends UIEvent>(
+		type: TEvent['type'],
+		handler: UIEventHandler<TEvent>,
+		options?: Omit<EventSubscriptionOptions, 'once'>,
+	): EventSubscription<TEvent> {
+		return this.subscribe(type, handler, { ...options, once: true });
 	}
 
 	public unsubscribe(subscriptionId: string): boolean {
@@ -98,12 +113,13 @@ export class BasicUIEventBus implements UIEventBus {
 	public dispatch<TEvent extends UIEvent>(event: TEvent): EventDispatchResult {
 		const list = this.subscriptions[event.type];
 
-		if (!list || list.length === 0) return {
-			dispatched: false,
-			listenerCount: 0,
-			cancelled: event.cancelled ?? false,
-			propagationStopped: event.propagationStopped ?? false,
-		}
+		if (!list || list.length === 0)
+			return {
+				dispatched: false,
+				listenerCount: 0,
+				cancelled: event.cancelled ?? false,
+				propagationStopped: event.propagationStopped ?? false,
+			};
 
 		let listenerCount = 0;
 		const snapshot = [...list];
@@ -167,7 +183,7 @@ export class BasicUIEventBus implements UIEventBus {
 	}
 
 	public getSubscriptions(type?: UIEventName): ReadonlyArray<EventSubscription> {
-		if (type !== undefined) return [...(this.subscriptions[type] ?? [])]
+		if (type !== undefined) return [...(this.subscriptions[type] ?? [])];
 
 		const allSubscriptions: EventSubscription[] = [];
 

@@ -1,7 +1,7 @@
 # 🔥 EmberCore
 
-> *An ancient core powered by eternal embers, forged to control and automate complex systems.*
-> *Written in TypeScript. Forged into Lua.*
+> _An ancient core powered by eternal embers, forged to control and automate complex systems._
+> _Written in TypeScript. Forged into Lua._
 
 ---
 
@@ -9,10 +9,10 @@
 
 **EmberCore** is a development framework for ComputerCraft / CC:Tweaked that allows you to:
 
-* Write your programs in **TypeScript**
-* Compile them into **Lua**
-* Build modular and reusable automation systems
-* Deploy projects directly into your Minecraft world
+- Write your programs in **TypeScript**
+- Compile them into **Lua**
+- Build modular and reusable automation systems
+- Deploy projects directly into your Minecraft world
 
 ---
 
@@ -20,9 +20,9 @@
 
 EmberCore is built around three core principles:
 
-* **Clarity over complexity** → simple structure, no magic
-* **Separation of concerns** → core / modules / projects
-* **Automation-first** → everything is designed for in-game systems
+- **Clarity over complexity** → simple structure, no magic
+- **Separation of concerns** → core / modules / projects
+- **Automation-first** → everything is designed for in-game systems
 
 ---
 
@@ -66,7 +66,7 @@ src/projects/hello/main.ts
 ```
 
 ```ts
-print("Hello from EmberCore 🔥")
+print('Hello from EmberCore 🔥');
 ```
 
 Build and copy the generated Lua to your ComputerCraft computer.
@@ -76,14 +76,14 @@ Build and copy the generated Lua to your ComputerCraft computer.
 ## 🔥 Example: Smeltery Controller
 
 ```ts
-import { SmelteryController } from "../../modules/smeltery/controller"
+import {SmelteryController} from '../../modules/smeltery/controller';
 
 const controller = new SmelteryController({
-  input: "minecraft:chest_0",
-  output: "minecraft:chest_1"
-})
+	input: 'minecraft:chest_0',
+	output: 'minecraft:chest_1',
+});
 
-controller.run()
+controller.run();
 ```
 
 ---
@@ -98,9 +98,9 @@ pastebin run <id> smeltery
 
 The installer will:
 
-* Download the project
-* Install required modules
-* Set up the environment
+- Download the project
+- Install required modules
+- Set up the environment
 
 ---
 
@@ -110,37 +110,37 @@ The installer will:
 
 Low-level building blocks:
 
-* peripheral wrappers
-* inventory handling
-* logging
-* utilities
+- peripheral wrappers
+- inventory handling
+- logging
+- utilities
 
 ### Modules
 
 Reusable systems:
 
-* smeltery automation
-* storage management
-* UI / monitors
-* networking
+- smeltery automation
+- storage management
+- UI / monitors
+- networking
 
 ### Projects
 
 Executable programs:
 
-* entrypoints
-* configuration
-* orchestration
+- entrypoints
+- configuration
+- orchestration
 
 ---
 
 ## 🔮 Roadmap
 
-* [ ] Project manifest system
-* [ ] Auto-deployment from GitHub
-* [ ] Module dependency resolver
-* [ ] Update system (in-game)
-* [ ] CLI tools
+- [ ] Project manifest system
+- [ ] Auto-deployment from GitHub
+- [ ] Module dependency resolver
+- [ ] Update system (in-game)
+- [ ] CLI tools
 
 ---
 
@@ -158,10 +158,10 @@ Executable programs:
 
 ## 🛠️ Tech Stack
 
-* TypeScript
-* TypeScriptToLua
-* Lua 5.2
-* ComputerCraft / CC:Tweaked
+- TypeScript
+- TypeScriptToLua
+- Lua 5.2
+- ComputerCraft / CC:Tweaked
 
 ---
 

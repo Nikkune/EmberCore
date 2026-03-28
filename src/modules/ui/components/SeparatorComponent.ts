@@ -1,6 +1,17 @@
-import type {ComponentDependencies, DrawTextLineOptions, LayoutConstraints, MeasuredSize, RenderContext, SeparatorProps, SeparatorStyle, TextStyle, UIContext, UIDrawSurface} from "@modules/ui";
-import {BaseComponent, drawHorizontalLine, drawTextLine, mergeComponentStyle} from "@modules/ui";
-import {createOptions} from "@utils/helpers";
+import type {
+	ComponentDependencies,
+	DrawTextLineOptions,
+	LayoutConstraints,
+	MeasuredSize,
+	RenderContext,
+	SeparatorProps,
+	SeparatorStyle,
+	TextStyle,
+	UIContext,
+	UIDrawSurface,
+} from '@modules/ui';
+import { BaseComponent, drawHorizontalLine, drawTextLine, mergeComponentStyle } from '@modules/ui';
+import { createOptions } from '@utils/helpers';
 
 export class SeparatorComponent extends BaseComponent<SeparatorProps, UIDrawSurface> {
 	public constructor(props: SeparatorProps, dependencies: ComponentDependencies = {}) {
@@ -11,7 +22,7 @@ export class SeparatorComponent extends BaseComponent<SeparatorProps, UIDrawSurf
 		const label = this.props.label ?? '';
 		const width = this.resolveAvailableWidth(constraints, label.length);
 		const height = Math.max(constraints.minHeight, Math.min(1, constraints.maxHeight));
-		return {width, height};
+		return { width, height };
 	}
 
 	public render(context: RenderContext<UIDrawSurface>): void {
@@ -21,7 +32,7 @@ export class SeparatorComponent extends BaseComponent<SeparatorProps, UIDrawSurf
 		const character = this.resolveCharacter(style);
 		const y = this.rect.y;
 
-		drawHorizontalLine(context.draw, {x: this.rect.x, y}, this.rect.width, character, style?.foregroundColor, style?.backgroundColor);
+		drawHorizontalLine(context.draw, { x: this.rect.x, y }, this.rect.width, character, style?.foregroundColor, style?.backgroundColor);
 
 		const label = this.props.label;
 
@@ -34,22 +45,24 @@ export class SeparatorComponent extends BaseComponent<SeparatorProps, UIDrawSurf
 		drawTextLine(
 			context.draw,
 			createOptions<DrawTextLineOptions>({
-				position: {x: labelX, y},
+				position: { x: labelX, y },
 				width: labelWidth,
 				text: labelText,
 			})
-				.with('style',
+				.with(
+					'style',
 					createOptions<TextStyle>({
 						alignment: 'left',
 					})
 						.with('foregroundColor', style?.labelStyle?.foregroundColor ?? style?.foregroundColor)
 						.with('backgroundColor', style?.labelStyle?.backgroundColor ?? style?.backgroundColor)
-						.done()
+						.done(),
 				)
-				.done());
+				.done(),
+		);
 	}
 
-	private getResolvedStyle(theme: UIContext["theme"]): SeparatorStyle | undefined {
+	private getResolvedStyle(theme: UIContext['theme']): SeparatorStyle | undefined {
 		return mergeComponentStyle(theme.components?.separator, this.props.style);
 	}
 

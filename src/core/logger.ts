@@ -1,16 +1,16 @@
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
-const LOG_LEVEL_ORDER: Record<LogLevel, number> = {debug: 0, info: 1, warn: 2, error: 3};
+const LOG_LEVEL_ORDER: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 };
 
 function getLevelColor(level: LogLevel): number {
 	switch (level) {
-		case "debug":
+		case 'debug':
 			return colors.lightBlue;
-		case "info":
+		case 'info':
 			return colors.white;
-		case "warn":
+		case 'warn':
 			return colors.orange;
-		case "error":
+		case 'error':
 			return colors.red;
 	}
 }
@@ -20,7 +20,7 @@ function pad(value: number): string {
 }
 
 function getTimestamp(): string {
-	const now = os.date("*t");
+	const now = os.date('*t');
 
 	const year = now.year;
 	const month = pad(now.month);
@@ -53,8 +53,7 @@ export class Logger {
 		private readonly scope = 'EmberCore',
 		private level: LogLevel = 'info',
 		private readonly useColors = true,
-	) {
-	}
+	) {}
 
 	public setLevel(level: LogLevel): void {
 		this.level = level;
@@ -75,7 +74,6 @@ export class Logger {
 	public error(message: string, meta?: Record<string, unknown>): void {
 		this.log('error', message, meta);
 	}
-
 
 	private log(level: LogLevel, message: string, meta?: Record<string, unknown>): void {
 		if (LOG_LEVEL_ORDER[level] < LOG_LEVEL_ORDER[this.level]) return;

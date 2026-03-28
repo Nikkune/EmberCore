@@ -1,4 +1,20 @@
-import type {BaseProps, ComponentKind, InvalidationRequest, LayoutConstraints, MeasuredSize, Point, Rect, RenderContext, UIComponent, UIContext, UIEvent, UIEventBus, UIEventHandler, UIEventMap, UIInvalidator,} from "@modules/ui";
+import type {
+	BaseProps,
+	ComponentKind,
+	InvalidationRequest,
+	LayoutConstraints,
+	MeasuredSize,
+	Point,
+	Rect,
+	RenderContext,
+	UIComponent,
+	UIContext,
+	UIEvent,
+	UIEventBus,
+	UIEventHandler,
+	UIEventMap,
+	UIInvalidator,
+} from '@modules/ui';
 
 let componentIdCounter = 0;
 
@@ -10,7 +26,7 @@ function createComponentId(kind: ComponentKind): string {
 export abstract class BaseComponent<TProps extends BaseProps = BaseProps, TDraw = unknown> implements UIComponent<TDraw> {
 	public readonly id: string;
 	public readonly kind: ComponentKind;
-	public rect: Rect = {x: 1, y: 1, width: 0, height: 0};
+	public rect: Rect = { x: 1, y: 1, width: 0, height: 0 };
 
 	protected readonly props: TProps;
 	protected readonly eventBus?: UIEventBus;
@@ -18,12 +34,7 @@ export abstract class BaseComponent<TProps extends BaseProps = BaseProps, TDraw 
 
 	private readonly subscriptions: Array<{ unsubscribe(): void }> = [];
 
-	protected constructor(
-		kind: ComponentKind,
-		props: TProps,
-		eventBus?: UIEventBus,
-		invalidator?: UIInvalidator,
-	) {
+	protected constructor(kind: ComponentKind, props: TProps, eventBus?: UIEventBus, invalidator?: UIInvalidator) {
 		this.kind = kind;
 		this.props = props;
 		if (eventBus !== undefined) {
@@ -67,7 +78,7 @@ export abstract class BaseComponent<TProps extends BaseProps = BaseProps, TDraw 
 		return !(event.targetId && event.targetId !== this.id);
 	}
 
-	public invalidate(request: InvalidationRequest = {reason: "manual"}): void {
+	public invalidate(request: InvalidationRequest = { reason: 'manual' }): void {
 		this.invalidator?.invalidate({
 			...request,
 			rect: request.rect ?? this.rect,
@@ -82,10 +93,7 @@ export abstract class BaseComponent<TProps extends BaseProps = BaseProps, TDraw 
 		this.subscriptions.length = 0;
 	}
 
-	public abstract measure(
-		constraints: LayoutConstraints,
-		context: UIContext,
-	): MeasuredSize;
+	public abstract measure(constraints: LayoutConstraints, context: UIContext): MeasuredSize;
 
 	public abstract render(context: RenderContext<TDraw>): void;
 
@@ -102,11 +110,9 @@ export abstract class BaseComponent<TProps extends BaseProps = BaseProps, TDraw 
 				continue;
 			}
 
-			const subscription = this.eventBus.subscribe(
-				type,
-				handler as UIEventHandler<UIEvent>,
-				{targetId: this.id},
-			);
+			const subscription = this.eventBus.subscribe(type, handler as UIEventHandler<UIEvent>, {
+				targetId: this.id,
+			});
 
 			this.subscriptions.push(subscription);
 		}
