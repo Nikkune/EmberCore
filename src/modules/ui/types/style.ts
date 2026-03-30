@@ -34,11 +34,6 @@ export interface BorderStyle {
 	preset?: BorderPreset;
 }
 
-export interface FillStyle {
-	backgroundColor?: Color;
-	character?: string;
-}
-
 export interface ColorStyle {
 	foregroundColor?: Color;
 	backgroundColor?: Color;
@@ -157,7 +152,3 @@ export interface ContainerStyle extends BoxStyle {}
 export interface StackStyle extends BoxStyle {}
 
 export interface GridStyle extends BoxStyle {}
-
-export interface BoxComponentStyle extends BoxStyle {
-	titleStyle?: TextStyle;
-}
