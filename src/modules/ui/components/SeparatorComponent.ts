@@ -1,6 +1,6 @@
-import type {ComponentDependencies, DrawTextLineOptions, LayoutConstraints, MeasuredSize, RenderContext, SeparatorProps, SeparatorStyle, TextStyle, UIContext, UIDrawSurface} from '@modules/ui';
-import {BaseComponent, drawHorizontalLine, drawTextLine, mergeComponentStyle}                                                                                                 from '@modules/ui';
-import {createOptions}                                                                                                                                                        from '@utils/helpers';
+import type {ComponentDependencies, LayoutConstraints, MeasuredSize, RenderContext, SeparatorProps, SeparatorStyle, TextStyle, UIContext} from '@modules/ui/types';
+import {BaseComponent, drawHorizontalLine, drawTextLine, type DrawTextLineOptions, mergeComponentStyle, type UIDrawSurface} from '@modules/ui';
+import {createOptions}                                                                                                                    from '@utils/helpers';
 
 export class SeparatorComponent extends BaseComponent<SeparatorProps, UIDrawSurface> {
 	public constructor(props: SeparatorProps, dependencies: ComponentDependencies = {}) {

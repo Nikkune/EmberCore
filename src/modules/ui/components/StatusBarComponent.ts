@@ -1,6 +1,6 @@
-import type {ComponentDependencies, DrawTextLineOptions, LayoutConstraints, MeasuredSize, RenderContext, StatusBarProps, StatusBarStyle, TextStyle, UIContext, UIDrawSurface} from '@modules/ui';
-import {BaseComponent, drawTextLine, mergeComponentStyle}                                                                                                                     from '@modules/ui';
-import {createOptions}                                                                                                                                                        from '@utils/helpers';
+import type {ComponentDependencies,  LayoutConstraints, MeasuredSize, RenderContext, StatusBarProps, StatusBarStyle, TextStyle, UIContext} from '@modules/ui/types';
+import {BaseComponent, drawTextLine, type DrawTextLineOptions, mergeComponentStyle, type UIDrawSurface} from '@modules/ui';
+import {createOptions}                                                                                                                     from '@utils/helpers';
 
 interface ResolvedStatusBarSegment {
 	id?: string;

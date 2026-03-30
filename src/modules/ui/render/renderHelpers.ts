@@ -1,6 +1,6 @@
-import type {BorderCharacters, BoxStyle, Color, Insets, PaddingLike, Point, Rect, RenderContext, TextStyle, TextWrap, UIDrawSurface} from '@modules/ui';
-import {makeColorOptions}                                                                                                            from '@modules/ui';
-import {createOptions}                                                                                                               from '@utils/helpers';
+import type {BorderCharacters, BoxStyle, Color, Insets, PaddingLike, Point, Rect, RenderContext, TextStyle, TextWrap} from '@modules/ui/types';
+import {makeColorOptions, type UIDrawSurface} from '@modules/ui';
+import {createOptions}                                                                                                from '@utils/helpers';
 
 export interface ClipTextResult {
 	text: string;

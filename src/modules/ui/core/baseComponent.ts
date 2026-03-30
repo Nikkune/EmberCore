@@ -1,4 +1,4 @@
-import type {BaseProps, ComponentKind, InvalidationRequest, LayoutConstraints, MeasuredSize, Point, Rect, RenderContext, UIComponent, UIContext, UIEvent, UIEventBus, UIEventHandler, UIEventMap, UIInvalidator} from '@modules/ui';
+import type {BaseProps, ComponentKind, InvalidationRequest, LayoutConstraints, MeasuredSize, Point, Rect, RenderContext, UIComponent, UIContext, UIEvent, UIEventBus, UIEventHandler, UIEventMap, UIInvalidator} from '@modules/ui/types';
 
 let componentIdCounter = 0;
 

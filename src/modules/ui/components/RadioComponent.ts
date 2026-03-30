@@ -1,6 +1,6 @@
-import type {ComponentDependencies, DrawTextLineOptions, LayoutConstraints, MeasuredSize, RadioProps, RadioStyle, RenderContext, TextStyle, UIContext, UIDrawSurface} from '@modules/ui';
-import {BaseComponent, drawTextLine, mergeComponentStyle}                                                                                                             from '@modules/ui';
-import {createOptions}                                                                                                                                                from '@utils/helpers';
+import type {ComponentDependencies, LayoutConstraints, MeasuredSize, RadioProps, RadioStyle, RenderContext, TextStyle, UIContext} from '@modules/ui/types';
+import {BaseComponent, drawTextLine, type DrawTextLineOptions, mergeComponentStyle, type UIDrawSurface} from '@modules/ui';
+import {createOptions}                                                                                                            from '@utils/helpers';
 
 export class RadioComponent<T = string> extends BaseComponent<RadioProps<T>, UIDrawSurface> {
 	public constructor(props: RadioProps<T>, dependencies: ComponentDependencies = {}) {

@@ -1,6 +1,6 @@
-import type {BorderCharacters, BoxStyle, ButtonProps, ButtonStyle, Color, ComponentDependencies, DrawBoxOptions, LayoutConstraints, MeasuredSize, RenderContext, TextStyle, UIContext, UIDrawSurface} from '@modules/ui';
-import {BaseComponent, drawBox, drawText, getBorderCharacters, mergeComponentStyle, normalizeInsets}                                                                                                  from '@modules/ui';
-import {createOptions}                                                                                                                                                                                 from '@utils/helpers';
+import type {BorderCharacters, BoxStyle, ButtonProps, ButtonStyle, Color, ComponentDependencies,  LayoutConstraints, MeasuredSize, RenderContext, TextStyle, UIContext} from '@modules/ui/types';
+import {BaseComponent, drawBox, type DrawBoxOptions, drawText, getBorderCharacters, mergeComponentStyle, normalizeInsets, type UIDrawSurface} from '@modules/ui';
+import {createOptions}                                                                                                                                                  from '@utils/helpers';
 
 export class ButtonComponent extends BaseComponent<ButtonProps, UIDrawSurface> {
 	constructor(props: ButtonProps, dependencies: ComponentDependencies = {}) {

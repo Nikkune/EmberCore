@@ -1,5 +1,6 @@
-import type {DirtyRegion, InvalidationRequest, LayoutConstraints, RenderContext, SurfaceKind, Theme, UIComponent, UIContext, UIDrawSurface, UIEvent, UIEventBus, UIInvalidator} from '@modules/ui';
-import {createOptions}                                                                                                                                                          from '@utils/helpers';
+import type {UIDrawSurface}                                                                                                                                      from '@modules/ui';
+import type {DirtyRegion, InvalidationRequest, LayoutConstraints, RenderContext, SurfaceKind, Theme, UIComponent, UIContext, UIEvent, UIEventBus, UIInvalidator} from '@modules/ui/types';
+import {createOptions}                                                                                                                                           from '@utils/helpers';
 
 export interface UIRuntimeOptions {
 	root: UIComponent;

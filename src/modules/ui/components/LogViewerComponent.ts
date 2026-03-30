@@ -1,6 +1,6 @@
-import type {ComponentDependencies, DrawTextLineOptions, LayoutConstraints, LogEntry, LogViewerProps, LogViewerStyle, MeasuredSize, RenderContext, TextStyle, UIContext, UIDrawSurface} from '@modules/ui';
-import {BaseComponent, clamp, drawTextLine, mergeComponentStyle}                                                                                                                        from '@modules/ui';
-import {createOptions}                                                                                                                                                                   from '@utils/helpers';
+import type {ComponentDependencies, LayoutConstraints, LogEntry, LogViewerProps, LogViewerStyle, MeasuredSize, RenderContext, TextStyle, UIContext} from '@modules/ui/types';
+import {BaseComponent, clamp, drawTextLine, type DrawTextLineOptions, mergeComponentStyle, type UIDrawSurface} from '@modules/ui';
+import {createOptions}                                                                                                                              from '@utils/helpers';
 
 interface VisibleLogLine {
 	text: string;

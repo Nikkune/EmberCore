@@ -1,6 +1,6 @@
-import type {CheckboxProps, CheckboxStyle, ComponentDependencies, DrawTextLineOptions, LayoutConstraints, MeasuredSize, RenderContext, TextStyle, UIContext, UIDrawSurface} from '@modules/ui';
-import {BaseComponent, drawTextLine, mergeComponentStyle}                                                                                                                   from '@modules/ui';
-import {createOptions}                                                                                                                                                      from '@utils/helpers';
+import type {CheckboxProps, CheckboxStyle, ComponentDependencies,  LayoutConstraints, MeasuredSize, RenderContext, TextStyle, UIContext} from '@modules/ui/types';
+import {BaseComponent, drawTextLine, type DrawTextLineOptions, mergeComponentStyle, type UIDrawSurface} from '@modules/ui';
+import {createOptions}                                                                                                                   from '@utils/helpers';
 
 export class CheckboxComponent extends BaseComponent<CheckboxProps, UIDrawSurface> {
 	public constructor(props: CheckboxProps, dependencies: ComponentDependencies = {}) {

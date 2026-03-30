@@ -1,6 +1,6 @@
-import type {ComponentDependencies, DrawTextLineOptions, LayoutConstraints, MeasuredSize, PaginationProps, PaginationStyle, RenderContext, TextStyle, UIContext, UIDrawSurface} from '@modules/ui';
-import {BaseComponent, clamp, drawTextLine, mergeComponentStyle}                                                                                                                from '@modules/ui';
-import {createOptions}                                                                                                                                                          from '@utils/helpers';
+import type {ComponentDependencies, LayoutConstraints, MeasuredSize, PaginationProps, PaginationStyle, RenderContext, TextStyle, UIContext} from '@modules/ui/types';
+import {BaseComponent, clamp, drawTextLine, type DrawTextLineOptions, mergeComponentStyle, type UIDrawSurface} from '@modules/ui';
+import {createOptions}                                                                                                                      from '@utils/helpers';
 
 interface PaginationSegment {
 	text: string;

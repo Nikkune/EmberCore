@@ -1,6 +1,6 @@
-import type {ComponentDependencies, DrawTextLineOptions, LayoutConstraints, MeasuredSize, ProgressBarProps, ProgressBarStyle, RenderContext, TextStyle, UIContext, UIDrawSurface} from '@modules/ui';
-import {BaseComponent, clamp, drawHorizontalLine, drawTextLine, mergeComponentStyle}                                                                                              from '@modules/ui';
-import {createOptions}                                                                                                                                                            from '@utils/helpers';
+import type {ComponentDependencies, LayoutConstraints, MeasuredSize, ProgressBarProps, ProgressBarStyle, RenderContext, TextStyle, UIContext} from '@modules/ui/types';
+import {BaseComponent, clamp, drawHorizontalLine, drawTextLine, type DrawTextLineOptions, mergeComponentStyle, type UIDrawSurface} from '@modules/ui';
+import {createOptions}                                                                                                                        from '@utils/helpers';
 
 export class ProgressBarComponent extends BaseComponent<ProgressBarProps, UIDrawSurface> {
 	public constructor(props: ProgressBarProps, dependencies: ComponentDependencies = {}) {

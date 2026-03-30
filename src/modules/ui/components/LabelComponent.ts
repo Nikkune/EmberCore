@@ -1,6 +1,6 @@
-import type {ComponentDependencies, DrawTextOptions, LabelProps, LayoutConstraints, MeasuredSize, RenderContext, ResolveTextLinesOptions, TextStyle, UIContext, UIDrawSurface} from '@modules/ui';
-import {BaseComponent, drawText, mergeComponentStyle, resolveTextLines}                                                                                                        from '@modules/ui';
-import {createOptions}                                                                                                                                                         from '@utils/helpers';
+import type {ComponentDependencies, LabelProps, LayoutConstraints, MeasuredSize, RenderContext, TextStyle, UIContext}                           from '@modules/ui/types';
+import {BaseComponent, drawText, type DrawTextOptions, mergeComponentStyle, resolveTextLines, type ResolveTextLinesOptions, type UIDrawSurface} from '@modules/ui';
+import {createOptions}                                                                                                                          from '@utils/helpers';
 
 export class LabelComponent extends BaseComponent<LabelProps, UIDrawSurface> {
 	public constructor(props: LabelProps, dependencies: ComponentDependencies = {}) {

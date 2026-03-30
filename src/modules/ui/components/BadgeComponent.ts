@@ -1,6 +1,6 @@
-import type {BadgeProps, BadgeStyle, BorderCharacters, BoxStyle, Color, ComponentDependencies, DrawBoxOptions, LayoutConstraints, MeasuredSize, RenderContext, TextStyle, UIContext, UIDrawSurface} from '@modules/ui';
-import {BaseComponent, drawBox, drawText, getBorderCharacters, mergeComponentStyle, normalizeInsets}                                                                                                from '@modules/ui';
-import {createOptions}                                                                                                                                                                              from '@utils/helpers';
+import type {BadgeProps, BadgeStyle, BorderCharacters, BoxStyle, Color, ComponentDependencies, LayoutConstraints, MeasuredSize, RenderContext, TextStyle, UIContext} from '@modules/ui/types';
+import {BaseComponent, drawBox, type DrawBoxOptions, drawText, getBorderCharacters, mergeComponentStyle, normalizeInsets, type UIDrawSurface} from '@modules/ui';
+import {createOptions}                                                                                                                                               from '@utils/helpers';
 
 export class BadgeComponent extends BaseComponent<BadgeProps, UIDrawSurface> {
 	constructor(props: BadgeProps, dependencies: ComponentDependencies = {}) {
