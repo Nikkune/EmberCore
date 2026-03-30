@@ -1,48 +1,36 @@
-import type {AxisSize, Color, MarginLike, PaddingLike, Point, Rect}        from './core';
-import type {UIEvent, UIEventBus, UIEventMap}                              from './events';
-import type {FlexItemOptions, LayoutConstraints, MeasuredSize}             from './layout';
+import type {BaseProps}                                                    from './props';
+import type {Theme}                                                        from './theme';
+import type {Point, Rect}                                                  from './core';
+import type {UIEvent, UIEventBus}                                          from './events';
+import type {LayoutConstraints, MeasuredSize}                              from './layout';
 import type {InvalidationRequest, RenderContext, UIContext, UIInvalidator} from './runtime';
-import type {BorderStyle}                                                  from './style';
 
 // ============================================================
 // Component kinds
 // ============================================================
 
-export type ComponentKind = | 'button' | 'progress_bar' | 'table' | 'box' | 'grid' | 'checkbox' | 'radio' | 'log_viewer' | 'pagination' | 'label' | 'panel' | 'separator' | 'badge' | 'list' | 'status_bar' | 'container' | 'stack' | 'custom';
+export type LeafComponentKind = | 'button' | 'progress_bar' | 'checkbox' | 'radio' | 'pagination' | 'label' | 'separator' | 'badge' | 'status_bar' | 'custom';
 
-// ============================================================
-// Base props
-// ============================================================
+export type ContainerComponentKind = | 'box' | 'grid' | 'table' | 'panel' | 'list' | 'container' | 'stack' | 'log_viewer';
 
-export interface BaseProps extends AxisSize {
-	id?: string;
-	visible?: boolean;
-	disabled?: boolean;
-	zIndex?: number;
-
-	margin?: MarginLike;
-	padding?: PaddingLike;
-
-	rect?: Partial<Rect>;
-
-	backgroundColor?: Color;
-	foregroundColor?: Color;
-	border?: BorderStyle;
-
-	flex?: FlexItemOptions;
-
-	on?: UIEventMap;
-}
+export type ComponentKind = LeafComponentKind | ContainerComponentKind;
 
 // ============================================================
 // Component tree
 // ============================================================
 
-export interface ComponentNode<TProps extends BaseProps = BaseProps> {
-	kind: ComponentKind;
+export interface LeafComponentNode<TProps extends BaseProps = BaseProps> {
+	kind: LeafComponentKind;
 	props: TProps;
-	children?: ComponentNode[];
 }
+
+export interface ContainerComponentNode<TProps extends BaseProps = BaseProps, TChild extends UINode = UINode> {
+	kind: ContainerComponentKind;
+	readonly props: TProps;
+	readonly children: TChild[];
+}
+
+export type UINode = LeafComponentNode | ContainerComponentNode;
 
 // ============================================================
 // Component capabilities
@@ -60,6 +48,46 @@ export interface Renderable<TDraw = unknown> {
 	render(context: RenderContext<TDraw>): void;
 }
 
+export interface Pressable {
+	press(context: UIContext): boolean;
+}
+
+export interface Themable {
+	applyTheme(theme: Theme): void;
+}
+
+export interface Invalidatable {
+	invalidate(request?: InvalidationRequest): void;
+}
+
+export interface Destroyable {
+	destroy(): void;
+}
+
+export interface Focusable {
+	focus(): void;
+
+	blur(): void;
+
+	readonly focused: boolean;
+}
+
+export interface Checkable {
+	checked: boolean;
+
+	setChecked(value: boolean): void;
+
+	toggle(): void;
+}
+
+export interface ContainerLike<TChild> {
+	readonly children: TChild[];
+
+	addChild(child: TChild): void;
+
+	removeChild(childId: string): void;
+}
+
 export interface Interactive {
 	hitTest(point: Point): boolean;
 
@@ -70,17 +98,27 @@ export interface Interactive {
 // Component contracts
 // ============================================================
 
-export interface UIComponent<TDraw = unknown> extends Measurable, Layoutable, Renderable<TDraw>, Interactive {
+export interface UIComponent<TDraw = unknown> extends Measurable, Layoutable, Renderable<TDraw>, Invalidatable, Destroyable {
 	readonly id: string;
 	readonly kind: ComponentKind;
 	readonly rect: Rect;
 	readonly visible: boolean;
 	readonly disabled: boolean;
-
-	invalidate(request?: InvalidationRequest): void;
-
-	destroy(): void;
 }
+
+export interface UIInteractiveComponent<TDraw = unknown> extends UIComponent<TDraw>, Interactive {}
+
+export interface UIFocusableComponent<TDraw = unknown> extends UIInteractiveComponent<TDraw>, Focusable {}
+
+export interface UIActionableComponent<TDraw = unknown> extends UIFocusableComponent<TDraw> {}
+
+export interface UIPressableComponent<TDraw = unknown> extends UIActionableComponent<TDraw>, Pressable {}
+
+export interface UICheckableComponent<TDraw = unknown> extends UIActionableComponent<TDraw>, Checkable {}
+
+export interface UIThemableComponent<TDraw = unknown> extends UIComponent<TDraw>, Themable {}
+
+export interface UIContainerComponent<TDraw = unknown, TChild extends UIComponent = UIComponent> extends UIComponent<TDraw>, ContainerLike<TChild> {}
 
 // ============================================================
 // Dependencies
