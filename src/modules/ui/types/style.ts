@@ -116,12 +116,6 @@ export interface TableStyle extends BoxStyle {
 	showBorders?: boolean;
 }
 
-export interface ListStyle extends BoxStyle {
-	itemStyle?: TextStyle;
-	selectedStyle?: TextStyle;
-	bullet?: string;
-}
-
 export interface StatusBarStyle extends BoxStyle {
 	text?: TextStyle;
 	segments?: Array<{

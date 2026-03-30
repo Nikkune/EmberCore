@@ -1,5 +1,5 @@
-import type {Color}                                                                                                                                                                                                                                        from './core';
-import type {BadgeStyle, BorderCharacters, BoxStyle, ButtonStyle, CheckboxStyle, ContainerStyle, LabelStyle, ListStyle, LogViewerStyle, PaginationStyle, PanelStyle, ProgressBarStyle, RadioStyle, SeparatorStyle, StackStyle, StatusBarStyle, TableStyle} from './style';
+import type {Color}                                                                                                                                                                                                                             from './core';
+import type {BadgeStyle, BorderCharacters, BoxStyle, ButtonStyle, CheckboxStyle, ContainerStyle, LabelStyle, LogViewerStyle, PaginationStyle, PanelStyle, ProgressBarStyle, RadioStyle, SeparatorStyle, StackStyle, StatusBarStyle, TableStyle} from './style';
 
 // ============================================================
 // Theme
@@ -37,7 +37,6 @@ export interface ThemeComponentStyles {
 	badge?: Partial<BadgeStyle>;
 	separator?: Partial<SeparatorStyle>;
 	table?: Partial<TableStyle>;
-	list?: Partial<ListStyle>;
 	statusBar?: Partial<StatusBarStyle>;
 	logViewer?: Partial<LogViewerStyle>;
 	pagination?: Partial<PaginationStyle>;

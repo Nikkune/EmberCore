@@ -159,7 +159,7 @@ export interface GridProps extends BoxPropsBase {
 }
 
 export interface PanelProps extends BoxPropsBase {
-	title: string;
+	title?: string;
 }
 
 export interface StackProps extends BoxPropsBase {
