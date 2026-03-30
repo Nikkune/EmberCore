@@ -1,16 +1,18 @@
 import type {Color, PaddingLike, MarginLike} from './core';
 
 // ============================================================
-// Text / border / generic style
+// Generic style primitives
 // ============================================================
 
 export type TextWrap = 'none' | 'word' | 'character';
 export type BorderPreset = 'ascii' | 'single';
+export type TextAlignment = 'left' | 'center' | 'right';
+export type Tone = 'default' | 'primary' | 'success' | 'warning' | 'error' | 'info';
 
 export interface TextStyle {
 	foregroundColor?: Color;
 	backgroundColor?: Color;
-	alignment?: 'left' | 'center' | 'right';
+	alignment?: TextAlignment;
 	wrap?: TextWrap;
 	ellipsis?: boolean;
 }
@@ -37,12 +39,18 @@ export interface FillStyle {
 	character?: string;
 }
 
-export interface BoxStyle {
-	padding?: PaddingLike;
-	margin?: MarginLike;
-	border?: BorderStyle;
-	backgroundColor?: Color;
+export interface ColorStyle {
 	foregroundColor?: Color;
+	backgroundColor?: Color;
+}
+
+export interface SpacingStyle {
+	margin?: MarginLike;
+	padding?: PaddingLike;
+}
+
+export interface BoxStyle extends ColorStyle, SpacingStyle {
+	border?: BorderStyle;
 }
 
 export interface StateColors {
@@ -68,8 +76,19 @@ export interface ButtonStyle extends BoxStyle {
 	colors?: StateColors;
 }
 
+export interface BadgeStyle extends BoxStyle {
+	text?: TextStyle;
+	tone?: Tone;
+}
+
+export interface SeparatorStyle extends ColorStyle {
+	character?: string;
+	labelStyle?: TextStyle;
+}
+
 export interface PanelStyle extends BoxStyle {
 	titleStyle?: TextStyle;
+	gapColor?: Color;
 }
 
 export interface ProgressBarStyle extends BoxStyle {
@@ -95,18 +114,6 @@ export interface RadioStyle extends BoxStyle {
 	unselectedCharacter?: string;
 }
 
-export interface BadgeStyle extends BoxStyle {
-	text?: TextStyle;
-	tone?: 'default' | 'primary' | 'success' | 'warning' | 'error' | 'info';
-}
-
-export interface SeparatorStyle {
-	foregroundColor?: Color;
-	backgroundColor?: Color;
-	character?: string;
-	labelStyle?: TextStyle;
-}
-
 export interface TableStyle extends BoxStyle {
 	headerStyle?: TextStyle;
 	rowStyle?: TextStyle;
@@ -116,16 +123,18 @@ export interface TableStyle extends BoxStyle {
 	showBorders?: boolean;
 }
 
+export interface StatusBarSegmentStyle {
+	id?: string;
+	text: string;
+	color?: Color;
+	backgroundColor?: Color;
+	alignment?: TextAlignment;
+	width?: number;
+}
+
 export interface StatusBarStyle extends BoxStyle {
 	text?: TextStyle;
-	segments?: Array<{
-		id?: string;
-		text: string;
-		color?: Color;
-		backgroundColor?: Color;
-		alignment?: 'left' | 'center' | 'right';
-		width?: number;
-	}>;
+	segments?: StatusBarSegmentStyle[];
 }
 
 export interface LogViewerStyle extends BoxStyle {
@@ -146,3 +155,9 @@ export interface PaginationStyle extends BoxStyle {
 export interface ContainerStyle extends BoxStyle {}
 
 export interface StackStyle extends BoxStyle {}
+
+export interface GridStyle extends BoxStyle {}
+
+export interface BoxComponentStyle extends BoxStyle {
+	titleStyle?: TextStyle;
+}
