@@ -6,3 +6,4 @@ export * from './components/CheckboxComponent';
 export * from './components/RadioComponent';
 export * from './components/PaginationComponent';
 export * from './components/StatusBarComponent';
+export * from './components/LogViewerComponent';
