@@ -5,3 +5,4 @@ export * from './components/ProgressBarComponent';
 export * from './components/CheckboxComponent';
 export * from './components/RadioComponent';
 export * from './components/PaginationComponent';
+export * from './components/StatusBarComponent';
