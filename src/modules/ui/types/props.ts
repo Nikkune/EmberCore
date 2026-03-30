@@ -1,47 +1,62 @@
-import type {BaseProps}                                                                                                                                                                                                                   from './component';
-import type {Color}                                                                                                                                                                                                                       from './core';
-import type {CrossAxisAlignment, Direction, MainAxisAlignment, WrapMode}                                                                                                                                                                 from './layout';
-import type {BadgeStyle, BoxStyle, ButtonStyle, CheckboxStyle, ContainerStyle, LabelStyle, ListStyle, LogViewerStyle, PaginationStyle, PanelStyle, ProgressBarStyle, RadioStyle, SeparatorStyle, StackStyle, StatusBarStyle, TableStyle} from './style';
+import type {AxisSize, Color, MarginLike, PaddingLike, Rect}                                  from './core';
+import type {UIEventMap}                                                                      from './events';
+import type {CrossAxisAlignment, Direction, HorizontalAlignment, MainAxisAlignment, WrapMode} from './layout';
+import type {BorderStyle}                                                                     from './style';
 
 // ============================================================
-// Shared item models
+// Base props
 // ============================================================
 
-export interface OptionItem<T = string> {
-	label: string;
-	value: T;
+export interface IdentityProps {
+	id?: string;
+}
+
+export interface VisibilityProps {
+	visible?: boolean;
 	disabled?: boolean;
-	description?: string;
+	zIndex?: number;
 }
 
-export interface ColumnDefinition<T = Record<string, unknown>> {
-	key: keyof T | string;
-	title: string;
-	width?: number;
-	minWidth?: number;
-	maxWidth?: number;
-	alignment?: 'left' | 'center' | 'right';
-	render?: (row: T, rowIndex: number) => string;
+export interface MarginProps {
+	margin?: MarginLike;
 }
 
-export interface PaginationState {
-	page: number;
-	pageSize: number;
-	totalItems: number;
-	totalPages: number;
+export interface PaddingProps {
+	padding?: PaddingLike;
 }
 
-export interface SelectionState<T = string> {
-	selectedIndex?: number;
-	selectedValue?: T;
+export interface GeometryProps extends AxisSize {
+	rect?: Partial<Rect>;
 }
 
-export interface LogEntry {
-	level: 'debug' | 'info' | 'warn' | 'error';
-	message: string;
-	timestamp?: string;
-	meta?: Record<string, unknown>;
+export interface ColorProps {
+	backgroundColor?: Color;
+	foregroundColor?: Color;
 }
+
+export interface BorderProps {
+	border?: BorderStyle;
+}
+
+export interface AppearanceProps extends ColorProps, BorderProps {}
+
+export interface EventProps {
+	on?: UIEventMap;
+}
+
+export interface BaseProps extends IdentityProps, VisibilityProps, GeometryProps {}
+
+export interface StyledProps extends BaseProps, AppearanceProps {}
+
+export interface BoxPropsBase extends BaseProps, MarginProps, PaddingProps, AppearanceProps {}
+
+export interface InteractivePropsBase extends BaseProps, EventProps {}
+
+export interface InteractiveBoxPropsBase extends BaseProps, MarginProps, PaddingProps, AppearanceProps, EventProps {}
+
+// ============================================================
+// Item models
+// ============================================================
 
 export interface StatusBarSegment {
 	id?: string;
@@ -52,123 +67,110 @@ export interface StatusBarSegment {
 	alignment?: 'left' | 'center' | 'right';
 }
 
+export interface LogEntry {
+	level: 'debug' | 'info' | 'warn' | 'error';
+	message: string;
+	timestamp?: string;
+	meta?: Record<string, unknown>;
+}
+
+export interface ColumnDefinition<T = Record<string, unknown>> {
+	key: keyof T | string;
+	title: string;
+	width?: number;
+	minWidth?: number;
+	maxWidth?: number;
+	alignment?: Omit<HorizontalAlignment, 'stretch'>;
+	render?: (row: T, rowIndex: number) => string;
+}
+
 // ============================================================
 // Component props
 // ============================================================
+// --------------------------- Leaf ---------------------------
 
-export interface LabelProps extends BaseProps {
-	text: string;
-	style?: LabelStyle;
+export interface BadgeProps extends BoxPropsBase {
+	label: string;
 }
 
-export interface ButtonProps extends BaseProps {
+export interface ButtonProps extends InteractiveBoxPropsBase {
 	label: string;
 	pressed?: boolean;
-	style?: ButtonStyle;
 	onPress?: () => void;
 }
 
-export interface ProgressBarProps extends BaseProps {
-	value: number;
-	minValue?: number;
-	maxValue: number;
-	label?: string;
-	style?: ProgressBarStyle;
-}
-
-export interface CheckboxProps extends BaseProps {
+export interface CheckboxProps extends InteractiveBoxPropsBase {
 	label: string;
 	checked: boolean;
-	style?: CheckboxStyle;
 	onChange?: (checked: boolean) => void;
 }
 
-export interface RadioProps<T = string> extends BaseProps {
+export interface LabelProps extends BaseProps, MarginProps, ColorProps {
+	text: string;
+}
+
+export interface PaginationProps extends InteractiveBoxPropsBase {
+	page: number;
+	pageSize: number;
+	totalItems: number;
+	onPageChange?: (page: number) => void;
+}
+
+export interface ProgressBarProps extends BoxPropsBase {
+	value: number;
+	maxValue: number;
+	minValue?: number;
+	label?: string;
+}
+
+export interface RadioProps<T = string> extends InteractiveBoxPropsBase {
 	label: string;
 	value: T;
 	selected?: boolean;
 	group?: string;
-	style?: RadioStyle;
-	onSelect?: (value: T) => void;
+	onSelect?: (checked: boolean) => void;
 }
 
-export interface BadgeProps extends BaseProps {
-	label: string;
-	style?: BadgeStyle;
-}
-
-export interface SeparatorProps extends BaseProps {
+export interface SeparatorProps extends BaseProps, MarginProps, ColorProps {
 	label?: string;
-	style?: SeparatorStyle;
 }
 
-export interface PanelProps extends BaseProps {
-	title?: string;
-	style?: PanelStyle;
+export interface StatusBarProps extends BaseProps, ColorProps {
+	segments: StatusBarSegment[];
 }
 
-export interface BoxProps extends BaseProps {
-	title?: string;
-	style?: BoxStyle;
-}
-
-export interface ContainerProps extends BaseProps {
-	style?: ContainerStyle;
-}
-
-export interface StackProps extends BaseProps {
-	direction?: Direction;
-	spacing?: number;
-	alignment?: CrossAxisAlignment;
-	justify?: MainAxisAlignment;
-	wrap?: WrapMode;
-	style?: StackStyle;
-}
-
-export interface GridProps extends BaseProps {
-	columns?: number;
-	columnSpacing?: number;
-	rowSpacing?: number;
-}
-
-export interface ListProps<T = string> extends BaseProps {
-	items: OptionItem<T>[];
-	selectedIndex?: number;
-	style?: ListStyle;
-	onSelect?: (item: OptionItem<T>, index: number) => void;
-}
-
-export interface TableProps<T = Record<string, unknown>> extends BaseProps {
-	columns: ColumnDefinition<T>[];
-	rows: T[];
-	rowKey?: (row: T, index: number) => string;
-	selectedIndex?: number;
-	style?: TableStyle;
-	onSelect?: (row: T, index: number) => void;
-}
-
-export interface LogViewerProps extends BaseProps {
+export interface LogViewerProps extends BoxPropsBase {
 	entries: LogEntry[];
 	scrollOffset?: number;
-	style?: LogViewerStyle;
 }
 
-export interface PaginationProps extends BaseProps {
-	page: number;
-	pageSize: number;
-	totalItems: number;
-	style?: PaginationStyle;
-	onPageChange?: (page: number) => void;
+// ------------------------ Container -------------------------
+
+export interface BoxProps extends BoxPropsBase {
+	title?: string;
 }
 
-export interface StatusBarProps extends BaseProps {
-	segments: StatusBarSegment[];
-	style?: StatusBarStyle;
+export interface ContainerProps extends BoxPropsBase {}
+
+export interface GridProps extends BoxPropsBase {
+	columns?: number;
+	rowSpacing?: number;
+	columnSpacing?: number;
 }
 
-export interface RadioGroupProps<T = string> extends BaseProps {
-	items: OptionItem<T>[];
-	selectedValue?: T;
-	style?: RadioStyle;
-	onSelect?: (value: T) => void;
+export interface PanelProps extends BoxPropsBase {
+	title: string;
+}
+
+export interface StackProps extends BoxPropsBase {
+	direction?: Direction;
+	spacing?: number;
+	alignment?: Omit<CrossAxisAlignment, 'stretch'>;
+	justify?: MainAxisAlignment;
+	wrap?: WrapMode;
+}
+
+export interface TableProps<T = Record<string, unknown>> extends BoxPropsBase {
+	columns: ColumnDefinition<T>[];
+	rows: T[];
 }

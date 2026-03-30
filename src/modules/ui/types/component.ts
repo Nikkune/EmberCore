@@ -9,9 +9,9 @@ import type {InvalidationRequest, RenderContext, UIContext, UIInvalidator} from 
 // Component kinds
 // ============================================================
 
-export type LeafComponentKind = | 'button' | 'progress_bar' | 'checkbox' | 'radio' | 'pagination' | 'label' | 'separator' | 'badge' | 'status_bar' | 'custom';
+export type LeafComponentKind = 'badge' | 'button' | 'checkbox' | 'custom' | 'label' | 'log_viewer' | 'pagination' | 'progress_bar' | 'radio' | 'separator' | 'status_bar';
 
-export type ContainerComponentKind = | 'box' | 'grid' | 'table' | 'panel' | 'list' | 'container' | 'stack' | 'log_viewer';
+export type ContainerComponentKind = 'box' | 'container' | 'grid' | 'panel' | 'stack' | 'table';
 
 export type ComponentKind = LeafComponentKind | ContainerComponentKind;
 

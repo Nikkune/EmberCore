@@ -46,14 +46,6 @@ export interface LayoutRect extends Rect {
 // Layout options
 // ============================================================
 
-export interface FlexItemOptions {
-	grow?: number;
-	shrink?: number;
-	basis?: number | 'auto';
-	order?: number;
-	alignmentSelf?: CrossAxisAlignment | 'auto';
-}
-
 export interface StackLayoutOptions {
 	direction?: Direction;
 	spacing?: number;
