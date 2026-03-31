@@ -1,4 +1,4 @@
-import {BaseComponent}                                                                                                                                                                      from '@modules/ui/core/coreComponent';
+import {BaseComponent}                                                                                                                                                                      from '@modules/ui/core/components/coreComponent';
 import type {BaseProps, ComponentDependencies, ComponentKind, InvalidationRequest, LayoutConstraints, MeasuredSize, Point, Rect, RenderContext, UIContext, UIEvent, UIInteractiveComponent} from '@modules/ui/types';
 
 export abstract class InteractiveComponent<TKind extends ComponentKind, TProps extends BaseProps = BaseProps, TDraw = unknown> extends BaseComponent<TKind, TProps, TDraw> implements UIInteractiveComponent<TDraw> {

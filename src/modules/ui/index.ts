@@ -1,10 +1,12 @@
 export * from './core/eventSystem';
 export * from './core/uiRuntime';
-export * from './core/coreComponent';
-export * from './core/interactiveComponent';
-export * from './core/containerComponent';
-export * from './core/interactiveContainerComponent';
-export * from './core/pressableComponent';
+
+export * from './core/components/containerComponent';
+export * from './core/components/coreComponent';
+export * from './core/components/focusableComponent';
+export * from './core/components/interactiveComponent';
+export * from './core/components/interactiveContainerComponent';
+export * from './core/components/pressableComponent';
 
 export * from './render/renderHelpers';
 export * from './render/surfaceAdapter';
