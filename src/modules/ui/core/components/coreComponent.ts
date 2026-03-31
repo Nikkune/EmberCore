@@ -1,4 +1,4 @@
-import type {BaseProps, ComponentDependencies, ComponentKind, InvalidationRequest, LayoutConstraints, MeasuredSize, Point, Rect, RenderContext, UIComponent, UIContext, UIInvalidator} from '@modules/ui/types';
+import type {BaseProps, Color, ComponentDependencies, ComponentKind, InvalidationRequest, LayoutConstraints, MeasuredSize, Point, Rect, RenderContext, ThemeComponentKind, UIComponent, UIContext, UIInvalidator} from '@modules/ui/types';
 
 let componentIdCounter = 0;
 
@@ -101,6 +101,36 @@ export abstract class BaseComponent<TKind extends ComponentKind, TProps extends 
 
 	protected isPointInsideRect(point: Point, rect: Rect): boolean {
 		return (point.x >= rect.x && point.y >= rect.y && point.x < rect.x + rect.width && point.y < rect.y + rect.height);
+	}
+
+	protected getThemeStyle<TStyle extends object>(context: UIContext | RenderContext<any>): Partial<TStyle> {
+		const components = context.theme.components;
+
+		if (!components) return {};
+
+		const kind = this.kind as ThemeComponentKind;
+
+		return (components[kind] ?? {}) as Partial<TStyle>;
+	}
+
+	protected getStyle<TStyle extends object>(context: UIContext | RenderContext<any>, override?: Partial<TStyle> | ((themeStyle: Partial<TStyle>) => Partial<TStyle>)): Partial<TStyle> {
+		const themeStyle = this.getThemeStyle<TStyle>(context);
+
+		if (!override) {
+			return themeStyle;
+		}
+
+		if (typeof override === 'function') {
+			return override(themeStyle);
+		}
+
+		return {
+			...themeStyle, ...override,
+		};
+	}
+
+	protected resolveColor(value: Color | undefined, fallback: Color | undefined, defaultColor: Color): Color {
+		return value ?? fallback ?? defaultColor;
 	}
 
 	public abstract measure(constraints: LayoutConstraints, context: UIContext): MeasuredSize;

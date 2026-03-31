@@ -53,3 +53,5 @@ export interface Theme {
 	borders: ThemeBorderSet;
 	components?: ThemeComponentStyles;
 }
+
+export type ThemeComponentKind = keyof ThemeComponentStyles;
