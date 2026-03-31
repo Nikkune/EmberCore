@@ -99,6 +99,10 @@ export interface ButtonProps extends InteractiveBoxPropsBase {
 	onPress?: () => void;
 }
 
+export interface ToggleButtonProps extends ButtonProps {
+	onToggle?: (pressed: boolean) => void;
+}
+
 export interface CheckboxProps extends InteractiveBoxPropsBase {
 	label: string;
 	checked: boolean;

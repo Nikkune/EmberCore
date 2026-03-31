@@ -8,6 +8,7 @@ export * from './components/leaf/ProgressBarComponent';
 export * from './components/leaf/RadioComponent';
 export * from './components/leaf/SeparatorComponent';
 export * from './components/leaf/StatusBarComponent';
+export * from './components/leaf/ToggleButtonComponent';
 export * from './components/container/BoxComponent';
 export * from './components/container/ContainerComponent';
 export * from './components/container/GridComponent';
