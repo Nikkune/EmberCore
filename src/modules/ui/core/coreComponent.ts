@@ -1,4 +1,4 @@
-import type {BaseProps, ComponentDependencies, ComponentKind, InvalidationRequest, LayoutConstraints, MeasuredSize, Rect, RenderContext, UIComponent, UIContext, UIInvalidator} from '@modules/ui/types';
+import type {BaseProps, ComponentDependencies, ComponentKind, InvalidationRequest, LayoutConstraints, MeasuredSize, Point, Rect, RenderContext, UIComponent, UIContext, UIInvalidator} from '@modules/ui/types';
 
 let componentIdCounter = 0;
 
@@ -23,11 +23,11 @@ export abstract class BaseComponent<TKind extends ComponentKind, TProps extends 
 	protected readonly invalidator?: UIInvalidator | undefined;
 
 	protected constructor(kind: TKind, props: TProps, dependencies: ComponentDependencies = {}) {
-		this.kind        = kind;
-		this.props       = props;
-		this.id          = props.id ?? createComponentId(kind);
+		this.kind         = kind;
+		this.props        = props;
+		this.id           = props.id ?? createComponentId(kind);
 		this.dependencies = dependencies;
-		this.invalidator = dependencies.invalidator;
+		this.invalidator  = dependencies.invalidator;
 	}
 
 	public get visible(): boolean {
@@ -97,6 +97,10 @@ export abstract class BaseComponent<TKind extends ComponentKind, TProps extends 
 
 	protected clamp(value: number, min: number, max: number): number {
 		return Math.max(min, Math.min(max, value));
+	}
+
+	protected isPointInsideRect(point: Point, rect: Rect): boolean {
+		return (point.x >= rect.x && point.y >= rect.y && point.x < rect.x + rect.width && point.y < rect.y + rect.height);
 	}
 
 	public abstract measure(constraints: LayoutConstraints, context: UIContext): MeasuredSize;

@@ -31,8 +31,8 @@ export abstract class InteractiveComponent<TKind extends ComponentKind, TProps e
 	protected createEventInvalidation(rect?: Rect): InvalidationRequest {
 		return {
 			reason: 'event',
-			kind: 'region',
-			rect: rect ?? this.rect,
+			kind:   'region',
+			rect:   rect ?? this.rect,
 		};
 	}
 
@@ -44,16 +44,15 @@ export abstract class InteractiveComponent<TKind extends ComponentKind, TProps e
 		};
 	}
 
-	protected isPointInsideRect(point: Point, rect: Rect): boolean {
-		return (point.x >= rect.x && point.y >= rect.y && point.x < rect.x + rect.width && point.y < rect.y + rect.height);
-	}
-
 	protected isEventInside(event: UIEvent): boolean {
 		if (!('x' in event && 'y' in event)) {
 			return true;
 		}
 
-		return this.hitTest({ x: event.x, y: event.y });
+		return this.hitTest({
+			x: event.x,
+			y: event.y,
+		});
 	}
 
 	public abstract override measure(constraints: LayoutConstraints, context: UIContext): MeasuredSize;
