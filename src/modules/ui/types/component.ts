@@ -81,7 +81,7 @@ export interface Checkable {
 }
 
 export interface ContainerLike<TChild> {
-	readonly children: TChild[];
+	readonly children: ReadonlyArray<TChild>;
 
 	addChild(child: TChild): void;
 
