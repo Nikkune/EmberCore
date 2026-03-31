@@ -6,6 +6,7 @@ export * from './components/leaf/LogViewerComponent';
 export * from './components/leaf/PaginationComponent';
 export * from './components/leaf/ProgressBarComponent';
 export * from './components/leaf/RadioComponent';
+export * from './components/leaf/RadioGroup';
 export * from './components/leaf/SeparatorComponent';
 export * from './components/leaf/StatusBarComponent';
 export * from './components/leaf/ToggleButtonComponent';
