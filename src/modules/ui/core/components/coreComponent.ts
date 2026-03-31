@@ -7,7 +7,7 @@ function createComponentId(kind: ComponentKind): string {
 	return `ui_${kind}_${componentIdCounter}`;
 }
 
-export abstract class BaseComponent<TKind extends ComponentKind, TProps extends BaseProps = BaseProps, TDraw = unknown> implements UIComponent<TDraw> {
+export abstract class BaseComponent<TKind extends ComponentKind, TProps extends BaseProps = BaseProps, TDraw = unknown, TStyle extends object = never> implements UIComponent<TDraw> {
 	public readonly id: string;
 	public readonly kind: TKind;
 
@@ -103,7 +103,7 @@ export abstract class BaseComponent<TKind extends ComponentKind, TProps extends 
 		return (point.x >= rect.x && point.y >= rect.y && point.x < rect.x + rect.width && point.y < rect.y + rect.height);
 	}
 
-	protected getThemeStyle<TStyle extends object>(context: UIContext | RenderContext<any>): Partial<TStyle> {
+	protected getThemeStyle(context: UIContext | RenderContext<TDraw>): Partial<TStyle> {
 		const components = context.theme.components;
 
 		if (!components) return {};
@@ -113,8 +113,8 @@ export abstract class BaseComponent<TKind extends ComponentKind, TProps extends 
 		return (components[kind] ?? {}) as Partial<TStyle>;
 	}
 
-	protected getStyle<TStyle extends object>(context: UIContext | RenderContext<any>, override?: Partial<TStyle> | ((themeStyle: Partial<TStyle>) => Partial<TStyle>)): Partial<TStyle> {
-		const themeStyle = this.getThemeStyle<TStyle>(context);
+	protected getStyle(context: UIContext | RenderContext<TDraw>, override?: Partial<TStyle> | ((themeStyle: Partial<TStyle>) => Partial<TStyle>)): Partial<TStyle> {
+		const themeStyle = this.getThemeStyle(context);
 
 		if (!override) {
 			return themeStyle;
@@ -132,6 +132,8 @@ export abstract class BaseComponent<TKind extends ComponentKind, TProps extends 
 	protected resolveColor(value: Color | undefined, fallback: Color | undefined, defaultColor: Color): Color {
 		return value ?? fallback ?? defaultColor;
 	}
+
+	protected abstract getResolvedStyle(context: UIContext | RenderContext<TDraw>): Partial<TStyle>;
 
 	public abstract measure(constraints: LayoutConstraints, context: UIContext): MeasuredSize;
 

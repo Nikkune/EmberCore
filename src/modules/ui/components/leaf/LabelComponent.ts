@@ -2,13 +2,13 @@ import {BaseComponent, drawText, type DrawTextOptions, resolveTextLines, type UI
 import type {ComponentDependencies, LabelProps, LabelStyle, LayoutConstraints, MeasuredSize, RenderContext, UIContext} from '@modules/ui/types';
 import {createOptions}                                                                                                 from '@utils/helpers';
 
-export class LabelComponent extends BaseComponent<'label', LabelProps, UIDrawSurface> {
+export class LabelComponent extends BaseComponent<'label', LabelProps, UIDrawSurface, LabelStyle> {
 	public constructor(props: LabelProps, dependencies: ComponentDependencies = {}) {
 		super('label', props, dependencies);
 	}
 
 	public override measure(constraints: LayoutConstraints, context: UIContext): MeasuredSize {
-		const style = this.getStyle<LabelStyle>(context);
+		const style = this.getResolvedStyle(context);
 
 		const width = this.props.width ?? this.props.minWidth ?? constraints.maxWidth;
 
@@ -28,10 +28,7 @@ export class LabelComponent extends BaseComponent<'label', LabelProps, UIDrawSur
 		if (!this.visible) return;
 		if (this.width <= 0 || this.height <= 0) return;
 
-		const style = this.getStyle<LabelStyle>(context, createOptions<LabelStyle>({})
-			.with('foregroundColor', this.props.foregroundColor)
-			.with('backgroundColor', this.props.backgroundColor)
-			.done());
+		const style = this.getResolvedStyle(context);
 
 		drawText(context, createOptions<DrawTextOptions>({
 			rect:           this.rect,
@@ -40,6 +37,13 @@ export class LabelComponent extends BaseComponent<'label', LabelProps, UIDrawSur
 			fillBackground: style.backgroundColor !== undefined,
 		})
 			.with('clipRect', context.clipRect)
+			.done());
+	}
+
+	protected override getResolvedStyle(context: UIContext | RenderContext<UIDrawSurface>): Partial<LabelStyle> {
+		return this.getStyle(context, createOptions<LabelStyle>({})
+			.with('foregroundColor', this.props.foregroundColor)
+			.with('backgroundColor', this.props.backgroundColor)
 			.done());
 	}
 }
