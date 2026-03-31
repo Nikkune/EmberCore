@@ -91,7 +91,7 @@ export interface ContainerLike<TChild> {
 export interface Interactive {
 	hitTest(point: Point): boolean;
 
-	dispatch(event: UIEvent, context: UIContext): boolean;
+	dispatch(event: UIEvent, context: UIContext): InvalidationRequest | null;
 }
 
 // ============================================================

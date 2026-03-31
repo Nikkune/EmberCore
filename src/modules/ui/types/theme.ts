@@ -25,6 +25,8 @@ export interface ThemePalette {
 export interface ThemeBorderSet {
 	ascii: BorderCharacters;
 	single: BorderCharacters;
+	double: BorderCharacters;
+	colored: BorderCharacters;
 }
 
 export interface ThemeComponentStyles {

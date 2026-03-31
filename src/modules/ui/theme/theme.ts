@@ -1,6 +1,5 @@
 import type {BorderCharacters, BorderPreset, Theme, ThemeComponentStyles} from '@modules/ui/types';
 
-
 const ASCII_BORDER: BorderCharacters = {
 	topLeft:     '+',
 	topRight:    '+',
@@ -17,6 +16,25 @@ const SINGLE_BORDER: BorderCharacters = {
 	bottomRight: '┘',
 	horizontal:  '─',
 	vertical:    '│',
+};
+
+const DOUBLE_BORDER: BorderCharacters = {
+	topLeft:     '╔',
+	topRight:    '╗',
+	bottomLeft:  '╚',
+	bottomRight: '╝',
+	horizontal:  '═',
+	vertical:    '║',
+};
+
+
+const COLORED_BORDER: BorderCharacters = {
+	topLeft:     ' ',
+	topRight:    ' ',
+	bottomLeft:  ' ',
+	bottomRight: ' ',
+	horizontal:  ' ',
+	vertical:    ' ',
 };
 
 export const defaultTheme: Theme = {
@@ -40,6 +58,8 @@ export const defaultTheme: Theme = {
 	borders:    {
 		ascii:  ASCII_BORDER,
 		single: SINGLE_BORDER,
+		double: DOUBLE_BORDER,
+		colored: COLORED_BORDER,
 	},
 	components: {},
 };
