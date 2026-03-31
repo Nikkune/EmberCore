@@ -1,7 +1,7 @@
 import {InteractiveComponent}                                                                                                                  from '@modules/ui';
 import type {BaseProps, ComponentDependencies, ComponentKind, LayoutConstraints, MeasuredSize, RenderContext, UIContext, UIFocusableComponent} from '@modules/ui/types';
 
-export abstract class FocusableComponent<TKind extends ComponentKind, TProps extends BaseProps = BaseProps, TDraw = unknown> extends InteractiveComponent<TKind, TProps, TDraw> implements UIFocusableComponent<TDraw> {
+export abstract class FocusableComponent<TKind extends ComponentKind, TProps extends BaseProps = BaseProps, TDraw = unknown, TStyle extends object = never> extends InteractiveComponent<TKind, TProps, TDraw, TStyle> implements UIFocusableComponent<TDraw> {
 	protected _focused = false;
 
 	protected constructor(kind: TKind, props: TProps, dependencies: ComponentDependencies = {}) {
@@ -37,6 +37,8 @@ export abstract class FocusableComponent<TKind extends ComponentKind, TProps ext
 			rect:   this.rect,
 		});
 	}
+
+	protected abstract override getResolvedStyle(context: UIContext | RenderContext<TDraw>): Partial<TStyle>;
 
 	public abstract override measure(constraints: LayoutConstraints, context: UIContext): MeasuredSize;
 

@@ -1,7 +1,7 @@
 import {FocusableComponent}                                                                                                                                                  from '@modules/ui';
 import type {BaseProps, ComponentDependencies, ComponentKind, InvalidationRequest, LayoutConstraints, MeasuredSize, RenderContext, UIContext, UIEvent, UIPressableComponent} from '@modules/ui/types';
 
-export abstract class PressableComponent<TKind extends ComponentKind, TProps extends BaseProps = BaseProps, TDraw = unknown> extends FocusableComponent<TKind, TProps, TDraw> implements UIPressableComponent<TDraw> {
+export abstract class PressableComponent<TKind extends ComponentKind, TProps extends BaseProps = BaseProps, TDraw = unknown, TStyle extends object = never> extends FocusableComponent<TKind, TProps, TDraw, TStyle> implements UIPressableComponent<TDraw> {
 	protected constructor(kind: TKind, props: TProps, dependencies: ComponentDependencies = {}) {
 		super(kind, props, dependencies);
 	}
@@ -31,6 +31,8 @@ export abstract class PressableComponent<TKind extends ComponentKind, TProps ext
 	protected onPress(_context: UIContext): boolean {
 		return false;
 	}
+
+	protected abstract override getResolvedStyle(context: UIContext | RenderContext<TDraw>): Partial<TStyle>;
 
 	public abstract override measure(constraints: LayoutConstraints, context: UIContext): MeasuredSize;
 

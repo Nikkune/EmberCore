@@ -1,7 +1,7 @@
 import {BaseComponent}                                                                                                                                            from '@modules/ui';
 import type {BaseProps, ComponentDependencies, ComponentKind, LayoutConstraints, MeasuredSize, Rect, RenderContext, UIComponent, UIContainerComponent, UIContext} from '@modules/ui/types';
 
-export abstract class ContainerComponent<TKind extends ComponentKind, TProps extends BaseProps = BaseProps, TDraw = unknown, TChild extends UIComponent<TDraw> = UIComponent<TDraw>> extends BaseComponent<TKind, TProps, TDraw> implements UIContainerComponent<TDraw, TChild> {
+export abstract class ContainerComponent<TKind extends ComponentKind, TProps extends BaseProps = BaseProps, TDraw = unknown, TStyle extends object = never, TChild extends UIComponent<TDraw> = UIComponent<TDraw>> extends BaseComponent<TKind, TProps, TDraw, TStyle> implements UIContainerComponent<TDraw, TChild> {
 	protected readonly internalChildren: TChild[] = [];
 
 	protected constructor(kind: TKind, props: TProps, dependencies: ComponentDependencies = {}, children: TChild[] = []) {
@@ -72,6 +72,8 @@ export abstract class ContainerComponent<TKind extends ComponentKind, TProps ext
 	protected getEnabledChildren(): TChild[] {
 		return this.internalChildren.filter((child) => !child.disabled);
 	}
+
+	protected abstract override getResolvedStyle(context: UIContext | RenderContext<TDraw>): Partial<TStyle>;
 
 	public abstract override measure(constraints: LayoutConstraints, context: UIContext): MeasuredSize;
 

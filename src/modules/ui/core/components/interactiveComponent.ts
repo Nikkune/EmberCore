@@ -1,7 +1,7 @@
 import {BaseComponent}                                                                                                                                                                      from '@modules/ui/core/components/coreComponent';
 import type {BaseProps, ComponentDependencies, ComponentKind, InvalidationRequest, LayoutConstraints, MeasuredSize, Point, Rect, RenderContext, UIContext, UIEvent, UIInteractiveComponent} from '@modules/ui/types';
 
-export abstract class InteractiveComponent<TKind extends ComponentKind, TProps extends BaseProps = BaseProps, TDraw = unknown> extends BaseComponent<TKind, TProps, TDraw> implements UIInteractiveComponent<TDraw> {
+export abstract class InteractiveComponent<TKind extends ComponentKind, TProps extends BaseProps = BaseProps, TDraw = unknown, TStyle extends object = never> extends BaseComponent<TKind, TProps, TDraw, TStyle> implements UIInteractiveComponent<TDraw> {
 	protected readonly eventBus = this.dependencies.eventBus;
 
 	protected constructor(kind: TKind, props: TProps, dependencies: ComponentDependencies = {}) {
@@ -54,6 +54,8 @@ export abstract class InteractiveComponent<TKind extends ComponentKind, TProps e
 			y: event.y,
 		});
 	}
+
+	protected abstract override getResolvedStyle(context: UIContext | RenderContext<TDraw>): Partial<TStyle>;
 
 	public abstract override measure(constraints: LayoutConstraints, context: UIContext): MeasuredSize;
 
