@@ -1,5 +1,5 @@
+import {makeColors, type UIDrawSurface}                                                                               from '@modules/ui';
 import type {BorderCharacters, BoxStyle, Color, Insets, PaddingLike, Point, Rect, RenderContext, TextStyle, TextWrap} from '@modules/ui/types';
-import {makeColorOptions, type UIDrawSurface} from '@modules/ui';
 import {createOptions}                                                                                                from '@utils/helpers';
 
 export interface ClipTextResult {
@@ -293,7 +293,10 @@ export function drawTextLine(draw: UIDrawSurface, options: DrawTextLineOptions):
 
 	const clipRect = options.clipRect;
 
-	const withColorsOptions = makeColorOptions(options.style);
+	const withColorsOptions = makeColors({
+		foregroundColor: options.style?.foregroundColor,
+		backgroundColor: options.style?.backgroundColor,
+	});
 
 	if (clipRect) {
 		const clipped = clipTextToRect(options.position, aligned, clipRect);
@@ -538,7 +541,7 @@ export function drawHorizontalLine(draw: UIDrawSurface, position: Point, width: 
 		position: position,
 		width:    width,
 		text:     repeat(character, width),
-		style:    makeColorOptions({
+		style:    makeColors({
 			foregroundColor,
 			backgroundColor,
 		}),
@@ -556,7 +559,7 @@ export function drawVerticalLine(draw: UIDrawSurface, position: Point, height: n
 			},
 			width:    1,
 			text:     character,
-			style:    makeColorOptions({
+			style:    makeColors({
 				foregroundColor,
 				backgroundColor,
 			}),
@@ -587,7 +590,7 @@ export function drawBorder(draw: UIDrawSurface, options: DrawBorderOptions): voi
 			},
 			width:    1,
 			text:     border.topLeft,
-			style:    makeColorOptions({
+			style:    makeColors({
 				foregroundColor,
 				backgroundColor,
 			}),
@@ -609,7 +612,7 @@ export function drawBorder(draw: UIDrawSurface, options: DrawBorderOptions): voi
 			},
 			width:    rect.width,
 			text:     top,
-			style:    makeColorOptions({
+			style:    makeColors({
 				foregroundColor,
 				backgroundColor,
 			}),
@@ -631,7 +634,7 @@ export function drawBorder(draw: UIDrawSurface, options: DrawBorderOptions): voi
 		},
 		width:    rect.width,
 		text:     top,
-		style:    makeColorOptions({
+		style:    makeColors({
 			foregroundColor,
 			backgroundColor,
 		}),
@@ -646,7 +649,7 @@ export function drawBorder(draw: UIDrawSurface, options: DrawBorderOptions): voi
 		},
 		width:    rect.width,
 		text:     bottom,
-		style:    makeColorOptions({
+		style:    makeColors({
 			foregroundColor,
 			backgroundColor,
 		}),
@@ -663,7 +666,7 @@ export function drawBorder(draw: UIDrawSurface, options: DrawBorderOptions): voi
 				},
 				width:    1,
 				text:     border.vertical,
-				style:    makeColorOptions({
+				style:    makeColors({
 					foregroundColor,
 					backgroundColor,
 				}),
@@ -681,7 +684,7 @@ export function drawBorder(draw: UIDrawSurface, options: DrawBorderOptions): voi
 			},
 			width:    1,
 			text:     border.vertical,
-			style:    makeColorOptions({
+			style:    makeColors({
 				foregroundColor,
 				backgroundColor,
 			}),
@@ -696,7 +699,7 @@ export function drawBorder(draw: UIDrawSurface, options: DrawBorderOptions): voi
 			},
 			width:    1,
 			text:     border.vertical,
-			style:    makeColorOptions({
+			style:    makeColors({
 				foregroundColor,
 				backgroundColor,
 			}),

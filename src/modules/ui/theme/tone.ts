@@ -1,5 +1,5 @@
-import type {Color, ColorStyle, Theme, Tone} from '@modules/ui/types';
-import {createOptions}                       from '@utils/helpers';
+import type {Color, ColorStyle, MaybeProps, Theme, Tone} from '@modules/ui/types';
+import {createOptions}                                   from '@utils/helpers';
 
 export function resolveToneColors(theme: Theme, tone?: Tone): ColorStyle {
 	switch (tone) {
@@ -40,9 +40,16 @@ export function resolveToneColors(theme: Theme, tone?: Tone): ColorStyle {
 export function makeToneColorOverride(tone: Tone | undefined, theme: Theme, foregroundColor?: Color, backgroundColor?: Color): Partial<ColorStyle> {
 	const toneColors = resolveToneColors(theme, tone);
 
+	return makeColors({
+		foregroundColor: foregroundColor ?? toneColors.foregroundColor,
+		backgroundColor: backgroundColor ?? toneColors.backgroundColor,
+	});
+}
+
+export function makeColors(style: MaybeProps<ColorStyle>): Partial<ColorStyle> {
 	return createOptions<ColorStyle>({})
-		.with('foregroundColor', foregroundColor ?? toneColors.foregroundColor)
-		.with('backgroundColor', backgroundColor ?? toneColors.backgroundColor)
+		.with('backgroundColor', style.backgroundColor)
+		.with('foregroundColor', style.foregroundColor)
 		.done();
 }
 

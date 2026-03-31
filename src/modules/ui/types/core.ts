@@ -4,6 +4,7 @@
 
 export type Color = number;
 export type Maybe<T> = T | undefined;
+export type MaybeProps<T> = { [K in keyof T]?: T[K] | undefined}
 
 // ============================================================
 // Geometry
