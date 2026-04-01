@@ -1,13 +1,14 @@
 {
 	"extends":         "./tsconfig.json",
 	"compilerOptions": {
-		"module":          "commonjs",
-		"types":           [
+		"module":               "commonjs",
+		"types":                [
 			"node"
 		],
-		"rootDir":         "scripts",
-		"outDir":          "build-scripts",
-		"esModuleInterop": true
+		"rootDir":              "scripts",
+		"outDir":               "build-scripts",
+		"esModuleInterop":      true,
+		"verbatimModuleSyntax": false,
 	},
 	"include":         [
 		"scripts/**/*.ts",
