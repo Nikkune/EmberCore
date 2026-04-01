@@ -1,7 +1,7 @@
 import {BaseComponent}                                                                                                                                            from '@modules/ui';
 import type {BaseProps, ComponentDependencies, ComponentKind, LayoutConstraints, MeasuredSize, Rect, RenderContext, UIComponent, UIContainerComponent, UIContext} from '@modules/ui/types';
 
-export abstract class ContainerComponent<TKind extends ComponentKind, TProps extends BaseProps = BaseProps, TDraw = unknown, TStyle extends object = never, TChild extends UIComponent<TDraw> = UIComponent<TDraw>> extends BaseComponent<TKind, TProps, TDraw, TStyle> implements UIContainerComponent<TDraw, TChild> {
+export abstract class BaseContainerComponent<TKind extends ComponentKind, TProps extends BaseProps = BaseProps, TDraw = unknown, TStyle extends object = never, TChild extends UIComponent<TDraw> = UIComponent<TDraw>> extends BaseComponent<TKind, TProps, TDraw, TStyle> implements UIContainerComponent<TDraw, TChild> {
 	protected readonly internalChildren: TChild[] = [];
 
 	protected constructor(kind: TKind, props: TProps, dependencies: ComponentDependencies = {}, children: TChild[] = []) {

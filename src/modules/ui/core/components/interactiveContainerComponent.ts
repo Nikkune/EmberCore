@@ -1,7 +1,7 @@
-import {ContainerComponent}                                                                                                                                                           from '@modules/ui';
+import {BaseContainerComponent}                                                                                                                                                       from '@modules/ui';
 import type {BaseProps, ComponentDependencies, ComponentKind, InvalidationRequest, LayoutConstraints, MeasuredSize, Point, RenderContext, UIContext, UIEvent, UIInteractiveComponent} from '@modules/ui/types';
 
-export abstract class InteractiveContainerComponent<TKind extends ComponentKind, TProps extends BaseProps = BaseProps, TDraw = unknown, TStyle extends object = never, TChild extends UIInteractiveComponent<TDraw> = UIInteractiveComponent<TDraw>> extends ContainerComponent<TKind, TProps, TDraw, TStyle, TChild> implements UIInteractiveComponent<TDraw> {
+export abstract class InteractiveContainerComponent<TKind extends ComponentKind, TProps extends BaseProps = BaseProps, TDraw = unknown, TStyle extends object = never, TChild extends UIInteractiveComponent<TDraw> = UIInteractiveComponent<TDraw>> extends BaseContainerComponent<TKind, TProps, TDraw, TStyle, TChild> implements UIInteractiveComponent<TDraw> {
 	protected readonly eventBus = this.dependencies.eventBus;
 
 	protected constructor(kind: TKind, props: TProps, dependencies: ComponentDependencies = {}, children: TChild[] = []) {

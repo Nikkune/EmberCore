@@ -1,7 +1,7 @@
 export * from './core/eventSystem';
 export * from './core/uiRuntime';
 
-export * from './core/components/containerComponent';
+export * from './core/components/baseContainerComponent';
 export * from './core/components/coreComponent';
 export * from './core/components/focusableComponent';
 export * from './core/components/interactiveComponent';
