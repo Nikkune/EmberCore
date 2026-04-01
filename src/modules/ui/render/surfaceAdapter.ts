@@ -93,7 +93,27 @@ export class ComputerCraftSurfaceAdapter implements UIDrawSurface {
 	}
 
 	public static fromTerminal(target?: TerminalLike): ComputerCraftSurfaceAdapter {
-		return new ComputerCraftSurfaceAdapter(target ?? (term.current() as TerminalLike));
+		if (target) {
+			return new ComputerCraftSurfaceAdapter(target);
+		}
+
+		const current = term.current();
+
+		const wrappedTarget: TerminalLike = {
+			getSize: () => current.getSize(),
+			clear: () => current.clear(),
+			clearLine: () => current.clearLine(),
+			setCursorPos: (x: number, y: number) => current.setCursorPos(x, y),
+			getCursorPos: () => current.getCursorPos(),
+			write: (text: string) => current.write(text),
+			setTextColor: (color: number) => current.setTextColor(color),
+			getTextColor: () => current.getTextColor(),
+			setBackgroundColor: (color: number) => current.setBackgroundColor(color),
+			getBackgroundColor: () => current.getBackgroundColor(),
+			isColor: () => current.isColor(),
+		};
+
+		return new ComputerCraftSurfaceAdapter(wrappedTarget);
 	}
 
 	public static fromMonitor(target: TerminalLike): ComputerCraftSurfaceAdapter {
