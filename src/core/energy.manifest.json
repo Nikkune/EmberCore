@@ -1,7 +1,7 @@
 {
-	"name":         "Energy",
-	"version":      "1.0.0",
-	"dependencies": [
-		"core/peripheral"
-	]
+  "name": "Energy",
+  "version": "1.0.1",
+  "dependencies": [
+    "core/peripheral"
+  ]
 }

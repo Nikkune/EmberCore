@@ -1,8 +1,8 @@
 {
-	"name":         "Config",
-	"version":      "1.0.0",
-	"dependencies": [
-		"core/errors",
-		"core/logger"
-	]
+  "name": "Config",
+  "version": "1.0.1",
+  "dependencies": [
+    "core/errors",
+    "core/logger"
+  ]
 }
