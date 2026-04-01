@@ -1,6 +1,6 @@
-export function assert(condition: unknown, message =  'Assertion failed'): asserts condition {
-	if (!condition){
-		error(message, 2)
+export function assert(condition: unknown, message = 'Assertion failed'): asserts condition {
+	if (!condition) {
+		error(message, 2);
 	}
 }
 
@@ -12,25 +12,25 @@ export function assertNotNil<T>(value: T | undefined | null, message: string): T
 }
 
 export function assertString(value: unknown, name: string): asserts value is string {
-	if (type(value) !== "string") {
+	if (type(value) !== 'string') {
 		error(`${name} must be a string`, 2);
 	}
 }
 
 export function assertNumber(value: unknown, name: string): asserts value is number {
-	if (type(value) !== "number") {
+	if (type(value) !== 'number') {
 		error(`${name} must be a number`, 2);
 	}
 }
 
 export function assertBoolean(value: unknown, name: string): asserts value is boolean {
-	if (type(value) !== "boolean") {
+	if (type(value) !== 'boolean') {
 		error(`${name} must be a boolean`, 2);
 	}
 }
 
 export function assertTable(value: unknown, name: string): asserts value is Record<string, unknown> {
-	if (type(value) !== "table") {
+	if (type(value) !== 'table') {
 		error(`${name} must be a table`, 2);
 	}
 }

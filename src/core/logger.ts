@@ -1,16 +1,21 @@
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
-const LOG_LEVEL_ORDER: Record<LogLevel, number> = {debug: 0, info: 1, warn: 2, error: 3};
+const LOG_LEVEL_ORDER: Record<LogLevel, number> = {
+	debug: 0,
+	info:  1,
+	warn:  2,
+	error: 3,
+};
 
 function getLevelColor(level: LogLevel): number {
 	switch (level) {
-		case "debug":
+		case 'debug':
 			return colors.lightBlue;
-		case "info":
+		case 'info':
 			return colors.white;
-		case "warn":
+		case 'warn':
 			return colors.orange;
-		case "error":
+		case 'error':
 			return colors.red;
 	}
 }
@@ -20,12 +25,12 @@ function pad(value: number): string {
 }
 
 function getTimestamp(): string {
-	const now = os.date("*t");
+	const now = os.date('*t');
 
-	const year = now.year;
-	const month = pad(now.month);
-	const day = pad(now.day);
-	const hour = pad(now.hour);
+	const year   = now.year;
+	const month  = pad(now.month);
+	const day    = pad(now.day);
+	const hour   = pad(now.hour);
 	const minute = pad(now.min);
 	const second = pad(now.sec);
 
@@ -49,11 +54,7 @@ function formatMeta(meta?: Record<string, unknown>): string {
 }
 
 export class Logger {
-	public constructor(
-		private readonly scope = 'EmberCore',
-		private level: LogLevel = 'info',
-		private readonly useColors = true,
-	) {
+	public constructor(private readonly scope = 'EmberCore', private level: LogLevel = 'info', private readonly useColors = true) {
 	}
 
 	public setLevel(level: LogLevel): void {
@@ -76,13 +77,12 @@ export class Logger {
 		this.log('error', message, meta);
 	}
 
-
 	private log(level: LogLevel, message: string, meta?: Record<string, unknown>): void {
 		if (LOG_LEVEL_ORDER[level] < LOG_LEVEL_ORDER[this.level]) return;
 
 		const timestamp = getTimestamp();
-		const levelStr = level.toUpperCase();
-		const metaStr = formatMeta(meta);
+		const levelStr  = level.toUpperCase();
+		const metaStr   = formatMeta(meta);
 
 		let line = `${timestamp} | ${levelStr} | ${this.scope} |`;
 

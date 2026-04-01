@@ -13,7 +13,6 @@ tsconfig.*.tsbuildinfo
 # =========================
 dist/
 build-scripts/
-.cache/
 
 # =========================
 # Environment

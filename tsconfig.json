@@ -1,7 +1,35 @@
 {
-  "files": [],
-  "references": [
-    { "path": "./tsconfig.scripts.json" },
-    { "path": "./tsconfig.lua.json" }
-  ]
+	"compilerOptions": {
+		"target":                             "ESNext",
+		"lib":                                [
+			"ESNext"
+		],
+		"moduleResolution":                   "node",
+		"strict":                             true,
+		"exactOptionalPropertyTypes":         true,
+		"isolatedModules":                    true,
+		"forceConsistentCasingInFileNames":   true,
+		"skipLibCheck":                       true,
+		"verbatimModuleSyntax":               true,
+		"allowUnusedLabels":                  false,
+		"allowUnreachableCode":               false,
+		"noEmitOnError":                      true,
+		"noUnusedLocals":                     true,
+		"noUnusedParameters":                 true,
+		"noUncheckedSideEffectImports":       true,
+		"noFallthroughCasesInSwitch":         true,
+		"noUncheckedIndexedAccess":           true,
+		"noPropertyAccessFromIndexSignature": true,
+		"noImplicitOverride":                 true,
+		"noImplicitReturns":                  true
+	},
+	"files":           [],
+	"references":      [
+		{
+			"path": "./tsconfig.lua.json"
+		},
+		{
+			"path": "./tsconfig.scripts.json"
+		}
+	]
 }

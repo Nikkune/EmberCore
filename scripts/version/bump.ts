@@ -1,7 +1,7 @@
-import * as fs from "node:fs";
-import * as path from "node:path";
-import {AnyMeta} from "../manifest/types";
-import {bumpPatch, hasManualVersionChange} from "./semver";
+import * as fs                             from 'node:fs';
+import * as path                           from 'node:path';
+import type {AnyMeta}                      from '../manifest/manifestTypes';
+import {bumpPatch, hasManualVersionChange} from './semver';
 
 export interface BumpTarget {
 	id: string;
@@ -30,12 +30,12 @@ export interface BumpResult {
 }
 
 function readJsonFile<T>(filePath: string): T {
-	const content = fs.readFileSync(filePath, "utf-8");
+	const content = fs.readFileSync(filePath, 'utf-8');
 	return JSON.parse(content) as T;
 }
 
 function writeJsonFile(filePath: string, data: unknown): void {
-	fs.writeFileSync(filePath, `${JSON.stringify(data, null, 2)}\n`, "utf-8");
+	fs.writeFileSync(filePath, `${JSON.stringify(data, null, 2)}\n`, 'utf-8');
 }
 
 export function loadPreviousVersions(filePath: string): PreviousVersionMap {
@@ -48,15 +48,12 @@ export function loadPreviousVersions(filePath: string): PreviousVersionMap {
 
 export function savePreviousVersions(filePath: string, versions: PreviousVersionMap): void {
 	const dir = path.dirname(filePath);
-	fs.mkdirSync(dir, { recursive: true });
+	fs.mkdirSync(dir, {recursive: true});
 	writeJsonFile(filePath, versions);
 }
 
-export function bumpMetaVersions(
-	targets: BumpTarget[],
-	previousVersions: PreviousVersionMap,
-): BumpResult {
-	const updated: BumpResultItem[] = [];
+export function bumpMetaVersions(targets: BumpTarget[], previousVersions: PreviousVersionMap): BumpResult {
+	const updated: BumpResultItem[]   = [];
 	const unchanged: BumpResultItem[] = [];
 
 	for (const target of targets) {
@@ -67,14 +64,12 @@ export function bumpMetaVersions(
 		}
 
 		const previousVersion = previousVersions[target.id];
-		const currentVersion = meta.version;
+		const currentVersion  = meta.version;
 
-		const manual =
-			previousVersion !== undefined &&
-			hasManualVersionChange(previousVersion, currentVersion);
+		const manual = previousVersion !== undefined && hasManualVersionChange(previousVersion, currentVersion);
 
 		let nextVersion = currentVersion;
-		let bumped = false;
+		let bumped      = false;
 
 		if (target.changed && !manual) {
 			nextVersion = bumpPatch(currentVersion);
@@ -87,19 +82,21 @@ export function bumpMetaVersions(
 		}
 
 		const item: BumpResultItem = {
-			id: target.id,
+			id:       target.id,
 			metaPath: target.metaPath,
-			changed: target.changed,
-			previousVersion,
+			changed:  target.changed,
 			currentVersion,
 			nextVersion,
 			bumped,
 			manual,
 		};
 
+		if (previousVersion) item.previousVersion = previousVersion;
+
 		if (bumped) {
 			updated.push(item);
-		} else {
+		}
+		else {
 			unchanged.push(item);
 		}
 	}
@@ -114,7 +111,7 @@ export function collectCurrentVersions(targets: BumpTarget[]): PreviousVersionMa
 	const versions: PreviousVersionMap = {};
 
 	for (const target of targets) {
-		const meta = readJsonFile<AnyMeta>(target.metaPath);
+		const meta          = readJsonFile<AnyMeta>(target.metaPath);
 		versions[target.id] = meta.version;
 	}
 

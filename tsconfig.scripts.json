@@ -1,18 +1,21 @@
 {
-  "compilerOptions": {
-    "target": "ESNext",
-    "module": "commonjs",
-    "lib": ["ESNext"],
-
-    "rootDir": "scripts",
-    "outDir": "build-scripts",
-
-    "strict": true,
-    "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
-    "skipLibCheck": true,
-    "noEmitOnError": true
-  },
-  "include": ["scripts/**/*.ts", "scripts/**/*.d.ts"],
-  "exclude": ["build-scripts", "node_modules"]
+	"extends":         "./tsconfig.json",
+	"compilerOptions": {
+		"module":               "commonjs",
+		"types":                [
+			"node"
+		],
+		"rootDir":              "scripts",
+		"outDir":               "build-scripts",
+		"esModuleInterop":      true,
+		"verbatimModuleSyntax": false,
+	},
+	"include":         [
+		"scripts/**/*.ts",
+		"scripts/**/*.d.ts"
+	],
+	"exclude":         [
+		"build-scripts",
+		"node_modules"
+	]
 }

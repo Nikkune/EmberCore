@@ -1,14 +1,14 @@
-import * as fs from "node:fs";
-import * as path from "node:path";
+import * as fs   from 'node:fs';
+import * as path from 'node:path';
 
-import type { BumpTarget } from "./bump";
+import type {BumpTarget} from './bump';
 
 export interface DetectOptions {
 	srcDir: string;
 }
 
 function toPosixPath(value: string): string {
-	return value.split(path.sep).join("/");
+	return value.split(path.sep).join('/');
 }
 
 function normalizeRelativePath(filePath: string, cwd = process.cwd()): string {
@@ -38,15 +38,15 @@ function detectCoreTarget(srcDir: string, relativePath: string): BumpTarget | un
 		return undefined;
 	}
 
-	const name = match[1];
-	const metaPath = path.join(srcDir, "core", `${name}.manifest.json`);
+	const name     = match[1];
+	const metaPath = path.join(srcDir, 'core', `${name}.manifest.json`);
 
 	if (!fileExists(metaPath)) {
 		return undefined;
 	}
 
 	return {
-		id: `core/${name}`,
+		id:      `core/${name}`,
 		metaPath,
 		changed: true,
 	};
@@ -59,14 +59,15 @@ function detectModuleTarget(srcDir: string, relativePath: string): BumpTarget | 
 	}
 
 	const moduleName = match[1];
-	const metaPath = path.join(srcDir, "modules", moduleName, `${moduleName}.manifest.json`);
+	if (!moduleName) return undefined;
+	const metaPath = path.join(srcDir, 'modules', moduleName, `${moduleName}.manifest.json`);
 
 	if (!fileExists(metaPath)) {
 		return undefined;
 	}
 
 	return {
-		id: `modules/${moduleName}`,
+		id:      `modules/${moduleName}`,
 		metaPath,
 		changed: true,
 	};
@@ -79,36 +80,27 @@ function detectProjectTarget(srcDir: string, relativePath: string): BumpTarget |
 	}
 
 	const projectName = match[1];
-	const metaPath = path.join(srcDir, "projects", projectName, "project.manifest.json");
+	if (!projectName) return undefined;
+	const metaPath = path.join(srcDir, 'projects', projectName, `${projectName}.manifest.json`);
 
 	if (!fileExists(metaPath)) {
 		return undefined;
 	}
 
 	return {
-		id: `projects/${projectName}`,
+		id:      `projects/${projectName}`,
 		metaPath,
 		changed: true,
 	};
 }
 
-export function detectTargetFromFile(
-	filePath: string,
-	options: DetectOptions,
-): BumpTarget | undefined {
+export function detectTargetFromFile(filePath: string, options: DetectOptions): BumpTarget | undefined {
 	const relativePath = normalizeRelativePath(filePath);
 
-	return (
-		detectCoreTarget(options.srcDir, relativePath) ??
-		detectModuleTarget(options.srcDir, relativePath) ??
-		detectProjectTarget(options.srcDir, relativePath)
-	);
+	return (detectCoreTarget(options.srcDir, relativePath) ?? detectModuleTarget(options.srcDir, relativePath) ?? detectProjectTarget(options.srcDir, relativePath));
 }
 
-export function detectTargetsFromFiles(
-	filePaths: string[],
-	options: DetectOptions,
-): BumpTarget[] {
+export function detectTargetsFromFiles(filePaths: string[], options: DetectOptions): BumpTarget[] {
 	const targets: BumpTarget[] = [];
 
 	for (const filePath of filePaths) {

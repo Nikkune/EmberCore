@@ -4,7 +4,7 @@ export interface SemVer {
 	patch: number;
 }
 
-const SEMVER_REGEX = /^(\d+)\.(\d+)\.(\d+)$/
+const SEMVER_REGEX = /^(\d+)\.(\d+)\.(\d+)$/;
 
 export function parseSemVer(version: string): SemVer {
 	const match = version.match(SEMVER_REGEX);
@@ -13,6 +13,10 @@ export function parseSemVer(version: string): SemVer {
 	}
 
 	const [, major, minor, patch] = match;
+
+	if (!major || !minor || !patch) {
+		throw new Error(`Invalid semantic version '${version}'. Expected format: 'major.minor.patch'`);
+	}
 
 	return {
 		major: parseInt(major, 10),

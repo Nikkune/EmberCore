@@ -1,5 +1,5 @@
 {
-  "name": "UI",
-  "version": "0.1.0",
-  "dependencies": []
+	"name":         "UI",
+	"version":      "0.1.0",
+	"dependencies": []
 }

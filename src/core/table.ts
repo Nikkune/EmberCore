@@ -51,7 +51,7 @@ export class TableUtils {
 		const result: Partial<T> = {};
 
 		for (const key in table) {
-			const typedKey = key as keyof T;
+			const typedKey   = key as keyof T;
 			result[typedKey] = table[typedKey];
 		}
 
@@ -63,7 +63,7 @@ export class TableUtils {
 
 		for (const key in override) {
 			const typedKey = key as keyof T;
-			const value = override[typedKey];
+			const value    = override[typedKey];
 
 			if (value !== undefined) {
 				result[typedKey] = value;
@@ -73,15 +73,12 @@ export class TableUtils {
 		return result;
 	}
 
-	public static mapValues<T extends object, U>(
-		table: T,
-		mapper: (value: T[keyof T], key: keyof T) => U,
-	): Record<string, U> {
+	public static mapValues<T extends object, U>(table: T, mapper: (value: T[keyof T], key: keyof T) => U): Record<string, U> {
 		const result: Record<string, U> = {};
 
 		for (const key in table) {
 			const typedKey = key as keyof T;
-			result[key] = mapper(table[typedKey], typedKey);
+			result[key]    = mapper(table[typedKey], typedKey);
 		}
 
 		return result;

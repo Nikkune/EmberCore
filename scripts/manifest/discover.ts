@@ -1,7 +1,7 @@
-import {AnyManifest, ComponentManifest, ComponentMeta, ProjectManifest, ProjectMeta} from "./types";
-import * as fs from "fs";
-import * as path from "node:path";
-import {componentManifest, projectManifest} from "./builder";
+import * as fs                                                                            from 'node:fs';
+import * as path                                                                          from 'node:path';
+import {componentManifest, projectManifest}                                               from './builder';
+import type {AnyManifest, ComponentManifest, ComponentMeta, ProjectManifest, ProjectMeta} from './manifestTypes';
 
 export interface DiscoverOptions {
 	srcDir: string;
@@ -14,7 +14,7 @@ function readJsonIfExists<T>(filePath: string): T | undefined {
 		return undefined;
 	}
 
-	const content = fs.readFileSync(filePath, "utf-8");
+	const content = fs.readFileSync(filePath, 'utf-8');
 	return JSON.parse(content) as T;
 }
 
@@ -30,7 +30,8 @@ function listLuaFilesRecursive(dir: string): string[] {
 
 		if (entry.isDirectory()) {
 			result.push(...listLuaFilesRecursive(fullPath));
-		} else if (entry.isFile() && entry.name.endsWith(".lua")) {
+		}
+		else if (entry.isFile() && entry.name.endsWith('.lua')) {
 			result.push(fullPath);
 		}
 	}
@@ -39,7 +40,7 @@ function listLuaFilesRecursive(dir: string): string[] {
 }
 
 function toPosixPath(filePath: string): string {
-	return filePath.split(path.sep).join("/");
+	return filePath.split(path.sep).join('/');
 }
 
 function relativeToDist(distDir: string, filePath: string): string {
@@ -51,7 +52,7 @@ function capitalize(str: string): string {
 }
 
 function discoverCore(options: DiscoverOptions): ComponentManifest[] {
-	const dir = path.join(options.distDir, "core");
+	const dir = path.join(options.distDir, 'core');
 
 	if (!fs.existsSync(dir)) {
 		return [];
@@ -60,19 +61,19 @@ function discoverCore(options: DiscoverOptions): ComponentManifest[] {
 	const manifests: ComponentManifest[] = [];
 
 	for (const file of fs.readdirSync(dir)) {
-		if (!file.endsWith(".lua")) continue;
+		if (!file.endsWith('.lua')) continue;
 
-		const name = file.replace(".lua", "");
-		const id = `core/${name}`;
+		const name = file.replace('.lua', '');
+		const id   = `core/${name}`;
 
-		const metaPath = path.join(options.srcDir, "core", `${name}.manifest.json`);
-		const meta = readJsonIfExists<ComponentMeta>(metaPath);
+		const metaPath = path.join(options.srcDir, 'core', `${name}.manifest.json`);
+		const meta     = readJsonIfExists<ComponentMeta>(metaPath);
 
 		const manifest = componentManifest({
 			id,
-			name: meta?.name ?? capitalize(name),
-			version: meta?.version ?? options.version,
-			files: [`core/${file}`],
+			name:         meta?.name ?? capitalize(name),
+			version:      meta?.version ?? options.version,
+			files:        [`core/${file}`],
 			dependencies: meta?.dependencies ?? [],
 		});
 
@@ -83,7 +84,7 @@ function discoverCore(options: DiscoverOptions): ComponentManifest[] {
 }
 
 function discoverModules(options: DiscoverOptions): ComponentManifest[] {
-	const dir = path.join(options.distDir, "modules");
+	const dir = path.join(options.distDir, 'modules');
 
 	if (!fs.existsSync(dir)) {
 		return [];
@@ -95,17 +96,17 @@ function discoverModules(options: DiscoverOptions): ComponentManifest[] {
 		const moduleDistPath = path.join(dir, moduleName);
 		if (!fs.statSync(moduleDistPath).isDirectory()) continue;
 
-		const files = listLuaFilesRecursive(moduleDistPath).map(file => relativeToDist(options.distDir, file));
+		const files = listLuaFilesRecursive(moduleDistPath).map((file) => relativeToDist(options.distDir, file));
 
-		const metaPath = path.join(options.srcDir, "modules", moduleName, `${moduleName}.manifest.json`);
-		const meta = readJsonIfExists<ComponentMeta>(metaPath);
+		const metaPath = path.join(options.srcDir, 'modules', moduleName, `${moduleName}.manifest.json`);
+		const meta     = readJsonIfExists<ComponentMeta>(metaPath);
 
 		const id = `modules/${moduleName}`;
 
 		const manifest = componentManifest({
 			id,
-			name: meta?.name ?? capitalize(moduleName),
-			version: meta?.version ?? options.version,
+			name:         meta?.name ?? capitalize(moduleName),
+			version:      meta?.version ?? options.version,
 			files,
 			dependencies: meta?.dependencies ?? [],
 		});
@@ -117,7 +118,7 @@ function discoverModules(options: DiscoverOptions): ComponentManifest[] {
 }
 
 function discoverProjects(options: DiscoverOptions): ProjectManifest[] {
-	const dir = path.join(options.distDir, "projects");
+	const dir = path.join(options.distDir, 'projects');
 
 	if (!fs.existsSync(dir)) {
 		return [];
@@ -129,26 +130,29 @@ function discoverProjects(options: DiscoverOptions): ProjectManifest[] {
 		const projectDistPath = path.join(dir, projectName);
 		if (!fs.statSync(projectDistPath).isDirectory()) continue;
 
-		const mainPath = path.join(projectDistPath, "main.lua");
+		const mainPath = path.join(projectDistPath, 'main.lua');
 
 		if (!fs.existsSync(mainPath)) continue;
 
-		const files = listLuaFilesRecursive(projectDistPath).map(file => relativeToDist(options.distDir, file));
+		const files = listLuaFilesRecursive(projectDistPath).map((file) => relativeToDist(options.distDir, file));
 
-		const metaPath = path.join(options.srcDir, "projects", projectName, `${projectName}.manifest.json`);
-		const meta = readJsonIfExists<ProjectMeta>(metaPath);
+		const metaPath = path.join(options.srcDir, 'projects', projectName, `${projectName}.manifest.json`);
+		const meta     = readJsonIfExists<ProjectMeta>(metaPath);
 
 		const id = `projects/${projectName}`;
 
-		const manifest = projectManifest({
+		const input: Omit<ProjectManifest, 'manifestVersion' | 'type'> = {
 			id,
-			name: meta?.name ?? capitalize(projectName),
-			version: meta?.version ?? options.version,
-			entry: relativeToDist(options.distDir, mainPath),
+			name:         meta?.name ?? capitalize(projectName),
+			version:      meta?.version ?? options.version,
+			entry:        relativeToDist(options.distDir, mainPath),
 			files,
 			dependencies: meta?.dependencies ?? [],
-			install: meta?.install,
-		})
+		};
+
+		if (meta?.install) input.install = meta.install;
+
+		const manifest = projectManifest(input);
 
 		manifests.push(manifest);
 	}
@@ -157,8 +161,8 @@ function discoverProjects(options: DiscoverOptions): ProjectManifest[] {
 }
 
 export function discoverManifests(options: DiscoverOptions): AnyManifest[] {
-	const core = discoverCore(options);
-	const modules = discoverModules(options);
+	const core     = discoverCore(options);
+	const modules  = discoverModules(options);
 	const projects = discoverProjects(options);
 
 	return [...core, ...modules, ...projects];

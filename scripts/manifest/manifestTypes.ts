@@ -6,14 +6,14 @@ export interface BaseManifest {
 	id: ManifestId;
 	manifestVersion: number;
 	name?: string;
-	type: "component" | "project";
+	type: 'component' | 'project';
 	version: string;
 	dependencies: ManifestId[];
 	files: string[];
 }
 
 export interface ComponentManifest extends BaseManifest {
-	type: "component";
+	type: 'component';
 }
 
 export interface ProjectInstallConfig {
@@ -23,7 +23,7 @@ export interface ProjectInstallConfig {
 }
 
 export interface ProjectManifest extends BaseManifest {
-	type: "project";
+	type: 'project';
 	entry: string;
 	install?: ProjectInstallConfig;
 }
@@ -39,14 +39,8 @@ export interface IndexManifest {
 
 export type AnyManifest = ComponentManifest | ProjectManifest;
 
-export type ComponentMeta = Pick<
-	ComponentManifest,
-	"name" | "version" | "dependencies"
->
+export type ComponentMeta = Pick<ComponentManifest, 'name' | 'version' | 'dependencies'>;
 
-export type ProjectMeta = Pick<
-	ProjectManifest,
-	"name" | "version" | "dependencies" | "install"
->
+export type ProjectMeta = Pick<ProjectManifest, 'name' | 'version' | 'dependencies' | 'install'>;
 
 export type AnyMeta = ComponentMeta | ProjectMeta;

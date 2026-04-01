@@ -1,9 +1,9 @@
 {
-  "name": "Peripheral",
-  "version": "1.0.0",
-  "dependencies": [
-    "core/assert",
-    "core/errors",
-    "core/logger"
-  ]
+	"name":         "Peripheral",
+	"version":      "1.0.0",
+	"dependencies": [
+		"core/assert",
+		"core/errors",
+		"core/logger"
+	]
 }
