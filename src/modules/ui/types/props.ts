@@ -1,7 +1,7 @@
-import type {AxisSize, Color, MarginLike, PaddingLike, Rect}                                  from './core';
-import type {UIEventMap}                                                                      from './events';
-import type {CrossAxisAlignment, Direction, HorizontalAlignment, MainAxisAlignment, WrapMode} from './layout';
-import type {BorderStyle}                                                                     from './style';
+import type {AxisSize, Color, MarginLike, PaddingLike, Rect}             from './core';
+import type {UIEventMap}                                                 from './events';
+import type {CrossAxisAlignment, Direction, MainAxisAlignment, WrapMode} from './layout';
+import type {BorderStyle, TextAlignment}                                 from './style';
 
 // ============================================================
 // Base props
@@ -80,7 +80,7 @@ export interface ColumnDefinition<T = Record<string, unknown>> {
 	width?: number;
 	minWidth?: number;
 	maxWidth?: number;
-	alignment?: Omit<HorizontalAlignment, 'stretch'>;
+	alignment?: TextAlignment;
 	render?: (row: T, rowIndex: number) => string;
 }
 
@@ -169,7 +169,7 @@ export interface PanelProps extends BoxPropsBase {
 export interface StackProps extends BoxPropsBase {
 	direction?: Direction;
 	spacing?: number;
-	alignment?:CrossAxisAlignment;
+	alignment?: CrossAxisAlignment;
 	justify?: MainAxisAlignment;
 	wrap?: WrapMode;
 }

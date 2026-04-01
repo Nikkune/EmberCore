@@ -1,17 +1,17 @@
-import type {BaseProps}                                                    from './props';
-import type {Theme}                                                        from './theme';
 import type {Point, Rect}                                                  from './core';
 import type {UIEvent, UIEventBus}                                          from './events';
 import type {LayoutConstraints, MeasuredSize}                              from './layout';
+import type {BaseProps}                                                    from './props';
 import type {InvalidationRequest, RenderContext, UIContext, UIInvalidator} from './runtime';
+import type {Theme}                                                        from './theme';
 
 // ============================================================
 // Component kinds
 // ============================================================
 
-export type LeafComponentKind = 'badge' | 'button' | 'checkbox'  | 'label' | 'log_viewer' | 'pagination' | 'progress_bar' | 'radio' | 'separator' | 'status_bar';
+export type LeafComponentKind = 'badge' | 'button' | 'checkbox' | 'label' | 'log_viewer' | 'pagination' | 'progress_bar' | 'radio' | 'separator' | 'status_bar' | 'table';
 
-export type ContainerComponentKind = 'box' | 'container' | 'grid' | 'panel' | 'stack' | 'table';
+export type ContainerComponentKind = 'box' | 'container' | 'grid' | 'panel' | 'stack';
 
 export type ComponentKind = LeafComponentKind | ContainerComponentKind;
 
