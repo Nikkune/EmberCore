@@ -169,7 +169,7 @@ export interface PanelProps extends BoxPropsBase {
 export interface StackProps extends BoxPropsBase {
 	direction?: Direction;
 	spacing?: number;
-	alignment?: Omit<CrossAxisAlignment, 'stretch'>;
+	alignment?:CrossAxisAlignment;
 	justify?: MainAxisAlignment;
 	wrap?: WrapMode;
 }
