@@ -14,15 +14,17 @@ local function __TS__New(target, ...)
 end
 -- End of Lua Library inline imports
 local ____exports = {}
-local ____peripheral = require("core.peripheral")
-local Peripheral = ____peripheral.Peripheral
+local ____helpers = require("utils.helpers")
+local createOptions = ____helpers.createOptions
 local ____errors = require("core.errors")
 local TankError = ____errors.TankError
+local ____peripheral = require("core.peripheral")
+local Peripheral = ____peripheral.Peripheral
 local function mapToFluidTank(self, raw)
     if not raw then
         return nil
     end
-    return {name = raw.name, amount = raw.amount, capacity = raw.capacity, displayName = raw.displayName}
+    return createOptions(nil, {}):with("name", raw.name):with("amount", raw.amount):with("capacity", raw.capacity):with("displayName", raw.displayName):done()
 end
 ____exports.Tank = __TS__Class()
 local Tank = ____exports.Tank

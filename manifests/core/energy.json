@@ -3,7 +3,7 @@
   "type": "component",
   "id": "core/energy",
   "name": "Energy",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "files": [
     "core/energy.lua"
   ],

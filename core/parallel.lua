@@ -14,10 +14,14 @@ local function __TS__Class(self)
 end
 -- End of Lua Library inline imports
 local ____exports = {}
-local ____logger = require("core.logger")
-local Logger = ____logger.Logger
+local ____errors = require("core.errors")
+local EmberError = ____errors.EmberError
 local ____errors = require("core.errors")
 local RuntimeError = ____errors.RuntimeError
+local ____logger = require("core.logger")
+local Logger = ____logger.Logger
+local ____result = require("core.result")
+local Result = ____result.Result
 local ____result = require("core.result")
 local Results = ____result.Results
 local log = __TS__New(Logger, "Parallel", "info")

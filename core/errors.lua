@@ -134,6 +134,8 @@ do
 end
 -- End of Lua Library inline imports
 local ____exports = {}
+local ____helpers = require("utils.helpers")
+local assignIfDefined = ____helpers.assignIfDefined
 ____exports.EmberError = __TS__Class()
 local EmberError = ____exports.EmberError
 EmberError.name = "EmberError"
@@ -145,7 +147,7 @@ function EmberError.prototype.____constructor(self, message, code, context)
     Error.prototype.____constructor(self, message)
     self.name = "EmberError"
     self.code = code
-    self.context = context
+    assignIfDefined(nil, self, "context", context)
 end
 function EmberError.prototype.__tostring(self)
     return (("[" .. self.code) .. "] ") .. self.message

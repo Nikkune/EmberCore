@@ -14,10 +14,10 @@ local function __TS__Class(self)
 end
 -- End of Lua Library inline imports
 local ____exports = {}
-local ____logger = require("core.logger")
-local Logger = ____logger.Logger
 local ____errors = require("core.errors")
 local ConfigError = ____errors.ConfigError
+local ____logger = require("core.logger")
+local Logger = ____logger.Logger
 local log = __TS__New(Logger, "Config", "info")
 ____exports.Config = __TS__Class()
 local Config = ____exports.Config

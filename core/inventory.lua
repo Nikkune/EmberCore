@@ -73,10 +73,10 @@ do
 end
 -- End of Lua Library inline imports
 local ____exports = {}
-local ____peripheral = require("core.peripheral")
-local Peripheral = ____peripheral.Peripheral
 local ____errors = require("core.errors")
 local InventoryError = ____errors.InventoryError
+local ____peripheral = require("core.peripheral")
+local Peripheral = ____peripheral.Peripheral
 ____exports.Inventory = __TS__Class()
 local Inventory = ____exports.Inventory
 Inventory.name = "Inventory"
