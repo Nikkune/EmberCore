@@ -1,5 +1,5 @@
+import {makeColors}                    from '@modules/ui';
 import type {Color, Point, Rect, Size} from '@modules/ui/types';
-import {makeColorOptions}              from '@modules/ui';
 
 export interface UISurfaceAdapter {
 	getSize(): {
@@ -135,7 +135,7 @@ export class ComputerCraftSurfaceAdapter implements UIDrawSurface {
 
 		const currentCursor = this.getCursor();
 
-		this.withColors(makeColorOptions({backgroundColor}), () => {
+		this.withColors(makeColors({backgroundColor}), () => {
 			this.target.setCursorPos(1, y);
 			this.target.clearLine();
 		});
@@ -187,7 +187,7 @@ export class ComputerCraftSurfaceAdapter implements UIDrawSurface {
 		const fillCharacter = character.length > 0 ? character[0]! : ' ';
 		const line          = repeat(fillCharacter, rect.width);
 
-		this.withColors(makeColorOptions({
+		this.withColors(makeColors({
 			backgroundColor,
 			foregroundColor,
 		}), () => {
@@ -206,7 +206,7 @@ export class ComputerCraftSurfaceAdapter implements UIDrawSurface {
 		}
 
 		if (rect.width === 1 && rect.height === 1) {
-			this.withColors(makeColorOptions({
+			this.withColors(makeColors({
 				backgroundColor,
 				foregroundColor,
 			}), () => {
@@ -221,7 +221,7 @@ export class ComputerCraftSurfaceAdapter implements UIDrawSurface {
 
 		const strokeCharacter = character.length > 0 ? character[0]! : '#';
 
-		this.withColors(makeColorOptions({
+		this.withColors(makeColors({
 			backgroundColor,
 			foregroundColor,
 		}), () => {
