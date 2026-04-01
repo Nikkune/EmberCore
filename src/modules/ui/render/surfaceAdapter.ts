@@ -170,8 +170,10 @@ export class ComputerCraftSurfaceAdapter implements UIDrawSurface {
 		const target = this.target as Partial<StringBlitTerminalLike>;
 
 		this.withCursor(position, () => {
-			if (typeof target.blit === 'function') {
-				target.blit(text, textColors, backgroundColors);
+			const blit = target.blit;
+
+			if (typeof blit === 'function') {
+				blit.call(target, text, textColors, backgroundColors);
 				return;
 			}
 

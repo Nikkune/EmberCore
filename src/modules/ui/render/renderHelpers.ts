@@ -1,5 +1,6 @@
 import {makeColors, type UIDrawSurface}                                                                               from '@modules/ui';
 import type {BorderCharacters, BoxStyle, Color, Insets, PaddingLike, Point, Rect, RenderContext, TextStyle, TextWrap} from '@modules/ui/types';
+import {splitWords}                                                                                                   from '@modules/ui/utils/string';
 import {createOptions}                                                                                                from '@utils/helpers';
 
 export interface ClipTextResult {
@@ -361,7 +362,7 @@ export function wrapLineByWord(text: string, width: number): string[] {
 	}
 
 	const result: string[] = [];
-	const words            = text.split(/\s+/).filter((word) => word.length > 0);
+	const words            = splitWords(text);
 
 	if (words.length === 0) {
 		return [''];

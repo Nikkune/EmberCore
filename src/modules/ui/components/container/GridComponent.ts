@@ -1,5 +1,6 @@
 import {BaseContainerComponent, drawBox, type DrawBoxOptions, getInnerRect, normalizeInsets, type UIDrawSurface}                        from '@modules/ui';
 import type {ComponentDependencies, GridProps, GridStyle, LayoutConstraints, MeasuredSize, Rect, RenderContext, UIComponent, UIContext} from '@modules/ui/types';
+import {createFilledArray}                                                                                                              from '@modules/ui/utils/arrays';
 import {createOptions}                                                                                                                  from '@utils/helpers';
 
 interface GridPlacement<TChild extends UIComponent<UIDrawSurface>> {
@@ -26,7 +27,7 @@ export class GridComponent<TChild extends UIComponent<UIDrawSurface> = UICompone
 			return this.createMeasuredSize(this.getRequestedWidth(0), this.getRequestedHeight(0), constraints);
 		}
 
-		const columnWidths         = new Array<number>(columns).fill(0);
+		const columnWidths         = createFilledArray(columns, 0);
 		const rowHeights: number[] = [];
 
 		for (let index = 0; index < childrenSizes.length; index += 1) {
@@ -124,7 +125,7 @@ export class GridComponent<TChild extends UIComponent<UIDrawSurface> = UICompone
 		const baseColumnWidth = columns > 0 ? Math.floor(availableWidth / columns) : 0;
 		let extraWidth        = columns > 0 ? availableWidth % columns : 0;
 
-		const columnWidths = new Array<number>(columns).fill(baseColumnWidth).map((width) => {
+		const columnWidths = createFilledArray(columns, baseColumnWidth).map((width) => {
 			if (extraWidth > 0) {
 				extraWidth -= 1;
 				return width + 1;
@@ -134,7 +135,7 @@ export class GridComponent<TChild extends UIComponent<UIDrawSurface> = UICompone
 		});
 
 		const rowCount   = Math.ceil(children.length / columns);
-		const rowHeights = new Array<number>(rowCount).fill(0);
+		const rowHeights = createFilledArray(rowCount, 0);
 
 		for (let index = 0; index < children.length; index += 1) {
 			const child       = children[index]!;
