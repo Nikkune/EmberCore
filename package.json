@@ -18,7 +18,8 @@
 		"prepare:release":    "npm run build && npm run build:scripts && npm run run:bump && npm run generate:manifests",
 		"test:smoke":         "node build-scripts/test/smoke.js",
 		"test:behavior":      "node build-scripts/test/behavior.js",
-		"test":               "npm run build:all && npm run test:smoke && npm run test:behavior",
+		"test:installer":     "node build-scripts/test/installer.js",
+		"test":               "npm run build:all && npm run test:smoke && npm run test:behavior && npm run test:installer",
 		"lint":               "eslint .",
 		"lint:fix":           "eslint . --fix"
 	},

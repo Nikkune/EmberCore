@@ -85,15 +85,20 @@ dist/          # Generated Lua output
 
 ## 📦 Deployment (In-Game)
 
-```lua
-pastebin run <id> my_project
+The installer is [`installer/embercore.lua`](installer/embercore.lua). Put it on the computer once
+(for example with `pastebin get <code> embercore`), then:
+
+```
+embercore install ui        install a component or project with its dependencies
+embercore update            update everything installed
+embercore remove ui         remove it, and the dependencies nothing else needs
+embercore list              available (and installed *) components
 ```
 
-The installer will:
-
-* Download the project
-* Install dependencies
-* Set up the environment
+An id is a full id (`modules/ui`, `core/config`) or its last part when unique (`ui`, `config`).
+Files come from the `lua` branch through `raw.githubusercontent.com` and are installed at the root
+of the computer, so `require("core.config")` works as is. Each component is downloaded completely
+before anything is written. What is installed is recorded in `/.embercore/installed`.
 
 ---
 
