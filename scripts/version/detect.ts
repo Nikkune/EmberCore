@@ -32,21 +32,22 @@ function fileExists(filePath: string): boolean {
 	return fs.existsSync(filePath) && fs.statSync(filePath).isFile();
 }
 
-function detectCoreTarget(srcDir: string, relativePath: string): BumpTarget | undefined {
-	const match = /^src\/core\/([^/]+?)(?:\.manifest\.json|\.ts|\.d\.ts)$/.exec(relativePath);
+/** One component per file, for src/core/<name>.ts and src/utils/<name>.ts. */
+function detectFlatTarget(srcDir: string, relativePath: string, group: 'core' | 'utils'): BumpTarget | undefined {
+	const match = new RegExp(`^src/${group}/([^/]+?)(?:\\.manifest\\.json|\\.ts|\\.d\\.ts)$`).exec(relativePath);
 	if (!match) {
 		return undefined;
 	}
 
 	const name     = match[1];
-	const metaPath = path.join(srcDir, 'core', `${name}.manifest.json`);
+	const metaPath = path.join(srcDir, group, `${name}.manifest.json`);
 
 	if (!fileExists(metaPath)) {
 		return undefined;
 	}
 
 	return {
-		id:      `core/${name}`,
+		id:      `${group}/${name}`,
 		metaPath,
 		changed: true,
 	};
@@ -98,7 +99,8 @@ export function detectTargetFromFile(filePath: string, options: DetectOptions): 
 	const relativePath = normalizeRelativePath(filePath);
 
 	return (
-		detectCoreTarget(options.srcDir, relativePath)
+		detectFlatTarget(options.srcDir, relativePath, 'core')
+		?? detectFlatTarget(options.srcDir, relativePath, 'utils')
 		?? detectModuleTarget(options.srcDir, relativePath)
 		?? detectProjectTarget(options.srcDir, relativePath)
 	);
