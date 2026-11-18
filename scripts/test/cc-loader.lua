@@ -14,6 +14,7 @@ package.path = installDir .. '/?.lua'
 package.cpath = ''
 
 unpack = unpack or table.unpack
+table.unpack = table.unpack or unpack
 
 -- A stub that tolerates any field access or call, enough for module top-level code.
 local stub

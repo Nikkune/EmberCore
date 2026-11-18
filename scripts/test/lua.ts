@@ -1,8 +1,8 @@
 import {spawnSync} from 'node:child_process';
 
-/** Lua interpreter used by the tests: $LUA, otherwise `lua5.2`, otherwise `lua`. */
+/** Lua interpreter used by the tests: $LUA, otherwise `lua5.1`, `luajit`, `lua5.2`, otherwise `lua`. */
 export function findLua(): string {
-	const candidates = process.env['LUA'] ? [process.env['LUA']] : ['lua5.2', 'lua'];
+	const candidates = process.env['LUA'] ? [process.env['LUA']] : ['lua5.1', 'luajit', 'lua5.2', 'lua'];
 
 	for (const candidate of candidates) {
 		const probe = spawnSync(candidate, ['-v'], {encoding: 'utf-8'});

@@ -4,7 +4,7 @@
  * with stubbed CC:Tweaked APIs. Catches missing files in manifests and circular requires.
  *
  * Requires `npm run build` and `npm run generate:manifests` first.
- * Lua interpreter: $LUA, otherwise `lua5.2`, otherwise `lua`.
+ * Lua interpreter: $LUA, otherwise `lua5.1`, `luajit`, `lua5.2`, otherwise `lua`.
  */
 import {spawnSync} from 'node:child_process';
 import * as fs     from 'node:fs';
@@ -59,12 +59,56 @@ function toModuleName(file: string): string {
 	return file.replace(/\.lua$/, '').split('/').join('.');
 }
 
+/**
+ * CC:Tweaked's Lua VM (Cobalt) has no goto/labels in many versions (e.g. CC:T 1.101 for MC 1.18),
+ * while the local Lua used for these tests does. TSTL emits goto for `continue` with luaTarget >= 5.2,
+ * so this check catches what running the tests cannot.
+ */
+function findUnsupportedSyntax(): string[] {
+	const problems: string[] = [];
+	const pattern            = /\bgoto\s+[A-Za-z_]\w*|::[A-Za-z_]\w*::/;
+
+	const walk = (dir: string): void => {
+		for (const entry of fs.readdirSync(dir, {withFileTypes: true})) {
+			const fullPath = path.join(dir, entry.name);
+
+			if (entry.isDirectory()) {
+				walk(fullPath);
+				continue;
+			}
+
+			if (!entry.name.endsWith('.lua')) continue;
+
+			fs.readFileSync(fullPath, 'utf-8').split('\n').forEach((line, index) => {
+				if (pattern.test(line)) {
+					problems.push(`${path.relative(DIST_DIR, fullPath)}:${index + 1}: ${line.trim()}`);
+				}
+			});
+		}
+	};
+
+	walk(DIST_DIR);
+
+	return problems;
+}
+
 function main(): void {
 	const lua       = findLua();
 	const manifests = loadManifests();
 	let failures    = 0;
 
 	console.log(`Using Lua interpreter: ${lua}`);
+
+	const unsupported = findUnsupportedSyntax();
+
+	if (unsupported.length > 0) {
+		failures++;
+		console.log(`FAIL goto/labels found (unsupported by CC:Tweaked's Lua): set "luaTarget" to "5.1"`);
+		console.log(unsupported.map((line) => `     ${line}`).join('\n'));
+	}
+	else {
+		console.log('ok   no goto/labels in compiled Lua');
+	}
 
 	for (const manifest of [...manifests.values()].sort((a, b) => a.id.localeCompare(b.id))) {
 		const installDir = fs.mkdtempSync(path.join(os.tmpdir(), 'embercore-smoke-'));

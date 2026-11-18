@@ -3,6 +3,7 @@
 -- so code that wrongly calls them with ':' fails here as it would in game.
 
 unpack = unpack or table.unpack
+table.unpack = table.unpack or unpack
 
 local colorCount = 0
 colors = setmetatable({}, {
@@ -103,6 +104,12 @@ function installPeripherals(devices)
 			if device then return table.unpack(device.types) end
 		end,
 		hasType = hasType,
+		getName = function(object)
+			for name, device in pairs(devices) do
+				if device.object == object then return name end
+			end
+			error("bad argument #1 (table is not a peripheral)", 2)
+		end,
 		wrap = function(name)
 			local device = devices[name]
 			return device and device.object
