@@ -101,12 +101,13 @@ export class ToggleButtonComponent extends PressableComponent<'button', ToggleBu
 			const colors = themeStyle.colors;
 
 			// State colors are the button background; the text keeps its own color.
+			// The color shows the toggle state (pressed / default); a click flashes the active color.
 			const stateBackground = this.disabled
 				? colors?.disabled
-				: this._pressed
-					? colors?.pressed ?? colors?.active ?? colors?.selected
-					: this.focused
-						? colors?.active ?? colors?.selected
+				: this.flashing
+					? colors?.active ?? colors?.selected ?? colors?.pressed
+					: this._pressed
+						? colors?.pressed ?? colors?.active ?? colors?.selected
 						: colors?.default;
 
 			const tone = makeToneColorOverride(

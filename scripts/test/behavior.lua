@@ -533,5 +533,33 @@ test('runtime.run() renders, dispatches clicks and returns after stop()', functi
 	expect(terminal.line(button.rect.y):find('Go', 1, true), 'screen not rendered')
 end)
 
+test('buttons flash on click, then show their state color only', function()
+	local theme = themeWith({ button = { colors = { default = colors.gray, active = colors.blue } } })
+	local button = new(components.ButtonComponent, { label = 'Go' })
+	local toggle = new(components.ToggleButtonComponent, { label = 'Tg' })
+	local stack = new(components.StackComponent, { direction = 'row', spacing = 1 }, {}, { button, toggle })
+	local runtime, terminal = runtimeFor(stack, 20, 1, theme)
+	runtime:render()
+	local function bg(component) return terminal.cell(component.rect.x, component.rect.y)[3] end
+
+	runtime:dispatch({ type = 'mouse_click', x = button.rect.x, y = button.rect.y, button = 1 })
+	runtime:render()
+	expect(bg(button) == colors.blue, 'button does not flash on click')
+	runtime:dispatch({ type = 'timer', timerId = LAST_TIMER })
+	runtime:render()
+	expect(bg(button) == colors.gray, 'button stays highlighted after the flash (focus must not color it)')
+
+	runtime:dispatch({ type = 'mouse_click', x = toggle.rect.x, y = toggle.rect.y, button = 1 })
+	runtime:dispatch({ type = 'timer', timerId = LAST_TIMER })
+	runtime:render()
+	expect(toggle.pressed and bg(toggle) == colors.blue, 'toggle ON should use the pressed/active color')
+	runtime:dispatch({ type = 'mouse_click', x = toggle.rect.x, y = toggle.rect.y, button = 1 })
+	runtime:render()
+	expect(bg(toggle) == colors.blue, 'toggle should flash on click')
+	runtime:dispatch({ type = 'timer', timerId = LAST_TIMER })
+	runtime:render()
+	expect(not toggle.pressed and bg(toggle) == colors.gray, 'toggle OFF must be the default color, even when focused')
+end)
+
 realPrint(('\n%d passed, %d failed'):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)

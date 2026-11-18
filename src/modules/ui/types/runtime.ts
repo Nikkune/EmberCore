@@ -32,6 +32,9 @@ export interface UIContext {
 
 export interface UIInvalidator {
 	invalidate(request?: InvalidationRequest): void;
+
+	/** Calls back after a delay (CC timer), e.g. to end a short visual effect. */
+	schedule?(delaySeconds: number, callback: () => void): void;
 }
 
 export interface UIRenderResult {

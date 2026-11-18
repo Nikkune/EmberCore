@@ -27,6 +27,7 @@ export class UIRuntime<TDrawSurface extends RuntimeSurface> implements UIInvalid
 	private dirtyRegions: DirtyRegion[] = [];
 	private activeElement?: string | undefined;
 	private running                     = false;
+	private readonly scheduled          = new Map<number, () => void>();
 
 	public constructor(options: UIRuntimeOptions<TDrawSurface>) {
 		this.root                            = options.root;
@@ -59,6 +60,16 @@ export class UIRuntime<TDrawSurface extends RuntimeSurface> implements UIInvalid
 	}
 
 	public dispatch(event: UIEvent): boolean {
+		if (event.type === 'timer') {
+			const callback = this.scheduled.get(event.timerId);
+
+			if (callback) {
+				this.scheduled.delete(event.timerId);
+				callback();
+				return true;
+			}
+		}
+
 		const blurred = this.blurOutsideClick(event);
 		const request = this.dispatchToRoot(event);
 
@@ -107,6 +118,14 @@ export class UIRuntime<TDrawSurface extends RuntimeSurface> implements UIInvalid
 
 			this.render();
 		}
+	}
+
+	/**
+	 * Calls back after a delay. Uses a CC timer: its "timer" event must reach dispatch()
+	 * (run() and toUIEvent() handle it).
+	 */
+	public schedule(delaySeconds: number, callback: () => void): void {
+		this.scheduled.set(os.startTimer(delaySeconds), callback);
 	}
 
 	/** Makes run() return after the event being processed. */

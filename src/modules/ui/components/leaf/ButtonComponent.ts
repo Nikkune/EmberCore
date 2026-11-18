@@ -75,15 +75,14 @@ export class ButtonComponent extends PressableComponent<'button', ButtonProps, U
 	protected override getResolvedStyle(context: UIContext | RenderContext<UIDrawSurface>): Partial<ButtonStyle> {
 		return this.getStyle(context, (themeStyle) => {
 			const isDisabled = this.disabled;
-			const isFocused  = this.focused;
-
 			const colors = themeStyle.colors;
 
 			// State colors are the button background; the text keeps its own color.
+			// A click flashes the active color; focus alone does not color the button.
 			const stateBackground = isDisabled
 			                        ? colors?.disabled
-			                        : isFocused
-			                          ? colors?.active ?? colors?.selected
+			                        : this.flashing
+			                          ? colors?.active ?? colors?.selected ?? colors?.pressed
 			                          : colors?.default;
 
 			const tone = makeToneColorOverride(

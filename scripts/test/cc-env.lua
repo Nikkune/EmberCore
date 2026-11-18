@@ -130,3 +130,12 @@ textutils = { serialise = tostring, unserialise = function() return nil end }
 sleep = function() end
 os.pullEvent = os.pullEvent or function() end
 os.date = os.date
+
+-- Timers: ids increase; LAST_TIMER is the id of the most recent one (test helper).
+local timerCount = 0
+os.startTimer = function(_)
+	timerCount = timerCount + 1
+	LAST_TIMER = timerCount
+	return timerCount
+end
+os.cancelTimer = function() end
