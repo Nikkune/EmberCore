@@ -97,7 +97,7 @@ end
 function Peripheral.require(self, name)
     local wrapped = ____exports.Peripheral:wrap(name)
     if wrapped == nil then
-        local message = ("Peripheral not found on side '" .. name) .. "'"
+        local message = ("Peripheral '" .. name) .. "' not found"
         log:error(message, {name = name, action = "require", status = "failed"})
         error(
             __TS__New(PeripheralError, message, {name = name, action = "require"}),
@@ -123,7 +123,7 @@ end
 function Peripheral.requireType(self, name, expectedType)
     if not self:hasType(name, expectedType) then
         local actualType = self:getType(name)
-        local message = ((((("Peripheral on side '" .. name) .. "' has type '") .. (actualType or "nil")) .. "', expected '") .. expectedType) .. "'"
+        local message = ((((("Peripheral '" .. name) .. "' has type '") .. (actualType or "nil")) .. "', expected '") .. expectedType) .. "'"
         log:error(message, {
             name = name,
             action = "require_type",
@@ -137,7 +137,7 @@ function Peripheral.requireType(self, name, expectedType)
         )
     end
     local wrapped = self:wrap(name)
-    assertNotNil(nil, wrapped, ("Peripheral on side '" .. name) .. "' could not be wrapped")
+    assertNotNil(nil, wrapped, ("Peripheral '" .. name) .. "' could not be wrapped")
     log:debug("Peripheral type validated", {name = name, action = "require_type", status = "ok", expected = expectedType})
     return wrapped
 end

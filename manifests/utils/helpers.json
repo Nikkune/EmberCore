@@ -3,7 +3,7 @@
   "type": "component",
   "id": "utils/helpers",
   "name": "Helpers",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "files": [
     "utils/helpers.lua"
   ],

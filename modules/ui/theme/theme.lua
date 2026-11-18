@@ -49,13 +49,27 @@ local SINGLE_BORDER = {
     rule = ccChar(nil, 4 + 8),
     columnRule = ccChar(nil, 1 + 4 + 16)
 }
+local FULL_CELL = ccChar(nil, 0)
 local DOUBLE_BORDER = {
-    topLeft = "#",
-    topRight = "#",
-    bottomLeft = "#",
-    bottomRight = "#",
-    horizontal = "=",
-    vertical = "H"
+    topLeft = FULL_CELL,
+    topRight = FULL_CELL,
+    bottomLeft = FULL_CELL,
+    bottomRight = FULL_CELL,
+    horizontal = ccChar(nil, 1 + 2 + 4 + 8),
+    vertical = FULL_CELL,
+    top = ccChar(nil, 1 + 2 + 4 + 8),
+    bottom = ccChar(nil, 1 + 2),
+    inverted = {
+        "topLeft",
+        "topRight",
+        "bottomLeft",
+        "bottomRight",
+        "left",
+        "right",
+        "bottom"
+    },
+    rule = ccChar(nil, 4 + 8),
+    columnRule = FULL_CELL
 }
 local COLORED_BORDER = {
     topLeft = " ",

@@ -132,7 +132,7 @@ function StackComponent.prototype.measure(self, constraints, context)
     local spacing = self.props.spacing or 0
     local wrap = self.props.wrap or "nowrap"
     local children = __TS__ArrayMap(
-        self.children,
+        self:getVisibleChildren(),
         function(____, child, index) return {
             child = child,
             index = index,
@@ -193,7 +193,10 @@ function StackComponent.prototype.render(self, context)
     )
     context.draw:withColors(
         makeColors(nil, {foregroundColor = style.foregroundColor, backgroundColor = style.backgroundColor}),
-        function() return self:renderChildren(context) end
+        function() return self:renderChildren(
+            context,
+            getInnerRect(nil, self.rect, style)
+        ) end
     )
 end
 function StackComponent.prototype.getResolvedStyle(self, context)
@@ -221,7 +224,7 @@ function StackComponent.prototype.getInnerConstraints(self, constraints, style)
     }
 end
 function StackComponent.prototype.createPlacements(self, innerRect, context)
-    local children = {unpack(self.children)}
+    local children = self:getVisibleChildren()
     local direction = self.props.direction or "column"
     local spacing = self.props.spacing or 0
     local alignment = self.props.alignment or "start"

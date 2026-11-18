@@ -36,7 +36,7 @@ function ____exports.assertTable(self, value, name)
 end
 function ____exports.assertPeripheral(self, value, side)
     if value == nil or value == nil then
-        error(("No peripheral found on side '" .. side) .. "'", 2)
+        error(("No peripheral found for '" .. side) .. "'", 2)
     end
 end
 return ____exports

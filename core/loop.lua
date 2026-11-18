@@ -25,10 +25,21 @@ local Result = ____result.Result
 local ____result = require("core.result")
 local Results = ____result.Results
 local log = __TS__New(Logger, "Loop", "info")
+local YIELD_EVERY_SECONDS = 1
+local YIELD_EVENT = "embercore_yield"
 ____exports.Loop = __TS__Class()
 local Loop = ____exports.Loop
 Loop.name = "Loop"
 function Loop.prototype.____constructor(self)
+end
+function Loop.yieldIfBusy(self)
+    local now = os.clock()
+    if now >= ____exports.Loop.lastYield and now - ____exports.Loop.lastYield < YIELD_EVERY_SECONDS then
+        return
+    end
+    ____exports.Loop.lastYield = now
+    os.queueEvent(YIELD_EVENT)
+    os.pullEvent(YIELD_EVENT)
 end
 function Loop.sleep(self, seconds)
     if seconds < 0 then
@@ -47,6 +58,8 @@ function Loop.forever(self, task, intervalSeconds)
         task(nil)
         if intervalSeconds > 0 then
             self:sleep(intervalSeconds)
+        else
+            self:yieldIfBusy()
         end
     end
 end
@@ -76,6 +89,8 @@ Loop["until"] = function(self, condition, task, intervalSeconds)
         task(nil)
         if intervalSeconds > 0 then
             self:sleep(intervalSeconds)
+        else
+            self:yieldIfBusy()
         end
     end
 end
@@ -114,4 +129,5 @@ function Loop.retry(self, task, options)
     end
     return Results:err(lastError or __TS__New(RuntimeError, "All retry attempts failed", {action = "retry", label = label, attempts = attempts, status = "failed"}))
 end
+Loop.lastYield = 0
 return ____exports

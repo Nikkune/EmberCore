@@ -3,7 +3,7 @@
   "type": "component",
   "id": "core/config",
   "name": "Config",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "files": [
     "core/config.lua"
   ],

@@ -17,7 +17,7 @@ local function pad(self, value)
     return value < 10 and "0" .. tostring(value) or tostring(value)
 end
 local function getTimestamp(self)
-    local now = os:date("*t")
+    local now = os.date("*t")
     local year = now.year
     local month = pad(nil, now.month)
     local day = pad(nil, now.day)

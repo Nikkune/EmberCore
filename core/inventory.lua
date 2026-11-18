@@ -30,10 +30,10 @@ function Inventory.fromName(self, name)
     return __TS__New(____exports.Inventory, name, peripheral)
 end
 function Inventory.prototype.size(self)
-    return self.peripheralRef:size()
+    return self.peripheralRef.size()
 end
 function Inventory.prototype.list(self)
-    return self.peripheralRef:list()
+    return self.peripheralRef.list()
 end
 function Inventory.prototype.getItem(self, slot)
     if slot < 1 or slot > self:size() then
@@ -51,7 +51,7 @@ function Inventory.prototype.getItem(self, slot)
             0
         )
     end
-    return self.peripheralRef:getItemDetail(slot)
+    return self.peripheralRef.getItemDetail(slot)
 end
 function Inventory.prototype.isEmpty(self)
     local items = self:list()
@@ -98,7 +98,7 @@ function Inventory.prototype.pushTo(self, target, fromSlot, limit, toSlot)
             0
         )
     end
-    return self.peripheralRef:pushItems(target.name, fromSlot, limit, toSlot)
+    return self.peripheralRef.pushItems(target.name, fromSlot, limit, toSlot)
 end
 function Inventory.prototype.pullFrom(self, source, fromSlot, limit, toSlot)
     if fromSlot < 1 or fromSlot > source:size() then
@@ -111,7 +111,7 @@ function Inventory.prototype.pullFrom(self, source, fromSlot, limit, toSlot)
             0
         )
     end
-    return self.peripheralRef:pullItems(source.name, fromSlot, limit, toSlot)
+    return self.peripheralRef.pullItems(source.name, fromSlot, limit, toSlot)
 end
 function Inventory.prototype.moveFirstItemByName(self, target, itemName, limit)
     local slot = self:findFirstSlotByName(itemName)
@@ -122,16 +122,25 @@ function Inventory.prototype.moveFirstItemByName(self, target, itemName, limit)
 end
 function Inventory.prototype.moveAllOfItem(self, target, itemName)
     local moved = 0
-    while true do
-        local slot = self:findFirstSlotByName(itemName)
-        if slot == nil then
-            break
+    for slot, item in pairs(self:list()) do
+        do
+            local __continue25
+            repeat
+                if item.name ~= itemName then
+                    __continue25 = true
+                    break
+                end
+                local amount = self.peripheralRef.pushItems(target.name, slot)
+                moved = moved + amount
+                if amount < item.count then
+                    break
+                end
+                __continue25 = true
+            until true
+            if not __continue25 then
+                break
+            end
         end
-        local amount = self:pushTo(target, slot)
-        if amount <= 0 then
-            break
-        end
-        moved = moved + amount
     end
     return moved
 end

@@ -161,6 +161,17 @@ local function __TS__ArraySetLength(self, length)
     return length
 end
 
+local function __TS__ObjectAssign(target, ...)
+    local sources = {...}
+    for i = 1, #sources do
+        local source = sources[i]
+        for key in pairs(source) do
+            target[key] = source[key]
+        end
+    end
+    return target
+end
+
 local function __TS__ArrayMap(self, callbackfn, thisArg)
     local result = {}
     for i = 1, #self do
@@ -316,6 +327,7 @@ local ____exports = {}
 local ____coreComponent = require("modules.ui.core.components.coreComponent")
 local BaseComponent = ____coreComponent.BaseComponent
 local ____renderHelpers = require("modules.ui.render.renderHelpers")
+local intersectRects = ____renderHelpers.intersectRects
 local shrinkRect = ____renderHelpers.shrinkRect
 local ____types = require("modules.ui.types.index")
 local BaseProps = ____types.BaseProps
@@ -394,19 +406,33 @@ function BaseContainerComponent.prototype.destroy(self)
     __TS__ArraySetLength(self.internalChildren, 0)
     BaseComponent.prototype.destroy(self)
 end
-function BaseContainerComponent.prototype.renderChildren(self, context)
+function BaseContainerComponent.prototype.renderChildren(self, context, clipRect)
+    local childContext = context
+    if clipRect then
+        local ____context_clipRect_7
+        if context.clipRect then
+            ____context_clipRect_7 = intersectRects(nil, context.clipRect, clipRect)
+        else
+            ____context_clipRect_7 = clipRect
+        end
+        local clip = ____context_clipRect_7
+        if not clip then
+            return
+        end
+        childContext = __TS__ObjectAssign({}, context, {clipRect = clip})
+    end
     for ____, child in ipairs(self.internalChildren) do
         do
-            local __continue16
+            local __continue18
             repeat
                 if not child.visible then
-                    __continue16 = true
+                    __continue18 = true
                     break
                 end
-                child:render(context)
-                __continue16 = true
+                child:render(childContext)
+                __continue18 = true
             until true
-            if not __continue16 then
+            if not __continue18 then
                 break
             end
         end
@@ -429,7 +455,7 @@ function BaseContainerComponent.prototype.measureChild(self, child, constraints,
 end
 function BaseContainerComponent.prototype.measureChildren(self, constraints, context)
     return __TS__ArrayMap(
-        self.internalChildren,
+        self:getVisibleChildren(),
         function(____, child) return self:measureChild(child, constraints, context) end
     )
 end

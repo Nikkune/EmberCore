@@ -76,20 +76,7 @@ function InteractiveContainerComponent.prototype.hitTest(self, point)
     if not self:isVisibleAndEnabled() then
         return false
     end
-    if self:isPointInsideRect(point, self.rect) then
-        return true
-    end
-    do
-        local index = #self.internalChildren - 1
-        while index >= 0 do
-            local child = self.internalChildren[index + 1]
-            if child and ____exports.isInteractiveComponent(nil, child) and child:hitTest(point) then
-                return true
-            end
-            index = index - 1
-        end
-    end
-    return false
+    return self:isPointInsideRect(point, self.rect)
 end
 function InteractiveContainerComponent.prototype.dispatch(self, event, context)
     if not self:isVisibleAndEnabled() then
@@ -100,20 +87,20 @@ function InteractiveContainerComponent.prototype.dispatch(self, event, context)
             local index = #self.internalChildren - 1
             while index >= 0 do
                 do
-                    local __continue14
+                    local __continue10
                     repeat
                         local child = self.internalChildren[index + 1]
                         if not child or not ____exports.isInteractiveComponent(nil, child) then
-                            __continue14 = true
+                            __continue10 = true
                             break
                         end
                         local childResult = child:dispatch(event, context)
                         if childResult then
                             return childResult
                         end
-                        __continue14 = true
+                        __continue10 = true
                     until true
-                    if not __continue14 then
+                    if not __continue10 then
                         break
                     end
                 end
@@ -129,28 +116,31 @@ function InteractiveContainerComponent.prototype.dispatch(self, event, context)
     return self:handleEvent(event, context)
 end
 function InteractiveContainerComponent.prototype.dispatchToChildren(self, event, context)
+    if event.x ~= nil and event.y ~= nil and not self:isPointInsideRect({x = event.x, y = event.y}, self.rect) then
+        return nil
+    end
     do
         local index = #self.internalChildren - 1
         while index >= 0 do
             do
-                local __continue20
+                local __continue17
                 repeat
                     local child = self.internalChildren[index + 1]
                     if not child or not child.visible or child.disabled or not ____exports.isInteractiveComponent(nil, child) then
-                        __continue20 = true
+                        __continue17 = true
                         break
                     end
                     if event.x ~= nil and event.y ~= nil and not child:hitTest({x = event.x, y = event.y}) then
-                        __continue20 = true
+                        __continue17 = true
                         break
                     end
                     local result = child:dispatch(event, context)
                     if result then
                         return result
                     end
-                    __continue20 = true
+                    __continue17 = true
                 until true
-                if not __continue20 then
+                if not __continue17 then
                     break
                 end
             end

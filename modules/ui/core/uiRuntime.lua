@@ -566,6 +566,12 @@ function UIRuntime.prototype.clearSurface(self)
 end
 function UIRuntime.prototype.renderDirtyRegions(self, baseContext, regions)
     for ____, region in ipairs(regions) do
+        local ____this_8
+        ____this_8 = self.surface
+        local ____opt_7 = ____this_8.fillRect
+        if ____opt_7 ~= nil then
+            ____opt_7(____this_8, region, " ", self.theme.palette.backgroundColor)
+        end
         self.root:render(__TS__ObjectAssign({}, baseContext, {clipRect = region}))
     end
 end
@@ -579,9 +585,9 @@ function UIRuntime.prototype.shouldFullRedraw(self, regions)
     if #regions >= self.maxDirtyRegionsBeforeFullRedraw then
         return true
     end
-    local ____temp_7 = self.surface:getSize()
-    local width = ____temp_7.width
-    local height = ____temp_7.height
+    local ____temp_9 = self.surface:getSize()
+    local width = ____temp_9.width
+    local height = ____temp_9.height
     local totalSurfaceArea = width * height
     local dirtyArea = self:computeRegionsArea(regions)
     if totalSurfaceArea <= 0 then
@@ -667,9 +673,9 @@ function UIRuntime.prototype.mergeRegions(self, a, b)
     return {x = left, y = top, width = right - left + 1, height = bottom - top + 1}
 end
 function UIRuntime.prototype.clampRegionToSurface(self, region)
-    local ____temp_8 = self.surface:getSize()
-    local surfaceWidth = ____temp_8.width
-    local surfaceHeight = ____temp_8.height
+    local ____temp_10 = self.surface:getSize()
+    local surfaceWidth = ____temp_10.width
+    local surfaceHeight = ____temp_10.height
     local left = math.max(1, region.x)
     local top = math.max(1, region.y)
     local right = math.min(surfaceWidth, region.x + region.width - 1)

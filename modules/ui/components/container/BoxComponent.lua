@@ -191,7 +191,10 @@ function BoxComponent.prototype.render(self, context)
     self:renderTitle(context, style)
     context.draw:withColors(
         makeColors(nil, {foregroundColor = style.foregroundColor, backgroundColor = style.backgroundColor}),
-        function() return self:renderChildren(context) end
+        function() return self:renderChildren(
+            context,
+            getInnerRect(nil, self.rect, style)
+        ) end
     )
 end
 function BoxComponent.prototype.getResolvedStyle(self, context)

@@ -203,7 +203,10 @@ function PanelComponent.prototype.render(self, context)
     self:renderTitle(context, style)
     context.draw:withColors(
         makeColors(nil, {foregroundColor = style.foregroundColor, backgroundColor = style.backgroundColor}),
-        function() return self:renderChildren(context) end
+        function() return self:renderChildren(
+            context,
+            getInnerRect(nil, self.rect, style)
+        ) end
     )
 end
 function PanelComponent.prototype.getResolvedStyle(self, context)

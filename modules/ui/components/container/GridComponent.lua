@@ -196,7 +196,10 @@ function GridComponent.prototype.render(self, context)
     )
     context.draw:withColors(
         makeColors(nil, {foregroundColor = style.foregroundColor, backgroundColor = style.backgroundColor}),
-        function() return self:renderChildren(context) end
+        function() return self:renderChildren(
+            context,
+            getInnerRect(nil, self.rect, style)
+        ) end
     )
 end
 function GridComponent.prototype.getResolvedStyle(self, context)
@@ -227,7 +230,7 @@ function GridComponent.prototype.getInnerConstraints(self, constraints, style)
     }
 end
 function GridComponent.prototype.createPlacements(self, innerRect, context)
-    local children = {unpack(self.children)}
+    local children = self:getVisibleChildren()
     local columns = self:getColumns()
     local columnSpacing = self.props.columnSpacing or 0
     local rowSpacing = self.props.rowSpacing or 0
