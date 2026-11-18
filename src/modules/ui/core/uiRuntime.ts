@@ -1,4 +1,5 @@
 import type {ContainerLike, DirtyRegion, InvalidationRequest, LayoutConstraints, Point, Rect, RenderContext, RuntimeSurface, SurfaceKind, Theme, UIComponent, UIContext, UIEvent, UIEventBus, UIFocusableComponent, UIInteractiveComponent, UIInvalidator, UIRenderResult} from '@modules/ui/types';
+import {toUIEvent, type UIRunOptions} from '@modules/ui/core/ccEvents';
 import {createOptions}                                                                                                                                                                                            from '@utils/helpers';
 
 export interface UIRuntimeOptions<TDrawSurface extends RuntimeSurface> {
@@ -25,6 +26,8 @@ export class UIRuntime<TDrawSurface extends RuntimeSurface> implements UIInvalid
 	private fullRedraw                  = true;
 	private dirtyRegions: DirtyRegion[] = [];
 	private activeElement?: string | undefined;
+	private running                     = false;
+	private readonly scheduled          = new Map<number, () => void>();
 
 	public constructor(options: UIRuntimeOptions<TDrawSurface>) {
 		this.root                            = options.root;
@@ -34,6 +37,9 @@ export class UIRuntime<TDrawSurface extends RuntimeSurface> implements UIInvalid
 		this.surfaceKind                     = options.surfaceKind;
 		this.maxDirtyRegionsBeforeFullRedraw = options.maxDirtyRegionsBeforeFullRedraw ?? 8;
 		this.fullRedrawCoverageThreshold     = options.fullRedrawCoverageThreshold ?? 0.6;
+
+		// Components (and children added later) report their own state changes to this runtime.
+		this.root.attachInvalidator?.(this);
 	}
 
 	public invalidate(request: InvalidationRequest = {
@@ -54,17 +60,77 @@ export class UIRuntime<TDrawSurface extends RuntimeSurface> implements UIInvalid
 	}
 
 	public dispatch(event: UIEvent): boolean {
+		if (event.type === 'timer') {
+			const callback = this.scheduled.get(event.timerId);
+
+			if (callback) {
+				this.scheduled.delete(event.timerId);
+				callback();
+				return true;
+			}
+		}
+
 		const blurred = this.blurOutsideClick(event);
 		const request = this.dispatchToRoot(event);
+
+		// Subscribers see every event, including the ones no component handled.
+		this.eventBus.dispatch(event);
 
 		if (!request) {
 			return blurred;
 		}
 
-		this.eventBus.dispatch(event);
 		this.invalidate(request);
 
 		return true;
+	}
+
+	/**
+	 * Blocking event loop: renders, waits for CC events, dispatches them and redraws what changed,
+	 * until stop() is called. Runs fine inside Parallel/parallel.waitForAny next to other tasks.
+	 * For a monitor, pass its side/name so that only its monitor_touch events are used.
+	 */
+	public run(options: UIRunOptions = {}): void {
+		this.running = true;
+		this.forceRender();
+
+		while (this.running) {
+			const raw: unknown[] = [...os.pullEvent()];
+
+			options.onEvent?.(raw);
+
+			if (!this.running) break;
+
+			const name = raw[0];
+
+			if (name === 'term_resize' || name === 'monitor_resize') {
+				this.invalidate({
+					reason: 'layout',
+					kind:   'full',
+				});
+			}
+
+			const event = toUIEvent(raw, options);
+
+			if (event) {
+				this.dispatch(event);
+			}
+
+			this.render();
+		}
+	}
+
+	/**
+	 * Calls back after a delay. Uses a CC timer: its "timer" event must reach dispatch()
+	 * (run() and toUIEvent() handle it).
+	 */
+	public schedule(delaySeconds: number, callback: () => void): void {
+		this.scheduled.set(os.startTimer(delaySeconds), callback);
+	}
+
+	/** Makes run() return after the event being processed. */
+	public stop(): void {
+		this.running = false;
 	}
 
 	/**

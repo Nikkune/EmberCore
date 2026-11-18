@@ -16,6 +16,10 @@ export class TableComponent<T = Record<string, unknown>> extends BaseComponent<'
 		super('table', props, dependencies);
 	}
 
+	public setRows(rows: T[]): void {
+		this.setProps({rows} as Partial<TableProps<T>>);
+	}
+
 	public override measure(constraints: LayoutConstraints, context: UIContext): MeasuredSize {
 		const style      = this.getResolvedStyle(context);
 		const showHeader = style.showHeader ?? true;
@@ -285,13 +289,13 @@ export class TableComponent<T = Record<string, unknown>> extends BaseComponent<'
 	}
 
 	private resolveHeaderCellStyle(column: ColumnDefinition<T>, style: Partial<TableStyle>): Partial<TextStyle> {
-		return createOptions<TextStyle>(style.headerStyle ?? {})
+		return createOptions<TextStyle>({...(style.headerStyle ?? {})})
 			.with('alignment', column.alignment ?? style.headerStyle?.alignment ?? 'left')
 			.done();
 	}
 
 	private resolveRowCellStyle(column: ColumnDefinition<T>, style: Partial<TableStyle>): Partial<TextStyle> {
-		return createOptions<TextStyle>(style.rowStyle ?? {})
+		return createOptions<TextStyle>({...(style.rowStyle ?? {})})
 			.with('alignment', column.alignment ?? style.rowStyle?.alignment ?? 'left')
 			.done();
 	}

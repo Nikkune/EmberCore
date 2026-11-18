@@ -1,4 +1,5 @@
 export * from './core/eventSystem';
+export * from './core/ccEvents';
 export * from './core/uiRuntime';
 
 export * from './core/components/baseContainerComponent';

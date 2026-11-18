@@ -1,6 +1,7 @@
 import {InteractiveContainerComponent} from '@modules/ui/core/components/interactiveContainerComponent';
 import {drawBox, type DrawBoxOptions, drawText, type DrawTextOptions, getInnerRect, normalizeInsets} from '@modules/ui/render/renderHelpers';
 import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
+import {makeColors} from '@modules/ui/theme/tone';
 import type {BoxProps, BoxStyle, ComponentDependencies, LayoutConstraints, MeasuredSize, RenderContext, TextStyle, UIComponent, UIContext}       from '@modules/ui/types';
 import {createOptions}                                                                                                                       from '@utils/helpers';
 
@@ -22,7 +23,8 @@ export class BoxComponent<TChild extends UIComponent<UIDrawSurface> = UIComponen
 		const borderY = style.border?.enabled ? 2 : 0;
 		const padding = normalizeInsets(style.padding);
 
-		const titleWidth = this.props.title ? this.props.title.length + (style.border?.enabled ? 4 : 0) : 0;
+		// "+- Title -+": the title, a space on each side, and two border cells on each side.
+		const titleWidth = this.props.title ? this.props.title.length + (style.border?.enabled ? 6 : 0) : 0;
 
 		const measuredWidth = Math.max(childrenWidth + padding.left + padding.right + borderX, titleWidth, this.getRequestedWidth(0));
 
@@ -66,7 +68,11 @@ export class BoxComponent<TChild extends UIComponent<UIDrawSurface> = UIComponen
 			.done());
 
 		this.renderTitle(context, style);
-		this.renderChildren(context);
+		// Children without their own colors are drawn with this container's (transparent layouts pass theirs through).
+		context.draw.withColors(makeColors({
+			foregroundColor: style.foregroundColor,
+			backgroundColor: style.backgroundColor,
+		}), () => this.renderChildren(context));
 	}
 
 	protected override getResolvedStyle(context: UIContext | RenderContext<UIDrawSurface>): Partial<BoxStyle> {
@@ -100,14 +106,18 @@ export class BoxComponent<TChild extends UIComponent<UIDrawSurface> = UIComponen
 			return;
 		}
 
+		// Only the title and a space on each side: a full-width rect would pad the line with
+		// spaces and erase the rest of the top border.
+		const text = ` ${title} `;
+
 		drawText(context, createOptions<DrawTextOptions>({
 			rect:           {
 				x:      this.x + 2,
 				y:      this.y,
-				width:  Math.max(0, this.width - 4),
+				width:  Math.max(0, Math.min(text.length, this.width - 4)),
 				height: 1,
 			},
-			text:           title,
+			text,
 			fillBackground: style.backgroundColor !== undefined,
 		})
 			.with('style', createOptions<TextStyle>({

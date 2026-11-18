@@ -16,10 +16,15 @@ export class StatusBarComponent extends BaseComponent<'status_bar', StatusBarPro
 		super('status_bar', props, dependencies);
 	}
 
+	public setSegments(segments: StatusBarSegment[]): void {
+		this.setProps({segments} as Partial<StatusBarProps>);
+	}
+
 	public override measure(constraints: LayoutConstraints, context: UIContext): MeasuredSize {
 		const style        = this.getResolvedStyle(context);
 		const contentWidth = this.getContentWidth(style);
-		const width        = this.props.width ?? this.props.minWidth ?? contentWidth;
+		// A status bar spans the available width (at least its content).
+		const width        = this.props.width ?? this.props.minWidth ?? Math.max(contentWidth, constraints.maxWidth);
 		const height       = this.props.height ?? this.props.minHeight ?? 1;
 
 		return this.createMeasuredSize(width, height, constraints);
@@ -92,26 +97,30 @@ export class StatusBarComponent extends BaseComponent<'status_bar', StatusBarPro
 			return [];
 		}
 
-		const fixedWidth       = segments.reduce((sum, segment) => sum + (segment.width ?? 0), 0);
-		const flexibleSegments = segments.filter((segment) => segment.width === undefined);
-		const remainingWidth   = Math.max(0, this.width - fixedWidth);
+		// Segments without a fixed width take their text length; the space left goes to the last
+		// of them, and when space is missing the last ones shrink first (with an ellipsis).
+		const fixedWidth = segments.reduce((sum, segment) => sum + (segment.width ?? 0), 0);
+		const widths     = segments.map((segment) => segment.width ?? segment.text.length);
+		const flexible   = segments.flatMap((segment, index) => (segment.width === undefined ? [index] : []));
+		let remaining    = Math.max(0, this.width - fixedWidth) - flexible.reduce((sum, index) => sum + (widths[index] ?? 0), 0);
 
-		const baseFlexibleWidth = flexibleSegments.length > 0 ? Math.floor(remainingWidth / flexibleSegments.length) : 0;
+		if (remaining > 0 && flexible.length > 0) {
+			const last   = flexible[flexible.length - 1]!;
+			widths[last] = (widths[last] ?? 0) + remaining;
+		}
 
-		let extraWidth = flexibleSegments.length > 0 ? remainingWidth % flexibleSegments.length : 0;
+		for (let i = flexible.length - 1; i >= 0 && remaining < 0; i -= 1) {
+			const index    = flexible[i]!;
+			const shrink   = Math.min(widths[index] ?? 0, -remaining);
+			widths[index]  = (widths[index] ?? 0) - shrink;
+			remaining     += shrink;
+		}
 
 		let currentX                      = this.x;
 		const resolved: ResolvedSegment[] = [];
 
-		for (const segment of segments) {
-			let width = segment.width ?? baseFlexibleWidth;
-
-			if (segment.width === undefined && extraWidth > 0) {
-				width += 1;
-				extraWidth -= 1;
-			}
-
-			width = Math.max(0, width);
+		segments.forEach((segment, index) => {
+			const width = Math.max(0, widths[index] ?? 0);
 
 			const segmentStyle = this.getSegmentStyle(segment, style, context);
 
@@ -123,7 +132,7 @@ export class StatusBarComponent extends BaseComponent<'status_bar', StatusBarPro
 			});
 
 			currentX += width;
-		}
+		});
 
 		return resolved.filter((segment) => segment.width > 0);
 	}
@@ -135,7 +144,8 @@ export class StatusBarComponent extends BaseComponent<'status_bar', StatusBarPro
 	): Partial<TextStyle> {
 		const alignment = segment.alignment === 'center' ? 'center' : segment.alignment === 'right' ? 'right' : 'left';
 
-		return createOptions<TextStyle>(style.text ?? {})
+		// A copy per segment: sharing style.text made every segment take the last segment's colors.
+		return createOptions<TextStyle>({...(style.text ?? {})})
 			.with('alignment', alignment)
 			.with('foregroundColor', segment.color ?? style.text?.foregroundColor ?? style.foregroundColor ?? context.theme.palette.text)
 			.with('backgroundColor', segment.backgroundColor ?? style.text?.backgroundColor ?? style.backgroundColor ?? context.theme.palette.surface)

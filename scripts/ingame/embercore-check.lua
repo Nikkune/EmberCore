@@ -8,6 +8,8 @@
 --   embercore-check tanks         -- raw tanks() of every fluid storage (empty-tank holes)
 --   embercore-check ui [side] [ascii] -- interactive UI demo on the terminal or on a monitor;
 --                                    add "ascii" for +-| borders instead of CC drawing characters
+--   embercore-check widgets [side] [ascii] -- layout and data widgets: margins, Box, Panel, Grid,
+--                                    Badge, Table (chest content), LogViewer, StatusBar
 --   embercore-check all
 
 local root = fs.getDir(shell.getRunningProgram())
@@ -132,7 +134,7 @@ local function checkUi(side, ascii)
 
 	local status = new(C.LabelComponent, { text = 'Cliquez. Q (clavier) pour quitter.' })
 	local function setStatus(text)
-		status.props.text = text
+		status:setText(text)
 	end
 
 	local group = new(C.RadioGroup, 'a')
@@ -172,31 +174,20 @@ local function checkUi(side, ascii)
 		root = root, eventBus = new(ui.BasicUIEventBus), theme = theme, surface = surface, surfaceKind = side and 'monitor' or 'terminal',
 	})
 
-	runtime:forceRender()
-
+	-- run() renders, translates CC events, dispatches them and redraws what changed.
+	-- Callbacks from Lua receive an extra first argument (self): function(_, raw).
 	local timer = os.startTimer(1)
-	while true do
-		local event, a, b, c = os.pullEvent()
-		if event == 'char' and (a == 'q' or a == 'Q') then break end
-
-		local uiEvent
-		if event == 'mouse_click' and not monitorSide then
-			uiEvent = { type = 'mouse_click', button = a, x = b, y = c }
-		elseif event == 'monitor_touch' and a == monitorSide then
-			uiEvent = { type = 'monitor_touch', x = b, y = c }
-		elseif event == 'timer' and a == timer then
-			bar.props.value = (bar.props.value + 1) % 11
-			runtime:invalidate({ reason = 'state', kind = 'region', rect = bar.rect })
-			timer = os.startTimer(1)
-		end
-
-		if uiEvent then
-			runtime:dispatch(uiEvent)
-			-- Labels and the bar change through props: redraw everything to see the result.
-			runtime:invalidate({ reason = 'state', kind = 'full' })
-		end
-		runtime:render()
-	end
+	runtime:run({
+		monitor = monitorSide,
+		onEvent = function(_, raw)
+			if raw[1] == 'char' and (raw[2] == 'q' or raw[2] == 'Q') then
+				runtime:stop()
+			elseif raw[1] == 'timer' and raw[2] == timer then
+				bar:setValue((bar.value + 1) % 11)
+				timer = os.startTimer(1)
+			end
+		end,
+	})
 
 	term.setBackgroundColor(colors.black)
 	term.setTextColor(colors.white)
@@ -206,6 +197,143 @@ local function checkUi(side, ascii)
 	print('Fin du test UI.')
 end
 
+-- ------------------------------------------------------------
+-- Widgets: layout (margin, Box, Panel, Grid) and live data (Table, LogViewer, StatusBar)
+-- ------------------------------------------------------------
+local function readChestRows(Inventory, Peripheral)
+	local name = Peripheral:findNameByType('inventory')
+	if not name then
+		return { { item = '(pas de coffre)', qte = '-' } }, 'aucun'
+	end
+
+	local totals, order = {}, {}
+	for _, item in pairs(Inventory:fromName(name):list()) do
+		local short = item.name:gsub('^[^:]*:', '')
+		if not totals[short] then
+			totals[short] = 0
+			order[#order + 1] = short
+		end
+		totals[short] = totals[short] + item.count
+	end
+	table.sort(order, function(a, b) return totals[a] > totals[b] end)
+
+	local rows = {}
+	for i = 1, math.min(#order, 4) do
+		rows[i] = { item = order[i], qte = tostring(totals[order[i]]) }
+	end
+	if #rows == 0 then rows[1] = { item = '(coffre vide)', qte = '0' } end
+	return rows, name
+end
+
+local function checkWidgets(side, ascii)
+	local ui = require('modules.ui.index')
+	local C = require('modules.ui.components')
+	local Inventory = require('core.inventory').Inventory
+	local Peripheral = require('core.peripheral').Peripheral
+
+	local target, monitorSide = term.current(), nil
+	if side then
+		target = peripheral.wrap(side)
+		monitorSide = side
+		assert(target and peripheral.hasType(side, 'monitor'), 'pas de moniteur sur "' .. side .. '"')
+		target.setTextScale(0.5)
+	end
+
+	local theme = {
+		name = 'widgets',
+		palette = ui.defaultTheme.palette,
+		borders = ui.defaultTheme.borders,
+		components = {
+			box = { border = { enabled = true } },
+			panel = { border = { enabled = true } },
+			badge = { text = { alignment = 'center' } },
+		},
+	}
+	if ascii then theme = ui.withAsciiBorders(nil, theme) end
+
+	local clicks = 0
+	local rows, chestName = readChestRows(Inventory, Peripheral)
+
+	local log = new(C.LogViewerComponent, { entries = {}, height = 4, width = 34 })
+	local status = new(C.StatusBarComponent, { segments = {} })
+	local tbl = new(C.TableComponent, {
+		columns = { { key = 'item', title = 'Objet (' .. chestName .. ')' }, { key = 'qte', title = 'Qte', alignment = 'right' } },
+		rows = rows,
+		foregroundColor = colors.yellow,
+		backgroundColor = colors.blue,
+	})
+
+	local function badge(label, color)
+		return new(C.BadgeComponent, { label = label, backgroundColor = color, foregroundColor = colors.black, margin = { right = 1 } })
+	end
+
+	local root = new(C.StackComponent, { direction = 'column', spacing = 1, padding = 1 }, {}, {
+		new(C.StackComponent, { direction = 'row', spacing = 2 }, {}, {
+			new(C.BoxComponent, { title = 'Box + marges', padding = { left = 1, right = 1 } }, {}, {
+				new(C.StackComponent, { direction = 'column' }, {}, {
+					new(C.LabelComponent, { text = 'sans marge' }),
+					new(C.LabelComponent, { text = 'margin left = 3', margin = { left = 3 } }),
+					new(C.LabelComponent, { text = 'margin top = 1', margin = { top = 1 } }),
+				}),
+			}),
+			new(C.PanelComponent, { title = 'Panel' }, {}, {
+				new(C.StackComponent, { direction = 'row' }, {}, {
+					badge('OK', colors.lime), badge('WARN', colors.orange), badge('ERR', colors.red),
+				}),
+			}),
+		}),
+		new(C.GridComponent, { columns = 3, columnSpacing = 1 }, {}, {
+			badge('Grid 1', colors.lightBlue), badge('Grid 2', colors.cyan), badge('Grid 3', colors.lightBlue),
+			badge('Grid 4', colors.cyan), badge('Grid 5', colors.lightBlue), badge('Grid 6', colors.cyan),
+		}),
+		tbl,
+		log,
+		status,
+	})
+
+	local surface = side and ui.ComputerCraftSurfaceAdapter:fromMonitor(target) or ui.ComputerCraftSurfaceAdapter:fromTerminal()
+	local runtime = new(ui.UIRuntime, {
+		root = root, eventBus = new(ui.BasicUIEventBus), theme = theme, surface = surface, surfaceKind = side and 'monitor' or 'terminal',
+	})
+
+	local function updateStatus()
+		status:setSegments({
+			{ text = ' ' .. textutils.formatTime(os.time(), true) .. ' ', backgroundColor = colors.gray },
+			{ text = ' clics: ' .. clicks .. ' ', backgroundColor = colors.blue },
+			{ text = ' Q: quitter ' },
+		})
+	end
+	updateStatus()
+	log:addEntry({ level = 'info', message = 'Demo widgets demarree' })
+
+	local timer = os.startTimer(1)
+	runtime:run({
+		monitor = monitorSide,
+		onEvent = function(_, raw)
+			local name = raw[1]
+			if name == 'char' and (raw[2] == 'q' or raw[2] == 'Q') then
+				runtime:stop()
+			elseif name == 'timer' and raw[2] == timer then
+				updateStatus()
+				tbl:setRows((readChestRows(Inventory, Peripheral)))
+				timer = os.startTimer(1)
+			elseif (name == 'mouse_click' and not monitorSide) or (name == 'monitor_touch' and raw[2] == monitorSide) then
+				clicks = clicks + 1
+				log:addEntry({ level = clicks % 3 == 0 and 'warn' or 'info', message = ('clic %d en %d,%d'):format(clicks, raw[3], raw[4]) }, 4)
+				updateStatus()
+			end
+		end,
+	})
+
+	term.setBackgroundColor(colors.black)
+	term.setTextColor(colors.white)
+	if side then target.setBackgroundColor(colors.black); target.clear() end
+	term.clear()
+	term.setCursorPos(1, 1)
+	print('Fin de la demo widgets.')
+end
+
+
 if mode == 'peripherals' or mode == 'all' then checkPeripherals() end
 if mode == 'tanks' or mode == 'all' then checkTanks() end
 local uiSide, uiAscii = nil, false
@@ -214,8 +342,10 @@ for i = 2, #args do
 end
 
 if mode == 'ui' then checkUi(uiSide, uiAscii)
+elseif mode == 'widgets' then checkWidgets(uiSide, uiAscii)
 elseif mode == 'all' then
 	print('')
 	print('Test interactif : "embercore-check ui" (terminal) ou "embercore-check ui <cote>" (moniteur),')
 	print('ajoutez "ascii" pour comparer avec les bordures +-|.')
+	print('Mise en page et donnees : "embercore-check widgets [cote]".')
 end

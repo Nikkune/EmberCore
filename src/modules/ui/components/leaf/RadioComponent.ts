@@ -32,6 +32,14 @@ export class RadioComponent<T = string> extends PressableComponent<'radio', Radi
 		}
 	}
 
+	protected override onPropsChanged(patch: Partial<RadioProps<T>>): void {
+		if (patch.selected !== undefined) this.setSelected(patch.selected);
+	}
+
+	public setLabel(label: string): void {
+		this.setProps({label} as Partial<RadioProps<T>>);
+	}
+
 	/**
 	 * In a group, selecting this radio also changes another one elsewhere on screen:
 	 * request a full redraw so the deselected radio is repainted too.

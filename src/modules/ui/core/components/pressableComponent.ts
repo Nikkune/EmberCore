@@ -11,6 +11,12 @@ export abstract class PressableComponent<
 		super(kind, props, dependencies);
 	}
 
+	/** Duration of the highlight shown when the component is clicked. */
+	public static readonly FLASH_SECONDS = 0.2;
+
+	/** True during the short highlight after a click. */
+	protected flashing = false;
+
 	public press(context: UIContext): boolean {
 		return this.onPress(context);
 	}
@@ -22,8 +28,9 @@ export abstract class PressableComponent<
 				this.focus();
 
 				const changed = this.press(context);
+				const flashed = this.flash();
 
-				if (!changed) return null;
+				if (!changed && !flashed) return null;
 
 				return this.createStateInvalidation();
 			}
@@ -31,6 +38,21 @@ export abstract class PressableComponent<
 			default:
 				return null;
 		}
+	}
+
+	/** Starts the click highlight; ends it with the runtime scheduler (no effect without one). */
+	protected flash(): boolean {
+		const invalidator = this.invalidator;
+
+		if (!invalidator?.schedule) return false;
+
+		this.flashing = true;
+		invalidator.schedule(PressableComponent.FLASH_SECONDS, () => {
+			this.flashing = false;
+			this.invalidate(this.createStateInvalidation());
+		});
+
+		return true;
 	}
 
 	protected onPress(_context: UIContext): boolean {

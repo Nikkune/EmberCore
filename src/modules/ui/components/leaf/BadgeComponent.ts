@@ -10,6 +10,10 @@ export class BadgeComponent extends BaseComponent<'badge', BadgeProps, UIDrawSur
 		super('badge', props, dependencies);
 	}
 
+	public setLabel(label: string): void {
+		this.setProps({label} as Partial<BadgeProps>);
+	}
+
 	public override measure(constraints: LayoutConstraints, context: UIContext): MeasuredSize {
 		const style   = this.getResolvedStyle(context);
 		const padding = normalizeInsets(style.padding);
