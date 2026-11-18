@@ -561,5 +561,13 @@ test('buttons flash on click, then show their state color only', function()
 	expect(not toggle.pressed and bg(toggle) == colors.gray, 'toggle OFF must be the default color, even when focused')
 end)
 
+test('box title does not erase the rest of the top border', function()
+	local theme = ui.withAsciiBorders(nil, themeWith({ box = { border = { enabled = true } } }))
+	local box = new(components.BoxComponent, { title = 'Title', width = 20, height = 3 }, {}, {})
+	local runtime, terminal = runtimeFor(box, 20, 3, theme)
+	runtime:render()
+	expect(terminal.line(1) == '+- Title ----------+', 'top line is "' .. terminal.line(1) .. '"')
+end)
+
 realPrint(('\n%d passed, %d failed'):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)

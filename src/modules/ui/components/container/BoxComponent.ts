@@ -22,7 +22,8 @@ export class BoxComponent<TChild extends UIComponent<UIDrawSurface> = UIComponen
 		const borderY = style.border?.enabled ? 2 : 0;
 		const padding = normalizeInsets(style.padding);
 
-		const titleWidth = this.props.title ? this.props.title.length + (style.border?.enabled ? 4 : 0) : 0;
+		// "+- Title -+": the title, a space on each side, and two border cells on each side.
+		const titleWidth = this.props.title ? this.props.title.length + (style.border?.enabled ? 6 : 0) : 0;
 
 		const measuredWidth = Math.max(childrenWidth + padding.left + padding.right + borderX, titleWidth, this.getRequestedWidth(0));
 
@@ -100,14 +101,18 @@ export class BoxComponent<TChild extends UIComponent<UIDrawSurface> = UIComponen
 			return;
 		}
 
+		// Only the title and a space on each side: a full-width rect would pad the line with
+		// spaces and erase the rest of the top border.
+		const text = ` ${title} `;
+
 		drawText(context, createOptions<DrawTextOptions>({
 			rect:           {
 				x:      this.x + 2,
 				y:      this.y,
-				width:  Math.max(0, this.width - 4),
+				width:  Math.max(0, Math.min(text.length, this.width - 4)),
 				height: 1,
 			},
-			text:           title,
+			text,
 			fillBackground: style.backgroundColor !== undefined,
 		})
 			.with('style', createOptions<TextStyle>({
