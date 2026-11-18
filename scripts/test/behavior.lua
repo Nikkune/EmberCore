@@ -569,5 +569,51 @@ test('box title does not erase the rest of the top border', function()
 	expect(terminal.line(1) == '+- Title ----------+', 'top line is "' .. terminal.line(1) .. '"')
 end)
 
+test('status bar: full width, natural segment widths, per-segment colors', function()
+	local status = new(components.StatusBarComponent, { segments = {
+		{ text = ' 7:12 ', backgroundColor = colors.gray },
+		{ text = ' clics: 10 ', backgroundColor = colors.blue },
+		{ text = ' Q: quitter ' },
+	} })
+	local stack = new(components.StackComponent, { direction = 'column' }, {}, { status })
+	local runtime, terminal = runtimeFor(stack, 40, 1)
+	runtime:render()
+	local line = terminal.line(1)
+	expect(status.rect.width == 40, 'status bar width ' .. status.rect.width .. ', expected 40')
+	expect(line:find(' 7:12  clics: 10  Q: quitter ', 1, true) == 1, 'segments truncated or misplaced: "' .. line .. '"')
+	expect(terminal.cell(2, 1)[3] == colors.gray, 'first segment background is not gray')
+	expect(terminal.cell(8, 1)[3] == colors.blue, 'second segment background is not blue')
+	expect(terminal.cell(20, 1)[3] == palette.surface, 'third segment should use the bar background')
+end)
+
+test('children inherit the container background (no black holes in a panel)', function()
+	local label = new(components.LabelComponent, { text = 'L' })
+	local badge = new(components.BadgeComponent, { label = 'B', backgroundColor = colors.lime, margin = { right = 1 } })
+	local row = new(components.StackComponent, { direction = 'row' }, {}, { badge, label })
+	local panel = new(components.PanelComponent, { backgroundColor = colors.gray }, {}, { row })
+	local runtime, terminal = runtimeFor(panel, 12, 3)
+	runtime:render()
+	local gapX = badge.rect.x + badge.rect.width
+	expect(terminal.cell(gapX, badge.rect.y)[3] == colors.gray, 'badge margin is not the panel background')
+	expect(terminal.cell(label.rect.x, label.rect.y)[3] == colors.gray, 'label without background is not on the panel background')
+end)
+
+test('table: a column alignment does not leak into the other columns', function()
+	local tbl = new(components.TableComponent, {
+		columns = { { key = 'item', title = 'Objet' }, { key = 'qte', title = 'Qte', alignment = 'right' } },
+		rows = { { item = 'iron', qte = '94' }, { item = 'coal', qte = '12' } },
+		width = 20,
+	})
+	local runtime, terminal = runtimeFor(tbl, 20, 6)
+	runtime:render()
+	for y = 1, 6 do
+		local line = terminal.line(y)
+		for _, word in ipairs({ 'Objet', 'iron', 'coal' }) do
+			local x = line:find(word, 1, true)
+			if x then expect(x == 1, ('"%s" should be left aligned, line %d: "%s"'):format(word, y, line)) end
+		end
+	end
+end)
+
 realPrint(('\n%d passed, %d failed'):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)

@@ -1,6 +1,7 @@
 import {InteractiveContainerComponent} from '@modules/ui/core/components/interactiveContainerComponent';
 import {drawBox, type DrawBoxOptions, drawText, type DrawTextOptions, getInnerRect, normalizeInsets} from '@modules/ui/render/renderHelpers';
 import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
+import {makeColors} from '@modules/ui/theme/tone';
 import type {BoxProps, BoxStyle, ComponentDependencies, LayoutConstraints, MeasuredSize, RenderContext, TextStyle, UIComponent, UIContext}       from '@modules/ui/types';
 import {createOptions}                                                                                                                       from '@utils/helpers';
 
@@ -67,7 +68,11 @@ export class BoxComponent<TChild extends UIComponent<UIDrawSurface> = UIComponen
 			.done());
 
 		this.renderTitle(context, style);
-		this.renderChildren(context);
+		// Children without their own colors are drawn with this container's (transparent layouts pass theirs through).
+		context.draw.withColors(makeColors({
+			foregroundColor: style.foregroundColor,
+			backgroundColor: style.backgroundColor,
+		}), () => this.renderChildren(context));
 	}
 
 	protected override getResolvedStyle(context: UIContext | RenderContext<UIDrawSurface>): Partial<BoxStyle> {
