@@ -149,7 +149,7 @@ export class GridComponent<TChild extends UIComponent<UIDrawSurface> = UICompone
 			const row         = Math.floor(index / columns);
 			const columnWidth = columnWidths[column] ?? 0;
 
-			const measured = child.measure({
+			const measured = this.measureChild(child, {
 				minWidth:  0,
 				maxWidth:  columnWidth,
 				minHeight: 0,

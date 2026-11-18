@@ -37,7 +37,7 @@ export class StackComponent<TChild extends UIComponent<UIDrawSurface> = UICompon
 		const children = this.children.map((child, index) => ({
 			child,
 			index,
-			size: child.measure(innerConstraints, context),
+			size: this.measureChild(child, innerConstraints, context),
 		}));
 
 		const lines = this.createLines(children, direction, wrap, spacing, direction === 'row' ? innerConstraints.maxWidth : innerConstraints.maxHeight);
@@ -129,7 +129,7 @@ export class StackComponent<TChild extends UIComponent<UIDrawSurface> = UICompon
 		}
 
 		const measured: MeasuredChild<TChild>[] = children.map((child, index) => {
-			const size = child.measure({
+			const size = this.measureChild(child, {
 				minWidth:  0,
 				maxWidth:  innerRect.width,
 				minHeight: 0,

@@ -354,6 +354,42 @@ test('padding prop is applied (containers and leaves)', function()
 	expect(button.rect.width == 1, 'button padding ignored: width ' .. button.rect.width)
 end)
 
+test('margin prop spaces children in every container', function()
+	local first = new(components.LabelComponent, { text = 'AB', margin = { bottom = 1, left = 2 } })
+	local second = new(components.LabelComponent, { text = 'CD' })
+	local stack = new(components.StackComponent, { direction = 'column' }, {}, { first, second })
+	runtimeFor(stack, 10, 5):render()
+	expect(first.rect.x == 3 and first.rect.y == 1, ('first label at %d,%d, expected 3,1'):format(first.rect.x, first.rect.y))
+	expect(second.rect.y == 3, 'second label y = ' .. second.rect.y .. ', expected 3 (1 + height 1 + margin 1)')
+
+	for _, containerName in ipairs({ 'BoxComponent', 'ContainerComponent', 'PanelComponent', 'GridComponent' }) do
+		local button = new(components.ButtonComponent, { label = 'X', margin = 1 })
+		local container = new(components[containerName], {}, {}, { button })
+		runtimeFor(container, 12, 6):render()
+		expect(button.rect.x >= 2 and button.rect.y >= 2,
+			('%s: button at %d,%d ignores its margin'):format(containerName, button.rect.x, button.rect.y))
+	end
+end)
+
+test('table header and rows use the table props colors', function()
+	local tbl = new(components.TableComponent, {
+		columns = { { key = 'name', title = 'Nom' } },
+		rows = { { name = 'fer' } },
+		width = 10,
+		foregroundColor = colors.yellow,
+		backgroundColor = colors.blue,
+	})
+	local runtime, terminal = runtimeFor(tbl, 10, 4)
+	runtime:render()
+	local header = cellAt(terminal, 'Nom', 1)
+	expect(header[2] == colors.yellow and header[3] == colors.blue, 'header ignores the props colors')
+	local _, rowY
+	for y = 1, 4 do if terminal.line(y):find('fer', 1, true) then rowY = y end end
+	expect(rowY ~= nil, 'row not drawn')
+	local row = cellAt(terminal, 'fer', rowY)
+	expect(row[2] == colors.yellow and row[3] == colors.blue, 'row ignores the props colors')
+end)
+
 test('separator spans the container width and keeps its label', function()
 	local separator = new(components.SeparatorComponent, { label = 'etat' })
 	local stack = new(components.StackComponent, { direction = 'column' }, {}, { separator })

@@ -1,4 +1,5 @@
-import type {BaseProps, Color, ComponentDependencies, ComponentKind, InvalidationRequest, LayoutConstraints, MeasuredSize, Point, Rect, RenderContext, ThemeComponentKind, UIComponent, UIContext, UIInvalidator} from '@modules/ui/types';
+import {normalizeInsets} from '@modules/ui/render/renderHelpers';
+import type {BaseProps, Color, ComponentDependencies, ComponentKind, Insets, InvalidationRequest, LayoutConstraints, MarginProps, MeasuredSize, Point, Rect, RenderContext, ThemeComponentKind, UIComponent, UIContext, UIInvalidator} from '@modules/ui/types';
 
 let componentIdCounter = 0;
 
@@ -41,6 +42,10 @@ export abstract class BaseComponent<
 
 	public get disabled(): boolean {
 		return this.props.disabled ?? false;
+	}
+
+	public get margin(): Insets {
+		return normalizeInsets((this.props as MarginProps).margin);
 	}
 
 	public layout(rect: Rect, _context: UIContext): void {

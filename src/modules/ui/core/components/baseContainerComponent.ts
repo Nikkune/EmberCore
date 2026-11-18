@@ -1,4 +1,5 @@
 import {BaseComponent} from '@modules/ui/core/components/coreComponent';
+import {shrinkRect} from '@modules/ui/render/renderHelpers';
 import type {BaseProps, ComponentDependencies, ComponentKind, LayoutConstraints, MeasuredSize, Rect, RenderContext, UIComponent, UIContainerComponent, UIContext} from '@modules/ui/types';
 
 export abstract class BaseContainerComponent<
@@ -58,16 +59,40 @@ export abstract class BaseContainerComponent<
 		}
 	}
 
-	protected measureChildren(constraints: LayoutConstraints, context: UIContext): MeasuredSize[] {
-		return this.internalChildren.map((child) => child.measure(constraints, context));
+	/**
+	 * Measures a child including its margin: the child gets the constraints minus its margin,
+	 * and the returned size is the space it takes in the container (size + margin).
+	 */
+	protected measureChild(child: TChild, constraints: LayoutConstraints, context: UIContext): MeasuredSize {
+		const margin     = child.margin;
+		const horizontal = margin ? margin.left + margin.right : 0;
+		const vertical   = margin ? margin.top + margin.bottom : 0;
+
+		const size = child.measure({
+			minWidth:  Math.max(0, constraints.minWidth - horizontal),
+			maxWidth:  Math.max(0, constraints.maxWidth - horizontal),
+			minHeight: Math.max(0, constraints.minHeight - vertical),
+			maxHeight: Math.max(0, constraints.maxHeight - vertical),
+		}, context);
+
+		return {
+			width:  size.width + horizontal,
+			height: size.height + vertical,
+		};
 	}
 
+	protected measureChildren(constraints: LayoutConstraints, context: UIContext): MeasuredSize[] {
+		return this.internalChildren.map((child) => this.measureChild(child, constraints, context));
+	}
+
+	/** Lays out each child in its slot, minus the child's margin. */
 	protected layoutChildren(entries: ReadonlyArray<{
 		child: TChild;
 		rect: Rect
 	}>, context: UIContext): void {
 		for (const entry of entries) {
-			entry.child.layout(entry.rect, context);
+			const margin = entry.child.margin;
+			entry.child.layout(margin ? shrinkRect(entry.rect, margin) : entry.rect, context);
 		}
 	}
 

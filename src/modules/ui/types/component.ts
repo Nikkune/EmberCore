@@ -1,4 +1,4 @@
-import type {Point, Rect}                                                  from './core';
+import type {Insets, Point, Rect}                                          from './core';
 import type {UIEvent, UIEventBus}                                          from './events';
 import type {LayoutConstraints, MeasuredSize}                              from './layout';
 import type {BaseProps}                                                    from './props';
@@ -104,6 +104,8 @@ export interface UIComponent<TDraw = unknown> extends Measurable, Layoutable, Re
 	readonly rect: Rect;
 	readonly visible: boolean;
 	readonly disabled: boolean;
+	/** Space kept around the component by its container (from the margin prop). */
+	readonly margin?: Insets;
 }
 
 export interface UIInteractiveComponent<TDraw = unknown> extends UIComponent<TDraw>, Interactive {}
