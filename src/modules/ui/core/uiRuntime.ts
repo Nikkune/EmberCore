@@ -1,4 +1,4 @@
-import type {DirtyRegion, InvalidationRequest, LayoutConstraints, Rect, RenderContext, RuntimeSurface, SurfaceKind, Theme, UIContext, UIEvent, UIEventBus, UIInteractiveComponent, UIInvalidator, UIRenderResult} from '@modules/ui/types';
+import type {ContainerLike, DirtyRegion, InvalidationRequest, LayoutConstraints, Point, Rect, RenderContext, RuntimeSurface, SurfaceKind, Theme, UIComponent, UIContext, UIEvent, UIEventBus, UIFocusableComponent, UIInteractiveComponent, UIInvalidator, UIRenderResult} from '@modules/ui/types';
 import {createOptions}                                                                                                                                                                                            from '@utils/helpers';
 
 export interface UIRuntimeOptions<TDrawSurface extends RuntimeSurface> {
@@ -54,16 +54,59 @@ export class UIRuntime<TDrawSurface extends RuntimeSurface> implements UIInvalid
 	}
 
 	public dispatch(event: UIEvent): boolean {
+		const blurred = this.blurOutsideClick(event);
 		const request = this.dispatchToRoot(event);
 
 		if (!request) {
-			return false;
+			return blurred;
 		}
 
 		this.eventBus.dispatch(event);
 		this.invalidate(request);
 
 		return true;
+	}
+
+	/**
+	 * A click moves the focus: every focused component that is not under the pointer loses it.
+	 * The clicked component then focuses itself while handling the event.
+	 */
+	private blurOutsideClick(event: UIEvent): boolean {
+		if (event.type !== 'mouse_click' && event.type !== 'monitor_touch') {
+			return false;
+		}
+
+		const point: Point = {
+			x: event.x,
+			y: event.y,
+		};
+		let blurred        = false;
+
+		const visit = (component: UIComponent): void => {
+			const focusable = component as Partial<UIFocusableComponent>;
+
+			if (focusable.focused === true && typeof focusable.blur === 'function' && typeof focusable.hitTest === 'function' && !focusable.hitTest(point)) {
+				focusable.blur();
+				this.invalidate({
+					reason: 'state',
+					kind:   'region',
+					rect:   component.rect,
+				});
+				blurred = true;
+			}
+
+			const children = (component as Partial<ContainerLike<UIComponent>>).children;
+
+			if (children) {
+				for (const child of children) {
+					visit(child);
+				}
+			}
+		};
+
+		visit(this.root);
+
+		return blurred;
 	}
 
 	public render(): UIRenderResult {

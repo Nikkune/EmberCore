@@ -17,6 +17,8 @@ export interface TextStyle {
 	ellipsis?: boolean;
 }
 
+export type BorderPart = 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight' | 'top' | 'bottom' | 'left' | 'right';
+
 export interface BorderCharacters {
 	topLeft: string;
 	topRight: string;
@@ -24,6 +26,21 @@ export interface BorderCharacters {
 	bottomRight: string;
 	horizontal: string;
 	vertical: string;
+	/** Per-side characters; default to horizontal (top/bottom) and vertical (left/right). */
+	top?: string;
+	bottom?: string;
+	left?: string;
+	right?: string;
+	/**
+	 * Parts drawn with foreground and background swapped. CC:Tweaked's drawing characters cannot
+	 * light the bottom-right pixel of a cell, so lines on the right or bottom edge use the
+	 * complementary character with inverted colors.
+	 */
+	inverted?: BorderPart[];
+	/** Horizontal rule used by separators, tables and panels (default: horizontal). */
+	rule?: string;
+	/** Vertical rule used between table columns (default: vertical). */
+	columnRule?: string;
 }
 
 export interface BorderStyle {

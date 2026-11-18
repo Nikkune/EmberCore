@@ -1,7 +1,7 @@
 import {PressableComponent} from '@modules/ui/core/components/pressableComponent';
 import {drawBox, type DrawBoxOptions, drawText, type DrawTextOptions, normalizeInsets, resolveTextLines, type ResolveTextLinesOptions} from '@modules/ui/render/renderHelpers';
 import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
-import {makeToneColorOverride} from '@modules/ui/theme/tone';
+import {inheritTextColors, makeToneColorOverride} from '@modules/ui/theme/tone';
 import type {CheckboxProps, CheckboxStyle, ComponentDependencies, LayoutConstraints, MeasuredSize, RenderContext, TextStyle, UIContext}                                                               from '@modules/ui/types';
 import {createOptions}                                                                                                                                                                                from '@utils/helpers';
 
@@ -144,13 +144,13 @@ export class CheckboxComponent extends PressableComponent<'checkbox', CheckboxPr
 			return {
 				...themeStyle, ...tone,
 
-				padding: themeStyle.padding ?? {
+				padding: this.props.padding ?? themeStyle.padding ?? {
 					left:  1,
 					right: 1,
 				},
 
 				text: {
-					...(themeStyle.text ?? {}),
+					...inheritTextColors(themeStyle.text, tone, this.props),
 					alignment: themeStyle.text?.alignment ?? 'left',
 					wrap:      themeStyle.text?.wrap ?? 'none',
 					ellipsis:  themeStyle.text?.ellipsis ?? true,

@@ -1,6 +1,7 @@
 import {BaseComponent} from '@modules/ui/core/components/coreComponent';
 import {drawHorizontalLine, drawText, type DrawTextOptions} from '@modules/ui/render/renderHelpers';
 import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
+import {getRuleCharacter} from '@modules/ui/theme/theme';
 import type {ComponentDependencies, LayoutConstraints, MeasuredSize, RenderContext, SeparatorProps, SeparatorStyle, TextStyle, UIContext} from '@modules/ui/types';
 import {createOptions} from '@utils/helpers';
 
@@ -11,7 +12,8 @@ export class SeparatorComponent extends BaseComponent<'separator', SeparatorProp
 
 	public override measure(constraints: LayoutConstraints, _context: UIContext): MeasuredSize {
 		const label = this.props.label ?? '';
-		const width = this.props.width ?? this.props.minWidth ?? Math.max(1, label.length);
+		// A horizontal rule fills the available width; at least the label and its two spaces.
+		const width = this.props.width ?? this.props.minWidth ?? Math.max(label.length > 0 ? label.length + 2 : 1, constraints.maxWidth);
 		const height = this.props.height ?? this.props.minHeight ?? 1;
 
 		return this.createMeasuredSize(width, height, constraints);
@@ -23,7 +25,7 @@ export class SeparatorComponent extends BaseComponent<'separator', SeparatorProp
 
 		const style = this.getResolvedStyle(context);
 		const y = this.y + Math.floor((this.height - 1) / 2);
-		const character = style.character ?? '─';
+		const character = style.character ?? getRuleCharacter(context.theme);
 
 		drawHorizontalLine(
 			context.draw,
@@ -60,16 +62,16 @@ export class SeparatorComponent extends BaseComponent<'separator', SeparatorProp
 	}
 
 	protected override getResolvedStyle(context: UIContext | RenderContext<UIDrawSurface>): Partial<SeparatorStyle> {
-		return this.getStyle(context, (themeStyle) => createOptions<SeparatorStyle>(themeStyle)
-			.with('character', themeStyle.character ?? '─')
+		return this.getStyle(context, (themeStyle) => createOptions<SeparatorStyle>({...themeStyle})
+			.with('character', themeStyle.character ?? getRuleCharacter(context.theme))
 			.with('foregroundColor', this.props.foregroundColor ?? themeStyle.foregroundColor ?? context.theme.palette.border)
 			.with('backgroundColor', this.props.backgroundColor ?? themeStyle.backgroundColor)
-			.with('labelStyle', createOptions<TextStyle>(themeStyle.labelStyle ?? {})
+			.with('labelStyle', createOptions<TextStyle>({...(themeStyle.labelStyle ?? {})})
 				.with('alignment', themeStyle.labelStyle?.alignment ?? 'center')
 				.with('wrap', themeStyle.labelStyle?.wrap ?? 'none')
 				.with('ellipsis', themeStyle.labelStyle?.ellipsis ?? true)
-				.with('foregroundColor', themeStyle.labelStyle?.foregroundColor ?? this.props.foregroundColor ?? themeStyle.foregroundColor ?? context.theme.palette.text)
-				.with('backgroundColor', themeStyle.labelStyle?.backgroundColor ?? this.props.backgroundColor ?? themeStyle.backgroundColor)
+				.with('foregroundColor', this.props.foregroundColor ?? themeStyle.labelStyle?.foregroundColor ?? themeStyle.foregroundColor ?? context.theme.palette.text)
+				.with('backgroundColor', this.props.backgroundColor ?? themeStyle.labelStyle?.backgroundColor ?? themeStyle.backgroundColor)
 				.done())
 			.done());
 	}

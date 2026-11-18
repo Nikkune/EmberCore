@@ -1,6 +1,7 @@
 import {InteractiveContainerComponent} from '@modules/ui/core/components/interactiveContainerComponent';
 import {drawBox, type DrawBoxOptions, drawHorizontalLine, drawText, type DrawTextOptions, getInnerRect, normalizeInsets} from '@modules/ui/render/renderHelpers';
 import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
+import {getRuleCharacter} from '@modules/ui/theme/theme';
 import type {ComponentDependencies, LayoutConstraints, MeasuredSize, PanelProps, PanelStyle, RenderContext, TextStyle, UIComponent, UIContext}                       from '@modules/ui/types';
 import {createOptions}                                                                                                                                               from '@utils/helpers';
 
@@ -84,17 +85,17 @@ export class PanelComponent<TChild extends UIComponent<UIDrawSurface> = UICompon
 	}
 
 	protected override getResolvedStyle(context: UIContext | RenderContext<UIDrawSurface>): Partial<PanelStyle> {
-		return this.getStyle(context, (themeStyle) => createOptions<PanelStyle>(themeStyle)
+		return this.getStyle(context, (themeStyle) => createOptions<PanelStyle>({...themeStyle})
 			.with('foregroundColor', this.props.foregroundColor ?? themeStyle.foregroundColor ?? context.theme.palette.text)
 			.with('backgroundColor', this.props.backgroundColor ?? themeStyle.backgroundColor ?? context.theme.palette.panel)
-			.with('padding', themeStyle.padding ?? 0)
+			.with('padding', this.props.padding ?? themeStyle.padding ?? 0)
 			.with('gapColor', themeStyle.gapColor ?? context.theme.palette.border)
-			.with('titleStyle', createOptions<TextStyle>(themeStyle.titleStyle ?? {})
+			.with('titleStyle', createOptions<TextStyle>({...(themeStyle.titleStyle ?? {})})
 				.with('alignment', themeStyle.titleStyle?.alignment ?? 'left')
 				.with('wrap', themeStyle.titleStyle?.wrap ?? 'none')
 				.with('ellipsis', themeStyle.titleStyle?.ellipsis ?? true)
-				.with('foregroundColor', themeStyle.titleStyle?.foregroundColor ?? this.props.foregroundColor ?? themeStyle.foregroundColor ?? context.theme.palette.text)
-				.with('backgroundColor', themeStyle.titleStyle?.backgroundColor ?? this.props.backgroundColor ?? themeStyle.backgroundColor ?? context.theme.palette.panel)
+				.with('foregroundColor', this.props.foregroundColor ?? themeStyle.titleStyle?.foregroundColor ?? themeStyle.foregroundColor ?? context.theme.palette.text)
+				.with('backgroundColor', this.props.backgroundColor ?? themeStyle.titleStyle?.backgroundColor ?? themeStyle.backgroundColor ?? context.theme.palette.panel)
 				.done())
 			.done());
 	}
@@ -148,7 +149,7 @@ export class PanelComponent<TChild extends UIComponent<UIDrawSurface> = UICompon
 				drawHorizontalLine(context.draw, {
 					x: titleX,
 					y: gapY,
-				}, titleWidth, '─', style.gapColor, style.backgroundColor, context.clipRect);
+				}, titleWidth, getRuleCharacter(context.theme), style.gapColor, style.backgroundColor, context.clipRect);
 			}
 		}
 	}

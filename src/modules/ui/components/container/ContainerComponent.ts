@@ -68,10 +68,10 @@ export class ContainerComponent<TChild extends UIComponent<UIDrawSurface> = UICo
 	}
 
 	protected override getResolvedStyle(context: UIContext | RenderContext<UIDrawSurface>): Partial<ContainerStyle> {
-		return this.getStyle(context, (themeStyle) => createOptions<ContainerStyle>(themeStyle)
+		return this.getStyle(context, (themeStyle) => createOptions<ContainerStyle>({...themeStyle})
 			.with('foregroundColor', this.props.foregroundColor ?? themeStyle.foregroundColor ?? context.theme.palette.text)
 			.with('backgroundColor', this.props.backgroundColor ?? themeStyle.backgroundColor ?? context.theme.palette.surface)
-			.with('padding', themeStyle.padding ?? 0)
+			.with('padding', this.props.padding ?? themeStyle.padding ?? 0)
 			.done());
 	}
 

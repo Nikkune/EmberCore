@@ -93,10 +93,10 @@ export class StackComponent<TChild extends UIComponent<UIDrawSurface> = UICompon
 	}
 
 	protected override getResolvedStyle(context: UIContext | RenderContext<UIDrawSurface>): Partial<StackStyle> {
-		return this.getStyle(context, (themeStyle) => createOptions<StackStyle>(themeStyle)
+		return this.getStyle(context, (themeStyle) => createOptions<StackStyle>({...themeStyle})
 			.with('foregroundColor', this.props.foregroundColor ?? themeStyle.foregroundColor ?? context.theme.palette.text)
 			.with('backgroundColor', this.props.backgroundColor ?? themeStyle.backgroundColor ?? context.theme.palette.surface)
-			.with('padding', themeStyle.padding ?? 0)
+			.with('padding', this.props.padding ?? themeStyle.padding ?? 0)
 			.done());
 	}
 
@@ -148,13 +148,16 @@ export class StackComponent<TChild extends UIComponent<UIDrawSurface> = UICompon
 
 		const lines = this.createLines(measured, direction, wrap, spacing, availableMain);
 
-		const totalCross = lines.reduce((sum, line) => sum + line.crossSize, 0) + Math.max(0, lines.length - 1) * spacing;
+		// `justify` only applies to the main axis. On the cross axis, a single line (nowrap) spans the
+		// whole available size so that `alignment` positions the items; wrapped lines are packed at the start.
+		const singleLine = lines[0];
 
-		const remainingCross = Math.max(0, availableCross - totalCross);
-		const crossJustify   = this.resolveCrossJustify(remainingCross, spacing, lines.length, justify);
+		if (wrap === 'nowrap' && singleLine) {
+			singleLine.crossSize = Math.max(singleLine.crossSize, availableCross);
+		}
 
 		const placements: StackPlacement<TChild>[] = [];
-		let currentCross                           = crossJustify.startOffset;
+		let currentCross                           = 0;
 
 		for (const line of lines) {
 			const remainingMain = Math.max(0, availableMain - line.mainSize);
@@ -189,7 +192,7 @@ export class StackComponent<TChild extends UIComponent<UIDrawSurface> = UICompon
 				currentMain += itemMain + mainJustify.betweenSpacing;
 			}
 
-			currentCross += line.crossSize + crossJustify.betweenSpacing;
+			currentCross += line.crossSize + spacing;
 		}
 
 		return placements;
@@ -301,60 +304,6 @@ export class StackComponent<TChild extends UIComponent<UIDrawSurface> = UICompon
 					betweenSpacing: spacing,
 				};
 		}
-	}
-
-	private resolveCrossJustify(remainingCross: number, spacing: number, lineCount: number, justify: MainAxisAlignment): {
-		startOffset: number;
-		betweenSpacing: number;
-	} {
-		if (lineCount <= 0) {
-			return {
-				startOffset:    0,
-				betweenSpacing: spacing,
-			};
-		}
-
-		if (justify === 'space-between' && lineCount > 1) {
-			return {
-				startOffset:    0,
-				betweenSpacing: spacing + Math.floor(remainingCross / (lineCount - 1)),
-			};
-		}
-
-		if (justify === 'space-around') {
-			const gap = Math.floor(remainingCross / lineCount);
-			return {
-				startOffset:    Math.floor(gap / 2),
-				betweenSpacing: spacing + gap,
-			};
-		}
-
-		if (justify === 'space-evenly') {
-			const gap = Math.floor(remainingCross / (lineCount + 1));
-			return {
-				startOffset:    gap,
-				betweenSpacing: spacing + gap,
-			};
-		}
-
-		if (justify === 'center') {
-			return {
-				startOffset:    Math.floor(remainingCross / 2),
-				betweenSpacing: spacing,
-			};
-		}
-
-		if (justify === 'end') {
-			return {
-				startOffset:    remainingCross,
-				betweenSpacing: spacing,
-			};
-		}
-
-		return {
-			startOffset:    0,
-			betweenSpacing: spacing,
-		};
 	}
 
 	private resolveCrossOffset(alignment: CrossAxisAlignment, availableCross: number, childCross: number): number {

@@ -1,7 +1,7 @@
 import {BaseComponent} from '@modules/ui/core/components/coreComponent';
-import {drawBox, type DrawBoxOptions, drawText, type DrawTextOptions, fillRect, type FillRectOptions, normalizeInsets} from '@modules/ui/render/renderHelpers';
+import {drawBox, type DrawBoxOptions, drawText, type DrawTextOptions, fillRect, type FillRectOptions, intersectRects, normalizeInsets} from '@modules/ui/render/renderHelpers';
 import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
-import type {ComponentDependencies, LayoutConstraints, MeasuredSize, ProgressBarProps, ProgressBarStyle, RenderContext, TextStyle, UIContext}             from '@modules/ui/types';
+import type {ComponentDependencies, LayoutConstraints, MeasuredSize, ProgressBarProps, ProgressBarStyle, Rect, RenderContext, TextStyle, UIContext}             from '@modules/ui/types';
 import {createOptions}                                                                                                                                    from '@utils/helpers';
 
 export class ProgressBarComponent extends BaseComponent<'progress_bar', ProgressBarProps, UIDrawSurface, ProgressBarStyle> {
@@ -104,30 +104,61 @@ export class ProgressBarComponent extends BaseComponent<'progress_bar', Progress
 		const text = this.getDisplayText(style);
 
 		if (text.length > 0) {
-			drawText(context, createOptions<DrawTextOptions>({
-				rect:           innerRect,
-				text,
-				fillBackground: false,
-			})
-				.with('style', style.labelStyle)
-				.with('clipRect', context.clipRect)
-				.done());
+			// Draw the label in two passes clipped to the filled and empty parts, each with that part's
+			// background: a single pass would paint the whole bar with one background and hide the fill.
+			const segments = [
+				{
+					x:          innerRect.x,
+					width:      filledWidth,
+					background: style.fillColor,
+				},
+				{
+					x:          innerRect.x + filledWidth,
+					width:      emptyWidth,
+					background: style.emptyColor ?? style.backgroundColor,
+				},
+			];
+
+			for (const segment of segments) {
+				if (segment.width <= 0) continue;
+
+				const segmentRect: Rect = {
+					x:      segment.x,
+					y:      innerRect.y,
+					width:  segment.width,
+					height: innerRect.height,
+				};
+				const clipRect          = context.clipRect ? intersectRects(segmentRect, context.clipRect) : segmentRect;
+
+				if (!clipRect) continue;
+
+				drawText(context, createOptions<DrawTextOptions>({
+					rect:           innerRect,
+					text,
+					fillBackground: false,
+					clipRect,
+				})
+					.with('style', createOptions<TextStyle>({...(style.labelStyle ?? {})})
+						.with('backgroundColor', style.labelStyle?.backgroundColor ?? segment.background)
+						.done())
+					.done());
+			}
 		}
 	}
 
 	protected override getResolvedStyle(context: UIContext | RenderContext<UIDrawSurface>): Partial<ProgressBarStyle> {
-		return this.getStyle(context, (themeStyle) => createOptions<ProgressBarStyle>(themeStyle)
-			.with('padding', themeStyle.padding ?? 0)
+		return this.getStyle(context, (themeStyle) => createOptions<ProgressBarStyle>({...themeStyle})
+			.with('padding', this.props.padding ?? themeStyle.padding ?? 0)
 			.with('fillColor', themeStyle.fillColor ?? context.theme.palette.primary)
 			.with('emptyColor', themeStyle.emptyColor ?? context.theme.palette.surface)
 			.with('showPercentage', themeStyle.showPercentage ?? true)
 			.with('characterFilled', themeStyle.characterFilled ?? ' ')
 			.with('characterEmpty', themeStyle.characterEmpty ?? ' ')
-			.with('labelStyle', createOptions<TextStyle>(themeStyle.labelStyle ?? {})
+			.with('labelStyle', createOptions<TextStyle>({...(themeStyle.labelStyle ?? {})})
 				.with('alignment', themeStyle.labelStyle?.alignment ?? 'center')
 				.with('wrap', themeStyle.labelStyle?.wrap ?? 'none')
 				.with('ellipsis', themeStyle.labelStyle?.ellipsis ?? true)
-				.with('foregroundColor', themeStyle.labelStyle?.foregroundColor ?? this.props.foregroundColor ?? context.theme.palette.text)
+				.with('foregroundColor', this.props.foregroundColor ?? themeStyle.labelStyle?.foregroundColor ?? context.theme.palette.text)
 				.with('backgroundColor', themeStyle.labelStyle?.backgroundColor)
 				.done())
 			.done());

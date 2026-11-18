@@ -56,15 +56,15 @@ export class StatusBarComponent extends BaseComponent<'status_bar', StatusBarPro
 	}
 
 	protected override getResolvedStyle(context: UIContext | RenderContext<UIDrawSurface>): Partial<StatusBarStyle> {
-		return this.getStyle(context, (themeStyle) => createOptions<StatusBarStyle>(themeStyle)
+		return this.getStyle(context, (themeStyle) => createOptions<StatusBarStyle>({...themeStyle})
 			.with('foregroundColor', this.props.foregroundColor ?? themeStyle.foregroundColor ?? context.theme.palette.text)
 			.with('backgroundColor', this.props.backgroundColor ?? themeStyle.backgroundColor ?? context.theme.palette.surface)
-			.with('text', createOptions<TextStyle>(themeStyle.text ?? {})
+			.with('text', createOptions<TextStyle>({...(themeStyle.text ?? {})})
 				.with('alignment', themeStyle.text?.alignment ?? 'left')
 				.with('wrap', themeStyle.text?.wrap ?? 'none')
 				.with('ellipsis', themeStyle.text?.ellipsis ?? true)
-				.with('foregroundColor', themeStyle.text?.foregroundColor ?? this.props.foregroundColor ?? themeStyle.foregroundColor ?? context.theme.palette.text)
-				.with('backgroundColor', themeStyle.text?.backgroundColor ?? this.props.backgroundColor ?? themeStyle.backgroundColor ?? context.theme.palette.surface)
+				.with('foregroundColor', this.props.foregroundColor ?? themeStyle.text?.foregroundColor ?? themeStyle.foregroundColor ?? context.theme.palette.text)
+				.with('backgroundColor', this.props.backgroundColor ?? themeStyle.text?.backgroundColor ?? themeStyle.backgroundColor ?? context.theme.palette.surface)
 				.done())
 			.done());
 	}
