@@ -139,3 +139,58 @@ os.startTimer = function(_)
 	return timerCount
 end
 os.cancelTimer = function() end
+
+-- Controllable clock and event queue (test helpers: FAKE_CLOCK, QUEUED_EVENTS).
+FAKE_CLOCK = 0
+os.clock = function() return FAKE_CLOCK end
+QUEUED_EVENTS = {}
+os.queueEvent = function(name, ...)
+	QUEUED_EVENTS[#QUEUED_EVENTS + 1] = name
+end
+os.pullEvent = function(filter)
+	return filter
+end
+
+-- In-memory file system (FILES[path] = content).
+fs = fs or {}
+FILES = {}
+fs.exists = function(path) return FILES[path] ~= nil end
+fs.delete = function(path) FILES[path] = nil end
+fs.move = function(from, to)
+	if FILES[to] ~= nil then error('File exists', 2) end
+	FILES[to], FILES[from] = FILES[from], nil
+end
+fs.open = function(path, mode)
+	if mode == 'r' then
+		if FILES[path] == nil then return nil end
+		return { readAll = function() return FILES[path] end, close = function() end }
+	end
+	local buffer = {}
+	return {
+		write = function(text) buffer[#buffer + 1] = text end,
+		close = function() FILES[path] = table.concat(buffer) end,
+	}
+end
+
+-- textutils.serialise / unserialise good enough for config tables.
+local function serialise(value)
+	if type(value) == 'table' then
+		local parts = {}
+		for k, v in pairs(value) do
+			local key = type(k) == 'string' and ('[%q]'):format(k) or ('[' .. tostring(k) .. ']')
+			parts[#parts + 1] = key .. '=' .. serialise(v)
+		end
+		return '{' .. table.concat(parts, ',') .. '}'
+	end
+	if type(value) == 'string' then return ('%q'):format(value) end
+	return tostring(value)
+end
+textutils.serialise = serialise
+textutils.serialize = serialise
+textutils.unserialise = function(text)
+	local chunk = (loadstring or load)('return ' .. text)
+	if not chunk then return nil end
+	local ok, result = pcall(chunk)
+	return ok and result or nil
+end
+textutils.unserialize = textutils.unserialise

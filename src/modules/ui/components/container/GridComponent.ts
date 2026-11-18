@@ -91,7 +91,7 @@ export class GridComponent<TChild extends UIComponent<UIDrawSurface> = UICompone
 		context.draw.withColors(makeColors({
 			foregroundColor: style.foregroundColor,
 			backgroundColor: style.backgroundColor,
-		}), () => this.renderChildren(context));
+		}), () => this.renderChildren(context, getInnerRect(this.rect, style)));
 	}
 
 	protected override getResolvedStyle(context: UIContext | RenderContext<UIDrawSurface>): Partial<GridStyle> {
@@ -123,7 +123,7 @@ export class GridComponent<TChild extends UIComponent<UIDrawSurface> = UICompone
 	}
 
 	private createPlacements(innerRect: Rect, context: UIContext): GridPlacement<TChild>[] {
-		const children      = [...this.children];
+		const children      = this.getVisibleChildren();
 		const columns       = this.getColumns();
 		const columnSpacing = this.props.columnSpacing ?? 0;
 		const rowSpacing    = this.props.rowSpacing ?? 0;

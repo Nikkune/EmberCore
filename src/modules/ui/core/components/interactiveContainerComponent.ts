@@ -24,20 +24,11 @@ export abstract class InteractiveContainerComponent<
 		super(kind, props, dependencies, children);
 	}
 
+	/** Children are clipped to the container, so only its own area can be hit. */
 	public hitTest(point: Point): boolean {
 		if (!this.isVisibleAndEnabled()) return false;
 
-		if (this.isPointInsideRect(point, this.rect)) return true;
-
-		for (let index = this.internalChildren.length - 1; index >= 0; index--) {
-			const child = this.internalChildren[index];
-
-			if (child && isInteractiveComponent(child) && child.hitTest(point)) {
-				return true;
-			}
-		}
-
-		return false;
+		return this.isPointInsideRect(point, this.rect);
 	}
 
 	public dispatch(event: UIEvent, context: UIContext): InvalidationRequest | null {
@@ -67,6 +58,14 @@ export abstract class InteractiveContainerComponent<
 	}
 
 	protected dispatchToChildren(event: UIEvent, context: UIContext): InvalidationRequest | null {
+		// A click outside the container cannot reach a child: that part of the child is not drawn.
+		if ('x' in event && 'y' in event && !this.isPointInsideRect({
+			x: event.x,
+			y: event.y,
+		}, this.rect)) {
+			return null;
+		}
+
 		for (let index = this.internalChildren.length - 1; index >= 0; index--) {
 			const child = this.internalChildren[index];
 

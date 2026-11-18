@@ -72,7 +72,7 @@ export class BoxComponent<TChild extends UIComponent<UIDrawSurface> = UIComponen
 		context.draw.withColors(makeColors({
 			foregroundColor: style.foregroundColor,
 			backgroundColor: style.backgroundColor,
-		}), () => this.renderChildren(context));
+		}), () => this.renderChildren(context, getInnerRect(this.rect, style)));
 	}
 
 	protected override getResolvedStyle(context: UIContext | RenderContext<UIDrawSurface>): Partial<BoxStyle> {

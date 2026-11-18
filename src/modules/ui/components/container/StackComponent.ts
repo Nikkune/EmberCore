@@ -35,7 +35,7 @@ export class StackComponent<TChild extends UIComponent<UIDrawSurface> = UICompon
 		const spacing   = this.props.spacing ?? 0;
 		const wrap      = this.props.wrap ?? 'nowrap';
 
-		const children = this.children.map((child, index) => ({
+		const children = this.getVisibleChildren().map((child, index) => ({
 			child,
 			index,
 			size: this.measureChild(child, innerConstraints, context),
@@ -94,7 +94,7 @@ export class StackComponent<TChild extends UIComponent<UIDrawSurface> = UICompon
 		context.draw.withColors(makeColors({
 			foregroundColor: style.foregroundColor,
 			backgroundColor: style.backgroundColor,
-		}), () => this.renderChildren(context));
+		}), () => this.renderChildren(context, getInnerRect(this.rect, style)));
 	}
 
 	protected override getResolvedStyle(context: UIContext | RenderContext<UIDrawSurface>): Partial<StackStyle> {
@@ -122,7 +122,7 @@ export class StackComponent<TChild extends UIComponent<UIDrawSurface> = UICompon
 	}
 
 	private createPlacements(innerRect: Rect, context: UIContext): StackPlacement<TChild>[] {
-		const children  = [...this.children];
+		const children  = this.getVisibleChildren();
 		const direction = this.props.direction ?? 'column';
 		const spacing   = this.props.spacing ?? 0;
 		const alignment = this.props.alignment ?? 'start';

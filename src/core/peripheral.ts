@@ -82,7 +82,7 @@ export class Peripheral {
 		const wrapped = Peripheral.wrap<T>(name);
 
 		if (wrapped === undefined) {
-			const message = `Peripheral not found on side '${name}'`;
+			const message = `Peripheral '${name}' not found`;
 			log.error(message, {
 				name,
 				action: 'require',
@@ -117,7 +117,7 @@ export class Peripheral {
 	public static requireType<T>(name: PeripheralName, expectedType: string): T {
 		if (!this.hasType(name, expectedType)) {
 			const actualType = this.getType(name);
-			const message = `Peripheral on side '${name}' has type '${actualType ?? 'nil'}', expected '${expectedType}'`;
+			const message = `Peripheral '${name}' has type '${actualType ?? 'nil'}', expected '${expectedType}'`;
 			log.error(message, {
 				name,
 				action:     'require_type',
@@ -134,7 +134,7 @@ export class Peripheral {
 		}
 
 		const wrapped = this.wrap<T>(name);
-		assertNotNil(wrapped, `Peripheral on side '${name}' could not be wrapped`);
+		assertNotNil(wrapped, `Peripheral '${name}' could not be wrapped`);
 
 		log.debug('Peripheral type validated', {
 			name,

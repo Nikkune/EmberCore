@@ -51,4 +51,7 @@ export interface RuntimeSurface {
 	};
 
 	clear?(backgroundColor?: Color): void;
+
+	/** Used to clear a region before redrawing it. */
+	fillRect?(rect: Rect, character?: string, backgroundColor?: Color, foregroundColor?: Color): void;
 }

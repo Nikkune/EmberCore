@@ -248,6 +248,25 @@ test('default border preset is a thin frame of single-byte CC drawing characters
 	expect(terminal.cell(3, 3)[2] == colors.gray and terminal.cell(3, 3)[3] == colors.white, 'bottom should be inverted')
 end)
 
+test('double border preset is a thick frame of CC drawing characters', function()
+	local button = new(components.ButtonComponent, { label = 'Go', width = 6, backgroundColor = colors.gray, foregroundColor = colors.white })
+	local runtime, terminal = runtimeFor(button, 6, 3, themeWith({ button = { border = { enabled = true, preset = 'double' } } }))
+	runtime:render()
+	local c = string.char
+	local expected = {
+		c(0x80) .. c(0x8F):rep(4) .. c(0x80),
+		c(0x80) .. ' Go ' .. c(0x80),
+		c(0x80) .. c(0x83):rep(4) .. c(0x80),
+	}
+	for y = 1, 3 do
+		expect(terminal.line(y) == expected[y], ('line %d is %q'):format(y, terminal.line(y)))
+	end
+	-- Sides and corners are full cells (inverted empty character), top is drawn, bottom inverted.
+	expect(terminal.cell(1, 2)[3] == colors.white, 'left side should be a full cell of the border color')
+	expect(terminal.cell(3, 1)[2] == colors.white and terminal.cell(3, 1)[3] == colors.gray, 'top colors')
+	expect(terminal.cell(3, 3)[2] == colors.gray and terminal.cell(3, 3)[3] == colors.white, 'bottom should be inverted')
+end)
+
 test('withAsciiBorders() switches borders and rules to ASCII', function()
 	local theme = ui.withAsciiBorders(nil, themeWith({ button = { border = { enabled = true } } }))
 	local button = new(components.ButtonComponent, { label = 'Go', width = 6 })
@@ -613,6 +632,162 @@ test('table: a column alignment does not leak into the other columns', function(
 			if x then expect(x == 1, ('"%s" should be left aligned, line %d: "%s"'):format(word, y, line)) end
 		end
 	end
+end)
+
+-- ============================================================
+-- Core robustness
+-- ============================================================
+
+test('logger: logging works (os.date called without self)', function()
+	local Logger = require('core.logger').Logger
+	local log = new(Logger, 'Test', 'debug', false)
+	local lines = {}
+	local previous = print
+	print = function(line) lines[#lines + 1] = line end
+	local ok, err = pcall(function() log:info('hello', { a = 1 }) end)
+	print = previous
+	expect(ok, 'Logger.info crashed: ' .. tostring(err))
+	expect(lines[1] and lines[1]:find('INFO | Test | a=1 msg="hello"', 1, true), 'line: ' .. tostring(lines[1]))
+end)
+
+local function loopYields(run)
+	FAKE_CLOCK, QUEUED_EVENTS = 0, {}
+	local calls = 0
+	local ok, err = pcall(quiet, function()
+		run(function()
+			calls = calls + 1
+			FAKE_CLOCK = FAKE_CLOCK + 0.4 -- a busy task that never yields
+			if calls == 10 then error('stop', 0) end
+		end)
+	end)
+	expect(not ok and tostring(err):find('stop', 1, true), 'unexpected error: ' .. tostring(err))
+	return #QUEUED_EVENTS
+end
+
+test('loop: forever/until yield regularly when the task never does (no "Too long without yielding")', function()
+	local Loop = require('core.loop').Loop
+	local foreverYields = loopYields(function(task) Loop:forever(task) end)
+	expect(foreverYields >= 2, 'forever() yielded ' .. foreverYields .. ' time(s) in 4 s of busy work')
+	-- `until` is a Lua keyword: from Lua the method is called as Loop["until"](Loop, ...).
+	local untilYields = loopYields(function(task) Loop['until'](Loop, function() return false end, task) end)
+	expect(untilYields >= 2, 'until() yielded ' .. untilYields .. ' time(s) in 4 s of busy work')
+end)
+
+test('config: deep merge with defaults, wrong types ignored, unknown keys dropped', function()
+	local Config = require('core.config').Config
+	FILES = { ['app.cfg'] = textutils.serialise({ name = 42, nested = { x = 5 }, extra = true }) }
+	local cfg = quiet(function()
+		return Config:load('app.cfg', { name = 'smeltery', nested = { x = 1, y = 2 }, speed = 3 })
+	end)
+	expect(cfg.name == 'smeltery', 'wrong type should keep the default, got ' .. tostring(cfg.name))
+	expect(cfg.nested.x == 5 and cfg.nested.y == 2, ('nested merge: x=%s y=%s'):format(tostring(cfg.nested.x), tostring(cfg.nested.y)))
+	expect(cfg.speed == 3, 'missing key should keep the default')
+	expect(cfg.extra == nil, 'unknown key should be dropped')
+end)
+
+test('config: save goes through a temp file, and load recovers an interrupted save', function()
+	local Config = require('core.config').Config
+	FILES = { ['app.cfg'] = textutils.serialise({ speed = 1 }) }
+	quiet(function() Config:save('app.cfg', { speed = 9 }) end)
+	expect(FILES['app.cfg.tmp'] == nil, 'temp file left behind')
+	expect(textutils.unserialise(FILES['app.cfg']).speed == 9, 'config not saved')
+
+	-- Crash after deleting the old file, before moving the new one in place.
+	FILES = { ['app.cfg.tmp'] = textutils.serialise({ speed = 7 }) }
+	local cfg = quiet(function() return Config:load('app.cfg', { speed = 1 }) end)
+	expect(cfg.speed == 7, 'interrupted save not recovered (speed = ' .. tostring(cfg.speed) .. ')')
+	expect(FILES['app.cfg'] ~= nil and FILES['app.cfg.tmp'] == nil, 'recovered file not put in place')
+end)
+
+test('inventory: moveAllOfItem lists the inventory once', function()
+	local Inventory = require('core.inventory').Inventory
+	local listCalls, sizeCalls, pushed = 0, 0, {}
+	local items = { [1] = { name = 'iron', count = 10 }, [3] = { name = 'coal', count = 4 }, [5] = { name = 'iron', count = 7 } }
+	local raw = {
+		size = function() sizeCalls = sizeCalls + 1; return 27 end,
+		list = function() listCalls = listCalls + 1; return items end,
+		pushItems = function(_, slot) pushed[#pushed + 1] = slot; return items[slot].count end,
+	}
+	local source = new(Inventory, 'chest_a', raw)
+	local target = new(Inventory, 'chest_b', {})
+	local moved = source:moveAllOfItem(target, 'iron')
+	table.sort(pushed)
+	expect(moved == 17, 'moved ' .. moved .. ', expected 17')
+	expect(table.concat(pushed, ',') == '1,5', 'pushed slots ' .. table.concat(pushed, ','))
+	expect(listCalls == 1, 'list() called ' .. listCalls .. ' times, expected 1')
+	expect(sizeCalls == 0, 'size() called ' .. sizeCalls .. ' times, expected 0')
+end)
+
+test('peripheral: errors name the peripheral, not a "side"', function()
+	installPeripherals({})
+	local P = require('core.peripheral').Peripheral
+	local ok, err = pcall(quiet, function() return P:require('minecraft:chest_9') end)
+	expect(not ok, 'no error raised')
+	local message = type(err) == 'table' and err.message or tostring(err)
+	expect(message:find("Peripheral 'minecraft:chest_9' not found", 1, true), 'message: ' .. message)
+end)
+
+-- ============================================================
+-- Layout and rendering: hidden children, overflow, region redraw
+-- ============================================================
+
+test('hidden children take no space (Stack, Grid, Box)', function()
+	local a = new(components.LabelComponent, { text = 'AAAA', visible = false })
+	local b = new(components.LabelComponent, { text = 'B' })
+	local stack = new(components.StackComponent, { direction = 'column' }, {}, { a, b })
+	local runtime, terminal = runtimeFor(stack, 10, 3)
+	runtime:render()
+	expect(b.rect.y == 1, 'stack: visible label at y=' .. b.rect.y .. ', expected 1')
+
+	b:setProps({ visible = false })
+	a:setProps({ visible = true })
+	runtime:render()
+	expect(a.rect.y == 1 and terminal.line(1):find('AAAA', 1, true), 'stack after toggling visibility: "' .. terminal.line(1) .. '"')
+	expect(not terminal.line(2):find('B', 1, true), 'hidden label still drawn')
+
+	local g1 = new(components.LabelComponent, { text = 'x', visible = false })
+	local g2 = new(components.LabelComponent, { text = 'y' })
+	local grid = new(components.GridComponent, { columns = 2 }, {}, { g1, g2 })
+	runtimeFor(grid, 10, 2):render()
+	expect(g2.rect.x == 1, 'grid: visible child in column ' .. g2.rect.x .. ', expected the first')
+
+	local big = new(components.LabelComponent, { text = 'very long text', visible = false })
+	local small = new(components.LabelComponent, { text = 'ok' })
+	local box = new(components.BoxComponent, {}, {}, { big, small })
+	local wrapper = new(components.StackComponent, { direction = 'row' }, {}, { box })
+	runtimeFor(wrapper, 20, 2):render()
+	expect(box.rect.width == 2, 'box sized by a hidden child: width ' .. box.rect.width)
+end)
+
+test('children are clipped to their container', function()
+	local buttons = {}
+	for i = 1, 3 do buttons[i] = new(components.ButtonComponent, { label = 'Btn' .. i }) end
+	local row = new(components.StackComponent, { direction = 'row', width = 10 }, {}, buttons)
+	local outer = new(components.StackComponent, { direction = 'row' }, {}, { row })
+	local runtime, terminal = runtimeFor(outer, 20, 1)
+	runtime:render()
+	local line = terminal.line(1)
+	expect(line:sub(11) == string.rep(' ', 10), 'children drawn outside the 10-wide row: "' .. line .. '"')
+
+	local pressed = 0
+	buttons[3].props.onPress = nil
+	buttons[3]:setProps({ onPress = function() pressed = pressed + 1 end })
+	runtime:render()
+	runtime:dispatch({ type = 'mouse_click', x = buttons[3].rect.x + 1, y = 1, button = 1 })
+	expect(buttons[3].rect.x > 10, 'test setup: the third button should overflow the row')
+	expect(pressed == 0, 'a button clipped out of its container can still be clicked')
+end)
+
+test('a redrawn region is cleared first (no leftovers)', function()
+	local label = new(components.LabelComponent, { text = 'x' })
+	local stack = new(components.StackComponent, { direction = 'column' }, {}, { label })
+	local runtime, terminal = runtimeFor(stack, 10, 3)
+	runtime:render()
+	terminal.setCursorPos(5, 2); terminal.write('ZZ')
+	runtime:invalidate({ reason = 'state', kind = 'region', rect = { x = 4, y = 2, width = 4, height = 1 } })
+	runtime:render()
+	expect(not terminal.line(2):find('ZZ', 1, true), 'stale characters left in the redrawn region: "' .. terminal.line(2) .. '"')
+	expect(terminal.cell(5, 2)[3] == palette.backgroundColor, 'region not cleared with the theme background')
 end)
 
 realPrint(('\n%d passed, %d failed'):format(passed, failed))

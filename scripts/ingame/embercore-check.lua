@@ -10,6 +10,8 @@
 --                                    add "ascii" for +-| borders instead of CC drawing characters
 --   embercore-check widgets [side] [ascii] -- layout and data widgets: margins, Box, Panel, Grid,
 --                                    Badge, Table (chest content), LogViewer, StatusBar
+--   embercore-check core          -- Logger, Config (merge, safe save), Inventory transfers between
+--                                    two chests, Loop busy loop without "Too long without yielding"
 --   embercore-check all
 
 local root = fs.getDir(shell.getRunningProgram())
@@ -37,6 +39,65 @@ local function result(ok, label, detail)
 	write(ok and '[OK]   ' or '[FAIL] ')
 	term.setTextColor(previous)
 	print(label .. (detail and (' - ' .. detail) or ''))
+end
+
+-- ------------------------------------------------------------
+-- Core: Logger, Config, Inventory transfers, Loop yielding
+-- ------------------------------------------------------------
+local function checkCore()
+	header('Core')
+
+	local Logger = require('core.logger').Logger
+	local ok, err = pcall(function() new(Logger, 'Check', 'info'):info('ligne de journal de test', { cle = 'valeur' }) end)
+	result(ok, 'Logger:info() ecrit une ligne', (not ok) and tostring(err) or nil)
+
+	local Config = require('core.config').Config
+	local path = '/embercore-check.cfg'
+	ok, err = pcall(function()
+		Config:save(path, { speed = 5, nested = { x = 9 }, name = 42 })
+		local cfg = Config:load(path, { speed = 1, nested = { x = 1, y = 2 }, name = 'four', extra = true })
+		assert(cfg.speed == 5, 'speed = ' .. tostring(cfg.speed))
+		assert(cfg.nested.x == 9 and cfg.nested.y == 2, 'fusion imbriquee')
+		assert(cfg.name == 'four', 'mauvais type non ignore')
+		assert(cfg.extra == true, 'valeur par defaut manquante')
+		assert(not fs.exists(path .. '.tmp'), 'fichier .tmp restant')
+	end)
+	if fs.exists(path) then fs.delete(path) end
+	result(ok, 'Config : fusion profonde, types, sauvegarde via .tmp', (not ok) and tostring(err) or nil)
+
+	local Inventory = require('core.inventory').Inventory
+	local names = {}
+	for _, name in ipairs(peripheral.getNames()) do
+		if peripheral.hasType(name, 'inventory') then names[#names + 1] = name end
+	end
+	if #names >= 2 then
+		ok, err = pcall(function()
+			local a, b = Inventory:fromName(names[1]), Inventory:fromName(names[2])
+			local slot, item = next(a:list())
+			assert(slot, 'le coffre ' .. names[1] .. ' est vide : mettez-y des objets')
+			local detail = a:getItem(slot)
+			assert(detail and detail.name == item.name, 'getItem()')
+			local before = b:countItem(item.name)
+			local moved = a:moveAllOfItem(b, item.name)
+			assert(moved > 0 and b:countItem(item.name) == before + moved, 'moveAllOfItem a deplace ' .. moved)
+			local back = b:moveAllOfItem(a, item.name)
+			assert(back >= moved, 'retour : ' .. back)
+			return moved
+		end)
+		result(ok, ('Inventory : getItem, moveAllOfItem %s <-> %s'):format(names[1], names[2]), (not ok) and tostring(err) or nil)
+	else
+		print('(un seul inventaire : branchez un 2e coffre pour tester les transferts)')
+	end
+
+	local Loop = require('core.loop').Loop
+	print('Boucle occupee de 8 s sans pause (avant : "Too long without yielding")...')
+	local start, n = os.clock(), 0
+	ok, err = pcall(function()
+		Loop['until'](Loop, function() return os.clock() - start >= 8 end, function()
+			for _ = 1, 20000 do n = n + 1 end
+		end)
+	end)
+	result(ok, 'Loop["until"] rend la main tout seul', ok and (n .. ' iterations') or tostring(err))
 end
 
 -- ------------------------------------------------------------
@@ -154,13 +215,19 @@ local function checkUi(side, ascii)
 	})
 	local bar = new(C.ProgressBarComponent, { value = 5, maxValue = 10, width = 20, label = 'Charge' })
 
+	local checkbox = new(C.CheckboxComponent, { label = 'Case a cocher', checked = false, onChange = function(_, v) setStatus('Case = ' .. tostring(v)) end })
+
 	local root = new(C.StackComponent, { direction = 'column', spacing = 1, padding = 1 }, {}, {
 		new(C.StackComponent, { direction = 'row', spacing = 1 }, {}, {
 			new(C.ButtonComponent, { label = 'Bouton A', onPress = function() setStatus('A presse') end }),
 			new(C.ButtonComponent, { label = 'Bouton B', onPress = function() setStatus('B presse') end }),
-			new(C.ToggleButtonComponent, { label = 'Bascule', onToggle = function(_, v) setStatus('Bascule = ' .. tostring(v)) end }),
+			new(C.ToggleButtonComponent, { label = 'Masquer', onToggle = function(_, v)
+				-- A hidden component takes no space: the rows below move up.
+				checkbox:setProps({ visible = not v })
+				setStatus('Case ' .. (v and 'masquee' or 'visible'))
+			end }),
 		}),
-		new(C.CheckboxComponent, { label = 'Case a cocher', checked = false, onChange = function(_, v) setStatus('Case = ' .. tostring(v)) end }),
+		checkbox,
 		new(C.RadioComponent, { label = 'Option A', value = 'a', onSelect = function(_, v) if v then setStatus('Radio A') end end }, {}, group),
 		new(C.RadioComponent, { label = 'Option B', value = 'b', onSelect = function(_, v) if v then setStatus('Radio B') end end }, {}, group),
 		bar,
@@ -245,7 +312,7 @@ local function checkWidgets(side, ascii)
 		borders = ui.defaultTheme.borders,
 		components = {
 			box = { border = { enabled = true } },
-			panel = { border = { enabled = true } },
+			panel = { border = { enabled = true, preset = 'double' } },
 			badge = { text = { alignment = 'center' } },
 		},
 	}
@@ -276,7 +343,7 @@ local function checkWidgets(side, ascii)
 					new(C.LabelComponent, { text = 'margin top = 1', margin = { top = 1 } }),
 				}),
 			}),
-			new(C.PanelComponent, { title = 'Panel' }, {}, {
+			new(C.PanelComponent, { title = 'Panel (double)' }, {}, {
 				new(C.StackComponent, { direction = 'row' }, {}, {
 					badge('OK', colors.lime), badge('WARN', colors.orange), badge('ERR', colors.red),
 				}),
@@ -336,6 +403,7 @@ end
 
 if mode == 'peripherals' or mode == 'all' then checkPeripherals() end
 if mode == 'tanks' or mode == 'all' then checkTanks() end
+if mode == 'core' or mode == 'all' then checkCore() end
 local uiSide, uiAscii = nil, false
 for i = 2, #args do
 	if args[i] == 'ascii' then uiAscii = true else uiSide = args[i] end
