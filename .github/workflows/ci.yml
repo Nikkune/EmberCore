@@ -41,6 +41,9 @@ jobs:
       - name: Behaviour tests (fake CC:Tweaked environment)
         run: npm run test:behavior
 
+      - name: Installer tests (fake CC:Tweaked file system and http)
+        run: npm run test:installer
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v6
         with:
