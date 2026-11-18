@@ -17,7 +17,8 @@
 		"run:bump":           "npm run build:scripts && node build-scripts/version/run-bump.js",
 		"prepare:release":    "npm run build && npm run build:scripts && npm run run:bump && npm run generate:manifests",
 		"test:smoke":         "node build-scripts/test/smoke.js",
-		"test":               "npm run build:all && npm run test:smoke",
+		"test:behavior":      "node build-scripts/test/behavior.js",
+		"test":               "npm run build:all && npm run test:smoke && npm run test:behavior",
 		"lint":               "eslint .",
 		"lint:fix":           "eslint . --fix"
 	},

@@ -1,4 +1,4 @@
-import {BaseContainerComponent} from '@modules/ui/core/components/baseContainerComponent';
+import {InteractiveContainerComponent} from '@modules/ui/core/components/interactiveContainerComponent';
 import {drawBox, type DrawBoxOptions, getInnerRect, normalizeInsets} from '@modules/ui/render/renderHelpers';
 import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
 import type {ComponentDependencies, GridProps, GridStyle, LayoutConstraints, MeasuredSize, Rect, RenderContext, UIComponent, UIContext} from '@modules/ui/types';
@@ -10,7 +10,7 @@ interface GridPlacement<TChild extends UIComponent<UIDrawSurface>> {
 	rect: Rect;
 }
 
-export class GridComponent<TChild extends UIComponent<UIDrawSurface> = UIComponent<UIDrawSurface>> extends BaseContainerComponent<'grid', GridProps, UIDrawSurface, GridStyle, TChild> {
+export class GridComponent<TChild extends UIComponent<UIDrawSurface> = UIComponent<UIDrawSurface>> extends InteractiveContainerComponent<'grid', GridProps, UIDrawSurface, GridStyle, TChild> {
 	public constructor(props: GridProps, dependencies: ComponentDependencies = {}, children: TChild[] = []) {
 		super('grid', props, dependencies, children);
 	}

@@ -1,4 +1,4 @@
-import {BaseContainerComponent} from '@modules/ui/core/components/baseContainerComponent';
+import {InteractiveContainerComponent} from '@modules/ui/core/components/interactiveContainerComponent';
 import {drawBox, type DrawBoxOptions, getInnerRect, normalizeInsets} from '@modules/ui/render/renderHelpers';
 import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
 import type {ComponentDependencies, CrossAxisAlignment, LayoutConstraints, MainAxisAlignment, MeasuredSize, Rect, RenderContext, StackProps, StackStyle, UIComponent, UIContext, WrapMode} from '@modules/ui/types';
@@ -21,7 +21,7 @@ interface StackPlacement<TChild extends UIComponent<UIDrawSurface>> {
 	rect: Rect;
 }
 
-export class StackComponent<TChild extends UIComponent<UIDrawSurface> = UIComponent<UIDrawSurface>> extends BaseContainerComponent<'stack', StackProps, UIDrawSurface, StackStyle, TChild> {
+export class StackComponent<TChild extends UIComponent<UIDrawSurface> = UIComponent<UIDrawSurface>> extends InteractiveContainerComponent<'stack', StackProps, UIDrawSurface, StackStyle, TChild> {
 	public constructor(props: StackProps, dependencies: ComponentDependencies = {}, children: TChild[] = []) {
 		super('stack', props, dependencies, children);
 	}

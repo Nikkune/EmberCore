@@ -122,7 +122,7 @@ export class ToggleButtonComponent extends PressableComponent<'button', ToggleBu
 					right: 1,
 				},
 				text:    {
-					...themeStyle.text,
+					...(themeStyle.text ?? {}),
 					alignment: themeStyle.text?.alignment ?? 'center',
 					wrap:      themeStyle.text?.wrap ?? 'none',
 					ellipsis:  themeStyle.text?.ellipsis ?? true,

@@ -125,7 +125,7 @@ export class RadioComponent<T = string> extends PressableComponent<'radio', Radi
 			fillBackground: style.text?.backgroundColor !== undefined,
 		})
 			.with('style', createOptions<TextStyle>({
-				...style.text,
+				...(style.text ?? {}),
 			})
 				.with('wrap', 'none')
 				.with('ellipsis', false)
@@ -189,7 +189,7 @@ export class RadioComponent<T = string> extends PressableComponent<'radio', Radi
 					right: 1,
 				},
 				text:    {
-					...themeStyle.text,
+					...(themeStyle.text ?? {}),
 					alignment: themeStyle.text?.alignment ?? 'left',
 					wrap:      themeStyle.text?.wrap ?? 'none',
 					ellipsis:  themeStyle.text?.ellipsis ?? true,

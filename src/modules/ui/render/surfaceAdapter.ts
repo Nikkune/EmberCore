@@ -10,8 +10,13 @@ export interface UISurfaceAdapter {
 	clear(backgroundColor?: number): void;
 }
 
+/**
+ * A CC:Tweaked terminal or monitor. Its methods are plain functions called with `.` (no self),
+ * and getSize()/getCursorPos() return two values, not a table.
+ * @noSelf
+ */
 export interface TerminalLike {
-	getSize(): [number, number];
+	getSize(): LuaMultiReturn<[number, number]>;
 
 	clear(): void;
 
@@ -19,7 +24,7 @@ export interface TerminalLike {
 
 	setCursorPos(x: number, y: number): void;
 
-	getCursorPos(): [number, number];
+	getCursorPos(): LuaMultiReturn<[number, number]>;
 
 	write(text: string): void;
 
@@ -34,6 +39,7 @@ export interface TerminalLike {
 	isColor(): boolean;
 }
 
+/** @noSelf */
 interface StringBlitTerminalLike extends TerminalLike {
 	blit(text: string, textColors: string, backgroundColors: string): void;
 }
@@ -97,23 +103,7 @@ export class ComputerCraftSurfaceAdapter implements UIDrawSurface {
 			return new ComputerCraftSurfaceAdapter(target);
 		}
 
-		const current = term.current();
-
-		const wrappedTarget: TerminalLike = {
-			getSize: () => current.getSize(),
-			clear: () => current.clear(),
-			clearLine: () => current.clearLine(),
-			setCursorPos: (x: number, y: number) => current.setCursorPos(x, y),
-			getCursorPos: () => current.getCursorPos(),
-			write: (text: string) => current.write(text),
-			setTextColor: (color: number) => current.setTextColor(color),
-			getTextColor: () => current.getTextColor(),
-			setBackgroundColor: (color: number) => current.setBackgroundColor(color),
-			getBackgroundColor: () => current.getBackgroundColor(),
-			isColor: () => current.isColor(),
-		};
-
-		return new ComputerCraftSurfaceAdapter(wrappedTarget);
+		return new ComputerCraftSurfaceAdapter(term.current());
 	}
 
 	public static fromMonitor(target: TerminalLike): ComputerCraftSurfaceAdapter {
@@ -193,7 +183,7 @@ export class ComputerCraftSurfaceAdapter implements UIDrawSurface {
 			const blit = target.blit;
 
 			if (typeof blit === 'function') {
-				blit.call(target, text, textColors, backgroundColors);
+				blit(text, textColors, backgroundColors);
 				return;
 			}
 

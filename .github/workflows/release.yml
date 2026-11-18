@@ -37,6 +37,9 @@ jobs:
       - name: Smoke test (blocks publishing a runtime that cannot load)
         run: npm run test:smoke
 
+      - name: Behaviour tests (blocks publishing a broken runtime)
+        run: npm run test:behavior
+
       - name: Commit version bumps and manifests
         run: |
           git config user.name "github-actions[bot]"

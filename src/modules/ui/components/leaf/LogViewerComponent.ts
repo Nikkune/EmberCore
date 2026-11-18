@@ -114,7 +114,7 @@ export class LogViewerComponent extends BaseComponent<'log_viewer', LogViewerPro
 		const levelForeground = style.levelColors?.[entry.level];
 
 		return {
-			...style.lineStyle,
+			...(style.lineStyle ?? {}),
 			foregroundColor: levelForeground ?? style.lineStyle?.foregroundColor ?? context.theme.palette.text,
 		};
 	}

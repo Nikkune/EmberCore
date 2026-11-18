@@ -13,23 +13,14 @@ import * as path   from 'node:path';
 
 import type {AnyManifest, IndexManifest} from '../manifest/manifestTypes';
 
+import {findLua} from './lua';
+
 const DIST_DIR      = 'luas';
 const MANIFESTS_DIR = '.';
 const LOADER        = path.join('scripts', 'test', 'cc-loader.lua');
 
 function readJson<T>(filePath: string): T {
 	return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as T;
-}
-
-function findLua(): string {
-	const candidates = process.env['LUA'] ? [process.env['LUA']] : ['lua5.2', 'lua'];
-
-	for (const candidate of candidates) {
-		const probe = spawnSync(candidate, ['-v'], {encoding: 'utf-8'});
-		if (!probe.error) return candidate;
-	}
-
-	throw new Error(`No Lua interpreter found (tried: ${candidates.join(', ')}). Set $LUA.`);
 }
 
 function loadManifests(): Map<string, AnyManifest> {

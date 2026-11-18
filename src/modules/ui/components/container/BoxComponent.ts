@@ -1,10 +1,10 @@
-import {BaseContainerComponent} from '@modules/ui/core/components/baseContainerComponent';
+import {InteractiveContainerComponent} from '@modules/ui/core/components/interactiveContainerComponent';
 import {drawBox, type DrawBoxOptions, drawText, type DrawTextOptions, getInnerRect, normalizeInsets} from '@modules/ui/render/renderHelpers';
 import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
 import type {BoxProps, BoxStyle, ComponentDependencies, LayoutConstraints, MeasuredSize, RenderContext, TextStyle, UIComponent, UIContext}       from '@modules/ui/types';
 import {createOptions}                                                                                                                       from '@utils/helpers';
 
-export class BoxComponent<TChild extends UIComponent<UIDrawSurface> = UIComponent<UIDrawSurface>> extends BaseContainerComponent<'box', BoxProps, UIDrawSurface, BoxStyle, TChild> {
+export class BoxComponent<TChild extends UIComponent<UIDrawSurface> = UIComponent<UIDrawSurface>> extends InteractiveContainerComponent<'box', BoxProps, UIDrawSurface, BoxStyle, TChild> {
 	public constructor(props: BoxProps, dependencies: ComponentDependencies = {}, children: TChild[] = []) {
 		super('box', props, dependencies, children);
 	}

@@ -1,10 +1,10 @@
-import {BaseContainerComponent} from '@modules/ui/core/components/baseContainerComponent';
+import {InteractiveContainerComponent} from '@modules/ui/core/components/interactiveContainerComponent';
 import {drawBox, type DrawBoxOptions, drawHorizontalLine, drawText, type DrawTextOptions, getInnerRect, normalizeInsets} from '@modules/ui/render/renderHelpers';
 import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
 import type {ComponentDependencies, LayoutConstraints, MeasuredSize, PanelProps, PanelStyle, RenderContext, TextStyle, UIComponent, UIContext}                       from '@modules/ui/types';
 import {createOptions}                                                                                                                                               from '@utils/helpers';
 
-export class PanelComponent<TChild extends UIComponent<UIDrawSurface> = UIComponent<UIDrawSurface>> extends BaseContainerComponent<'panel', PanelProps, UIDrawSurface, PanelStyle, TChild> {
+export class PanelComponent<TChild extends UIComponent<UIDrawSurface> = UIComponent<UIDrawSurface>> extends InteractiveContainerComponent<'panel', PanelProps, UIDrawSurface, PanelStyle, TChild> {
 	public constructor(props: PanelProps, dependencies: ComponentDependencies = {}, children: TChild[] = []) {
 		super('panel', props, dependencies, children);
 	}

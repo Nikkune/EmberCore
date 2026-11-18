@@ -96,7 +96,7 @@ export class CheckboxComponent extends PressableComponent<'checkbox', CheckboxPr
 			fillBackground: style.text?.backgroundColor !== undefined,
 		})
 			.with('style', createOptions<TextStyle>({
-				...style.text,
+				...(style.text ?? {}),
 			})
 				.with('foregroundColor', style.checkColor ?? style.text?.foregroundColor ?? context.theme.palette.text)
 				.with('wrap', 'none')
@@ -150,7 +150,7 @@ export class CheckboxComponent extends PressableComponent<'checkbox', CheckboxPr
 				},
 
 				text: {
-					...themeStyle.text,
+					...(themeStyle.text ?? {}),
 					alignment: themeStyle.text?.alignment ?? 'left',
 					wrap:      themeStyle.text?.wrap ?? 'none',
 					ellipsis:  themeStyle.text?.ellipsis ?? true,

@@ -104,7 +104,7 @@ export class ButtonComponent extends PressableComponent<'button', ButtonProps, U
 				},
 
 				text: {
-					...themeStyle.text,
+					...(themeStyle.text ?? {}),
 					alignment: themeStyle.text?.alignment ?? 'center',
 					wrap:      themeStyle.text?.wrap ?? 'none',
 					ellipsis:  themeStyle.text?.ellipsis ?? true,

@@ -38,6 +38,9 @@ jobs:
       - name: Smoke test (simulated install + module loading)
         run: npm run test:smoke
 
+      - name: Behaviour tests (fake CC:Tweaked environment)
+        run: npm run test:behavior
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v6
         with:
