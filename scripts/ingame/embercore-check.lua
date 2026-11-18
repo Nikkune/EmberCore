@@ -215,13 +215,19 @@ local function checkUi(side, ascii)
 	})
 	local bar = new(C.ProgressBarComponent, { value = 5, maxValue = 10, width = 20, label = 'Charge' })
 
+	local checkbox = new(C.CheckboxComponent, { label = 'Case a cocher', checked = false, onChange = function(_, v) setStatus('Case = ' .. tostring(v)) end })
+
 	local root = new(C.StackComponent, { direction = 'column', spacing = 1, padding = 1 }, {}, {
 		new(C.StackComponent, { direction = 'row', spacing = 1 }, {}, {
 			new(C.ButtonComponent, { label = 'Bouton A', onPress = function() setStatus('A presse') end }),
 			new(C.ButtonComponent, { label = 'Bouton B', onPress = function() setStatus('B presse') end }),
-			new(C.ToggleButtonComponent, { label = 'Bascule', onToggle = function(_, v) setStatus('Bascule = ' .. tostring(v)) end }),
+			new(C.ToggleButtonComponent, { label = 'Masquer', onToggle = function(_, v)
+				-- A hidden component takes no space: the rows below move up.
+				checkbox:setProps({ visible = not v })
+				setStatus('Case ' .. (v and 'masquee' or 'visible'))
+			end }),
 		}),
-		new(C.CheckboxComponent, { label = 'Case a cocher', checked = false, onChange = function(_, v) setStatus('Case = ' .. tostring(v)) end }),
+		checkbox,
 		new(C.RadioComponent, { label = 'Option A', value = 'a', onSelect = function(_, v) if v then setStatus('Radio A') end end }, {}, group),
 		new(C.RadioComponent, { label = 'Option B', value = 'b', onSelect = function(_, v) if v then setStatus('Radio B') end end }, {}, group),
 		bar,

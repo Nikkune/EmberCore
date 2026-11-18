@@ -316,6 +316,9 @@ export class UIRuntime<TDrawSurface extends RuntimeSurface> implements UIInvalid
 
 	private renderDirtyRegions(baseContext: RenderContext<TDrawSurface>, regions: ReadonlyArray<DirtyRegion>): void {
 		for (const region of regions) {
+			// Clear first: parts that nothing redraws (transparent containers) must not keep old pixels.
+			this.surface.fillRect?.(region, ' ', this.theme.palette.backgroundColor);
+
 			this.root.render({
 				...baseContext,
 				clipRect: region,
