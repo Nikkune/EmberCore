@@ -57,6 +57,7 @@ export class Parallel {
 		return completedIndex;
 	}
 
+	/** Same as any(): kept as an alias for readability. */
 	public static race(...tasks: ParallelTask[]): number {
 		return this.any(...tasks);
 	}

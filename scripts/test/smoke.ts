@@ -66,7 +66,11 @@ function toModuleName(file: string): string {
  */
 function findUnsupportedSyntax(): string[] {
 	const problems: string[] = [];
-	const pattern            = /\bgoto\s+[A-Za-z_]\w*|::[A-Za-z_]\w*::/;
+	// goto/labels (TSTL `continue` with luaTarget >= 5.2), and ':' calls on CC global APIs
+	// (a declaration missing @noSelf: os:date(...) passes `os` as the first argument).
+	const ccApis             = ['os', 'term', 'fs', 'peripheral', 'textutils', 'colors', 'colours', 'parallel', 'redstone', 'rs', 'http',
+		'settings', 'shell', 'keys', 'window', 'paintutils', 'rednet', 'vector', 'turtle', 'multishell'];
+	const pattern            = new RegExp(`\\bgoto\\s+[A-Za-z_]\\w*|::[A-Za-z_]\\w*::|\\b(?:${ccApis.join('|')}):\\w+\\(`);
 
 	const walk = (dir: string): void => {
 		for (const entry of fs.readdirSync(dir, {withFileTypes: true})) {
@@ -103,11 +107,11 @@ function main(): void {
 
 	if (unsupported.length > 0) {
 		failures++;
-		console.log(`FAIL goto/labels found (unsupported by CC:Tweaked's Lua): set "luaTarget" to "5.1"`);
+		console.log('FAIL unsupported Lua for CC:Tweaked (goto/labels: set "luaTarget" to "5.1"; api:method(): add @noSelf)');
 		console.log(unsupported.map((line) => `     ${line}`).join('\n'));
 	}
 	else {
-		console.log('ok   no goto/labels in compiled Lua');
+		console.log('ok   no goto/labels or api:method() calls in compiled Lua');
 	}
 
 	for (const manifest of [...manifests.values()].sort((a, b) => a.id.localeCompare(b.id))) {

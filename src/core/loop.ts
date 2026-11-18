@@ -16,7 +16,28 @@ export interface RetryOptions {
 	label?: string;
 }
 
+/** Busy loops yield at least this often (CC kills a computer after ~7 s without yielding). */
+const YIELD_EVERY_SECONDS = 1;
+const YIELD_EVENT         = 'embercore_yield';
+
 export class Loop {
+	private static lastYield = 0;
+
+	/**
+	 * Yields without waiting a tick (queue an event and wait for it) when nothing yielded for a
+	 * while, so a task that never yields does not trigger "Too long without yielding".
+	 * Other events arriving at that instant are not seen by this coroutine.
+	 */
+	public static yieldIfBusy(): void {
+		const now = os.clock();
+
+		if (now >= Loop.lastYield && now - Loop.lastYield < YIELD_EVERY_SECONDS) return;
+
+		Loop.lastYield = now;
+		os.queueEvent(YIELD_EVENT);
+		os.pullEvent(YIELD_EVENT);
+	}
+
 	public static sleep(seconds: number): void {
 		if (seconds < 0) {
 			throw new RuntimeError('Sleep duration cannot be negative', {
@@ -34,6 +55,9 @@ export class Loop {
 
 			if (intervalSeconds > 0) {
 				this.sleep(intervalSeconds);
+			}
+			else {
+				this.yieldIfBusy();
 			}
 		}
 	}
@@ -65,6 +89,9 @@ export class Loop {
 
 			if (intervalSeconds > 0) {
 				this.sleep(intervalSeconds);
+			}
+			else {
+				this.yieldIfBusy();
 			}
 		}
 	}

@@ -13,6 +13,8 @@ export interface ItemDetail extends ItemSummary {
 	nbt?: string;
 }
 
+/** Generic CC inventory peripheral: methods are called with "." (@noSelf), as CC expects. */
+/** @noSelf */
 export interface InventoryPeripheral {
 	size(): number;
 
@@ -136,23 +138,20 @@ export class Inventory {
 		return this.pushTo(target, slot, limit);
 	}
 
+	/**
+	 * Moves every stack of the item to the target. Lists the inventory once (each peripheral call
+	 * can cost a game tick) and stops as soon as the target is full.
+	 */
 	public moveAllOfItem(target: Inventory, itemName: string): number {
 		let moved = 0;
 
-		while (true) {
-			const slot = this.findFirstSlotByName(itemName);
+		for (const [slot, item] of pairs(this.list())) {
+			if (item.name !== itemName) continue;
 
-			if (slot === undefined) {
-				break;
-			}
-
-			const amount = this.pushTo(target, slot);
-
-			if (amount <= 0) {
-				break;
-			}
-
+			const amount = this.peripheralRef.pushItems(target.name, slot);
 			moved += amount;
+
+			if (amount < item.count) break;
 		}
 
 		return moved;
