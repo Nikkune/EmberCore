@@ -1,7 +1,12 @@
-import {InteractiveComponent}                                                                                                                  from '@modules/ui';
+import {InteractiveComponent} from '@modules/ui/core/components/interactiveComponent';
 import type {BaseProps, ComponentDependencies, ComponentKind, LayoutConstraints, MeasuredSize, RenderContext, UIContext, UIFocusableComponent} from '@modules/ui/types';
 
-export abstract class FocusableComponent<TKind extends ComponentKind, TProps extends BaseProps = BaseProps, TDraw = unknown, TStyle extends object = never> extends InteractiveComponent<TKind, TProps, TDraw, TStyle> implements UIFocusableComponent<TDraw> {
+export abstract class FocusableComponent<
+	TKind extends ComponentKind,
+	TProps extends BaseProps = BaseProps,
+	TDraw = unknown,
+	TStyle extends object = never,
+> extends InteractiveComponent<TKind, TProps, TDraw, TStyle> implements UIFocusableComponent<TDraw> {
 	protected _focused = false;
 
 	protected constructor(kind: TKind, props: TProps, dependencies: ComponentDependencies = {}) {

@@ -78,7 +78,10 @@ export function mergeComponentStyle<TStyle>(base: TStyle | undefined, override: 
 	} as TStyle;
 }
 
-export function mergeThemeComponentStyles(base: ThemeComponentStyles | undefined, override: ThemeComponentStyles | undefined): ThemeComponentStyles | undefined {
+export function mergeThemeComponentStyles(
+	base: ThemeComponentStyles | undefined,
+	override: ThemeComponentStyles | undefined,
+): ThemeComponentStyles | undefined {
 	if (!base && !override) {
 		return undefined;
 	}

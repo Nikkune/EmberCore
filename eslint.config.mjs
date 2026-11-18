@@ -1,5 +1,6 @@
 import tseslint from '@typescript-eslint/eslint-plugin';
 import parser from '@typescript-eslint/parser';
+import importX from 'eslint-plugin-import-x';
 
 export default [
 	{
@@ -16,10 +17,15 @@ export default [
 		},
 		plugins: {
 			'@typescript-eslint': tseslint,
+			'import-x': importX,
+		},
+		settings: {
+			// tsconfig path aliases (@core/*, @modules/*, ...) count as internal imports, not npm packages.
+			'import-x/internal-regex': '^@(core|modules|projects|utils)/',
 		},
 		rules: {
-			'import/newline-after-import': ['error', {count: 1}],
-			'import/order': [
+			'import-x/newline-after-import': ['error', {count: 1}],
+			'import-x/order': [
 				'error',
 				{
 					groups: ['builtin', 'external', 'internal', 'parent', 'sibling', 'index'],
@@ -53,7 +59,8 @@ export default [
 				'error',
 				{
 					code: 140,
-					ignoreImports: true,
+					// max-len has no "ignoreImports" option: skip import lines through a pattern instead.
+					ignorePattern: '^\\s*import\\s',
 					ignoreStrings: true,
 					ignoreTemplateLiterals: true,
 				},

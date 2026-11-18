@@ -1,4 +1,7 @@
-import {drawBox, type DrawBoxOptions, drawText, type DrawTextOptions, makeToneColorOverride, normalizeInsets, PressableComponent, resolveTextLines, type ResolveTextLinesOptions, type UIDrawSurface} from '@modules/ui';
+import {PressableComponent} from '@modules/ui/core/components/pressableComponent';
+import {drawBox, type DrawBoxOptions, drawText, type DrawTextOptions, normalizeInsets, resolveTextLines, type ResolveTextLinesOptions} from '@modules/ui/render/renderHelpers';
+import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
+import {makeToneColorOverride} from '@modules/ui/theme/tone';
 import type {ButtonProps, ButtonStyle, ComponentDependencies, LayoutConstraints, MeasuredSize, RenderContext, UIContext}                                                                              from '@modules/ui/types';
 import {createOptions} from '@utils/helpers';
 

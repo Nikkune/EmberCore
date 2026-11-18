@@ -1,4 +1,5 @@
 import {createOptions} from '@utils/helpers';
+
 import {TankError}     from './errors';
 import {Peripheral}    from './peripheral';
 
@@ -15,16 +16,16 @@ export interface FluidTank {
 	displayName?: string;
 }
 
-function mapToFluidTank(raw: LuaMap<AnyNotNil, any> | undefined): FluidTank | undefined {
+function mapToFluidTank(raw: LuaMap<AnyNotNil, unknown> | undefined): FluidTank | undefined {
 	if (!raw) {
 		return undefined;
 	}
 
 	return createOptions<FluidTank>({})
-		.with('name', raw.get('name'))
-		.with('amount', raw.get('amount'))
-		.with('capacity', raw.get('capacity'))
-		.with('displayName', raw.get('displayName'))
+		.with('name', raw.get('name') as string | undefined)
+		.with('amount', raw.get('amount') as number | undefined)
+		.with('capacity', raw.get('capacity') as number | undefined)
+		.with('displayName', raw.get('displayName') as string | undefined)
 		.done();
 }
 

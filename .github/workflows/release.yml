@@ -31,6 +31,12 @@ jobs:
       - name: Prepare release
         run: npm run prepare:release
 
+      - name: Install Lua 5.2
+        run: sudo apt-get update && sudo apt-get install -y lua5.2
+
+      - name: Smoke test (blocks publishing a runtime that cannot load)
+        run: npm run test:smoke
+
       - name: Commit version bumps and manifests
         run: |
           git config user.name "github-actions[bot]"

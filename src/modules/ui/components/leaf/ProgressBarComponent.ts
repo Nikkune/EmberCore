@@ -1,4 +1,6 @@
-import {BaseComponent, drawBox, type DrawBoxOptions, drawText, type DrawTextOptions, fillRect, type FillRectOptions, normalizeInsets, type UIDrawSurface} from '@modules/ui';
+import {BaseComponent} from '@modules/ui/core/components/coreComponent';
+import {drawBox, type DrawBoxOptions, drawText, type DrawTextOptions, fillRect, type FillRectOptions, normalizeInsets} from '@modules/ui/render/renderHelpers';
+import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
 import type {ComponentDependencies, LayoutConstraints, MeasuredSize, ProgressBarProps, ProgressBarStyle, RenderContext, TextStyle, UIContext}             from '@modules/ui/types';
 import {createOptions}                                                                                                                                    from '@utils/helpers';
 

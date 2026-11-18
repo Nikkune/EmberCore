@@ -1,4 +1,6 @@
-import {BaseComponent, drawBox, type DrawBoxOptions, drawText, type DrawTextOptions, type UIDrawSurface}                                            from '@modules/ui';
+import {BaseComponent} from '@modules/ui/core/components/coreComponent';
+import {drawBox, type DrawBoxOptions, drawText, type DrawTextOptions} from '@modules/ui/render/renderHelpers';
+import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
 import type {ComponentDependencies, LayoutConstraints, LogEntry, LogViewerProps, LogViewerStyle, MeasuredSize, RenderContext, TextStyle, UIContext} from '@modules/ui/types';
 import {createOptions}                                                                                                                              from '@utils/helpers';
 
@@ -104,7 +106,11 @@ export class LogViewerComponent extends BaseComponent<'log_viewer', LogViewerPro
 		return parts.join(' ');
 	}
 
-	private getEntryTextStyle(style: Partial<LogViewerStyle>, entry: LogEntry, context: UIContext | RenderContext<UIDrawSurface>): Partial<TextStyle> {
+	private getEntryTextStyle(
+		style: Partial<LogViewerStyle>,
+		entry: LogEntry,
+		context: UIContext | RenderContext<UIDrawSurface>,
+	): Partial<TextStyle> {
 		const levelForeground = style.levelColors?.[entry.level];
 
 		return {

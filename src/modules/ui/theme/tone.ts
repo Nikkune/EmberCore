@@ -37,7 +37,12 @@ export function resolveToneColors(theme: Theme, tone?: Tone): ColorStyle {
 	}
 }
 
-export function makeToneColorOverride(tone: Tone | undefined, theme: Theme, foregroundColor?: Color, backgroundColor?: Color): Partial<ColorStyle> {
+export function makeToneColorOverride(
+	tone: Tone | undefined,
+	theme: Theme,
+	foregroundColor?: Color,
+	backgroundColor?: Color,
+): Partial<ColorStyle> {
 	const toneColors = resolveToneColors(theme, tone);
 
 	return makeColors({

@@ -1,4 +1,6 @@
-import {BaseComponent, drawText, type DrawTextOptions, resolveTextLines, type UIDrawSurface}                           from '@modules/ui';
+import {BaseComponent} from '@modules/ui/core/components/coreComponent';
+import {drawText, type DrawTextOptions, resolveTextLines} from '@modules/ui/render/renderHelpers';
+import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
 import type {ComponentDependencies, LabelProps, LabelStyle, LayoutConstraints, MeasuredSize, RenderContext, UIContext} from '@modules/ui/types';
 import {createOptions}                                                                                                 from '@utils/helpers';
 
@@ -21,7 +23,11 @@ export class LabelComponent extends BaseComponent<'label', LabelProps, UIDrawSur
 		const contentWidth  = lines.reduce((max, line) => Math.max(max, line.text.length), 0);
 		const contentHeight = Math.max(1, lines.length);
 
-		return this.createMeasuredSize(this.props.width ?? this.props.minWidth ?? contentWidth, this.props.height ?? this.props.minHeight ?? contentHeight, constraints);
+		return this.createMeasuredSize(
+			this.props.width ?? this.props.minWidth ?? contentWidth,
+			this.props.height ?? this.props.minHeight ?? contentHeight,
+			constraints,
+		);
 	}
 
 	public override render(context: RenderContext<UIDrawSurface>) {

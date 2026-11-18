@@ -1,5 +1,6 @@
 import * as fs                                                                            from 'node:fs';
 import * as path                                                                          from 'node:path';
+
 import {componentManifest, projectManifest}                                               from './builder';
 import type {AnyManifest, ComponentManifest, ComponentMeta, ProjectManifest, ProjectMeta} from './manifestTypes';
 
@@ -51,8 +52,56 @@ function capitalize(str: string): string {
 	return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
-function discoverCore(options: DiscoverOptions): ComponentManifest[] {
-	const dir = path.join(options.distDir, 'core');
+/**
+ * Maps a Lua module name produced by TSTL (e.g. `core.errors`, `modules.ui.theme.tone`)
+ * to the manifest id that ships it. Returns undefined for modules outside EmberCore.
+ */
+function requireToManifestId(moduleName: string): string | undefined {
+	const parts = moduleName.split('.');
+	const [group, name] = parts;
+
+	if (!group || !name) return undefined;
+
+	if (group === 'core' || group === 'utils') {
+		return parts.length === 2 ? `${group}/${name}` : undefined;
+	}
+
+	if (group === 'modules' || group === 'projects') {
+		return `${group}/${name}`;
+	}
+
+	return undefined;
+}
+
+/**
+ * Collects the manifest ids required by the given Lua files (paths relative to distDir),
+ * so manifests can never miss a dependency the compiled code actually loads.
+ */
+function collectLuaDependencies(distDir: string, files: string[], selfId: string): string[] {
+	const dependencies = new Set<string>();
+	const requirePattern = /\brequire\(\s*["']([^"']+)["']\s*\)/g;
+
+	for (const file of files) {
+		const content = fs.readFileSync(path.join(distDir, file), 'utf-8');
+
+		for (const match of content.matchAll(requirePattern)) {
+			const id = match[1] ? requireToManifestId(match[1]) : undefined;
+
+			if (id && id !== selfId) {
+				dependencies.add(id);
+			}
+		}
+	}
+
+	return [...dependencies];
+}
+
+function mergeDependencies(declared: string[] | undefined, detected: string[]): string[] {
+	return [...new Set([...(declared ?? []), ...detected])].sort();
+}
+
+function discoverFlatGroup(options: DiscoverOptions, group: 'core' | 'utils'): ComponentManifest[] {
+	const dir = path.join(options.distDir, group);
 
 	if (!fs.existsSync(dir)) {
 		return [];
@@ -63,18 +112,19 @@ function discoverCore(options: DiscoverOptions): ComponentManifest[] {
 	for (const file of fs.readdirSync(dir)) {
 		if (!file.endsWith('.lua')) continue;
 
-		const name = file.replace('.lua', '');
-		const id   = `core/${name}`;
+		const name  = file.replace('.lua', '');
+		const id    = `${group}/${name}`;
+		const files = [`${group}/${file}`];
 
-		const metaPath = path.join(options.srcDir, 'core', `${name}.manifest.json`);
+		const metaPath = path.join(options.srcDir, group, `${name}.manifest.json`);
 		const meta     = readJsonIfExists<ComponentMeta>(metaPath);
 
 		const manifest = componentManifest({
 			id,
 			name:         meta?.name ?? capitalize(name),
 			version:      meta?.version ?? options.version,
-			files:        [`core/${file}`],
-			dependencies: meta?.dependencies ?? [],
+			files,
+			dependencies: mergeDependencies(meta?.dependencies, collectLuaDependencies(options.distDir, files, id)),
 		});
 
 		manifests.push(manifest);
@@ -108,7 +158,7 @@ function discoverModules(options: DiscoverOptions): ComponentManifest[] {
 			name:         meta?.name ?? capitalize(moduleName),
 			version:      meta?.version ?? options.version,
 			files,
-			dependencies: meta?.dependencies ?? [],
+			dependencies: mergeDependencies(meta?.dependencies, collectLuaDependencies(options.distDir, files, id)),
 		});
 
 		manifests.push(manifest);
@@ -147,7 +197,7 @@ function discoverProjects(options: DiscoverOptions): ProjectManifest[] {
 			version:      meta?.version ?? options.version,
 			entry:        relativeToDist(options.distDir, mainPath),
 			files,
-			dependencies: meta?.dependencies ?? [],
+			dependencies: mergeDependencies(meta?.dependencies, collectLuaDependencies(options.distDir, files, id)),
 		};
 
 		if (meta?.install) input.install = meta.install;
@@ -161,9 +211,10 @@ function discoverProjects(options: DiscoverOptions): ProjectManifest[] {
 }
 
 export function discoverManifests(options: DiscoverOptions): AnyManifest[] {
-	const core     = discoverCore(options);
+	const core     = discoverFlatGroup(options, 'core');
+	const utils    = discoverFlatGroup(options, 'utils');
 	const modules  = discoverModules(options);
 	const projects = discoverProjects(options);
 
-	return [...core, ...modules, ...projects];
+	return [...core, ...utils, ...modules, ...projects];
 }

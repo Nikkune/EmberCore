@@ -1,4 +1,6 @@
-import {BaseComponent, drawText, type DrawTextOptions, type UIDrawSurface}                                                                                  from '@modules/ui';
+import {BaseComponent} from '@modules/ui/core/components/coreComponent';
+import {drawText, type DrawTextOptions} from '@modules/ui/render/renderHelpers';
+import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
 import type {ComponentDependencies, LayoutConstraints, MeasuredSize, RenderContext, StatusBarProps, StatusBarSegment, StatusBarStyle, TextStyle, UIContext} from '@modules/ui/types';
 import {createOptions}                                                                                                                                      from '@utils/helpers';
 
@@ -126,7 +128,11 @@ export class StatusBarComponent extends BaseComponent<'status_bar', StatusBarPro
 		return resolved.filter((segment) => segment.width > 0);
 	}
 
-	private getSegmentStyle(segment: StatusBarSegment, style: Partial<StatusBarStyle>, context: UIContext | RenderContext<UIDrawSurface>): Partial<TextStyle> {
+	private getSegmentStyle(
+		segment: StatusBarSegment,
+		style: Partial<StatusBarStyle>,
+		context: UIContext | RenderContext<UIDrawSurface>,
+	): Partial<TextStyle> {
 		const alignment = segment.alignment === 'center' ? 'center' : segment.alignment === 'right' ? 'right' : 'left';
 
 		return createOptions<TextStyle>(style.text ?? {})

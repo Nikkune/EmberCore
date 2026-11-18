@@ -1,4 +1,6 @@
-import {BaseContainerComponent, drawBox, type DrawBoxOptions, drawText, type DrawTextOptions, getInnerRect, normalizeInsets, type UIDrawSurface} from '@modules/ui';
+import {BaseContainerComponent} from '@modules/ui/core/components/baseContainerComponent';
+import {drawBox, type DrawBoxOptions, drawText, type DrawTextOptions, getInnerRect, normalizeInsets} from '@modules/ui/render/renderHelpers';
+import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
 import type {BoxProps, BoxStyle, ComponentDependencies, LayoutConstraints, MeasuredSize, RenderContext, TextStyle, UIComponent, UIContext}       from '@modules/ui/types';
 import {createOptions}                                                                                                                       from '@utils/helpers';
 

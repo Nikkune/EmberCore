@@ -1,4 +1,7 @@
-import {BaseComponent, drawBox, type DrawBoxOptions, drawHorizontalLine, drawText, type DrawTextOptions, makeColors, type UIDrawSurface}            from '@modules/ui';
+import {BaseComponent} from '@modules/ui/core/components/coreComponent';
+import {drawBox, type DrawBoxOptions, drawHorizontalLine, drawText, type DrawTextOptions} from '@modules/ui/render/renderHelpers';
+import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
+import {makeColors} from '@modules/ui/theme/tone';
 import type {ColumnDefinition, ComponentDependencies, LayoutConstraints, MeasuredSize, RenderContext, TableProps, TableStyle, TextStyle, UIContext} from '@modules/ui/types';
 import {createOptions}                                                                                                                              from '@utils/helpers';
 
@@ -17,14 +20,19 @@ export class TableComponent<T = Record<string, unknown>> extends BaseComponent<'
 		const showHeader = style.showHeader ?? true;
 
 		const columnWidths = this.resolveColumnWidths(constraints.maxWidth, style);
-		const contentWidth = columnWidths.reduce((sum, col) => sum + col.width, 0) + (style.showBorders ? Math.max(0, columnWidths.length - 1) : 0);
+		const separators   = style.showBorders ? Math.max(0, columnWidths.length - 1) : 0;
+		const contentWidth = columnWidths.reduce((sum, col) => sum + col.width, 0) + separators;
 
 		const rowCount       = this.props.rows.length + (showHeader ? 1 : 0);
 		const separatorCount = style.showBorders ? Math.max(0, rowCount - 1) : 0;
 
 		const contentHeight = rowCount + separatorCount;
 
-		return this.createMeasuredSize(this.getRequestedWidth(contentWidth), this.getRequestedHeight(Math.max(1, contentHeight)), constraints);
+		return this.createMeasuredSize(
+			this.getRequestedWidth(contentWidth),
+			this.getRequestedHeight(Math.max(1, contentHeight)),
+			constraints,
+		);
 	}
 
 	public override render(context: RenderContext<UIDrawSurface>): void {
@@ -147,12 +155,18 @@ export class TableComponent<T = Record<string, unknown>> extends BaseComponent<'
 		});
 	}
 
-	private renderHeaderRow(context: RenderContext<UIDrawSurface>, columns: ResolvedColumn<T>[], y: number, style: Partial<TableStyle>, innerRect: {
-		x: number;
-		y: number;
-		width: number;
-		height: number
-	}): void {
+	private renderHeaderRow(
+		context: RenderContext<UIDrawSurface>,
+		columns: ResolvedColumn<T>[],
+		y: number,
+		style: Partial<TableStyle>,
+		innerRect: {
+			x: number;
+			y: number;
+			width: number;
+			height: number
+		},
+	): void {
 		let currentX      = innerRect.x;
 		const showBorders = style.showBorders ?? false;
 
@@ -201,16 +215,25 @@ export class TableComponent<T = Record<string, unknown>> extends BaseComponent<'
 		}
 	}
 
-	private renderDataRow(context: RenderContext<UIDrawSurface>, columns: ResolvedColumn<T>[], row: T, rowIndex: number, y: number, style: Partial<TableStyle>, innerRect: {
-		x: number;
-		y: number;
-		width: number;
-		height: number
-	}): void {
+	private renderDataRow(
+		context: RenderContext<UIDrawSurface>,
+		columns: ResolvedColumn<T>[],
+		row: T,
+		rowIndex: number,
+		y: number,
+		style: Partial<TableStyle>,
+		innerRect: {
+			x: number;
+			y: number;
+			width: number;
+			height: number
+		},
+	): void {
 		let currentX              = innerRect.x;
 		const showBorders         = style.showBorders ?? false;
 		const alternateBackground = style.alternateRowBackgroundColor;
-		const rowBackground       = alternateBackground !== undefined && rowIndex % 2 === 1 ? alternateBackground : style.rowStyle?.backgroundColor;
+		const isAlternateRow      = alternateBackground !== undefined && rowIndex % 2 === 1;
+		const rowBackground       = isAlternateRow ? alternateBackground : style.rowStyle?.backgroundColor;
 
 		for (let index = 0; index < columns.length; index += 1) {
 			const {

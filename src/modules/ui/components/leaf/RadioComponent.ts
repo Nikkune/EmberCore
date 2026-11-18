@@ -1,4 +1,7 @@
-import {drawBox, type DrawBoxOptions, drawText, type DrawTextOptions, makeToneColorOverride, normalizeInsets, PressableComponent, resolveTextLines, type ResolveTextLinesOptions, type UIDrawSurface} from '@modules/ui';
+import {PressableComponent} from '@modules/ui/core/components/pressableComponent';
+import {drawBox, type DrawBoxOptions, drawText, type DrawTextOptions, normalizeInsets, resolveTextLines, type ResolveTextLinesOptions} from '@modules/ui/render/renderHelpers';
+import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
+import {makeToneColorOverride} from '@modules/ui/theme/tone';
 import type {RadioGroup}                                                                                                                                                                              from '@modules/ui/components/leaf/RadioGroup';
 import type {ComponentDependencies, LayoutConstraints, MeasuredSize, RadioProps, RadioStyle, RenderContext, TextStyle, UIContext}                                                                     from '@modules/ui/types';
 import {createOptions}                                                                                                                                                                                from '@utils/helpers';
@@ -61,7 +64,8 @@ export class RadioComponent<T = string> extends PressableComponent<'radio', Radi
 		const border         = style.border?.enabled ? 2 : 0;
 		const marker         = this.getMarker(style);
 		const contentPrefix  = `${marker} `;
-		const availableWidth = Math.max(0, (this.props.width ?? this.props.minWidth ?? constraints.maxWidth) - border - padding.left - padding.right);
+		const requestedWidth = this.props.width ?? this.props.minWidth ?? constraints.maxWidth;
+		const availableWidth = Math.max(0, requestedWidth - border - padding.left - padding.right);
 
 		const textWidth = Math.max(0, availableWidth - contentPrefix.length);
 
@@ -79,7 +83,11 @@ export class RadioComponent<T = string> extends PressableComponent<'radio', Radi
 
 		const contentHeight = Math.max(1, lines.length);
 
-		return this.createMeasuredSize(contentWidth + padding.left + padding.right + border, contentHeight + padding.top + padding.bottom + border, constraints);
+		return this.createMeasuredSize(
+			contentWidth + padding.left + padding.right + border,
+			contentHeight + padding.top + padding.bottom + border,
+			constraints,
+		);
 	}
 
 	public override render(context: RenderContext<UIDrawSurface>): void {
