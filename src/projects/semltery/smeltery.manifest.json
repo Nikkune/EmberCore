@@ -1,8 +1,0 @@
-{
-	"name":         "smeltery",
-	"version":      "1.0.0",
-	"dependencies": [],
-	"install":      {
-		"root": "/apps/smeltery"
-	}
-}

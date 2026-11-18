@@ -1,4 +1,6 @@
-import {BaseContainerComponent, drawBox, type DrawBoxOptions, getInnerRect, normalizeInsets, type UIDrawSurface}                        from '@modules/ui';
+import {BaseContainerComponent} from '@modules/ui/core/components/baseContainerComponent';
+import {drawBox, type DrawBoxOptions, getInnerRect, normalizeInsets} from '@modules/ui/render/renderHelpers';
+import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
 import type {ComponentDependencies, GridProps, GridStyle, LayoutConstraints, MeasuredSize, Rect, RenderContext, UIComponent, UIContext} from '@modules/ui/types';
 import {createFilledArray}                                                                                                              from '@modules/ui/utils/arrays';
 import {createOptions}                                                                                                                  from '@utils/helpers';
@@ -47,7 +49,11 @@ export class GridComponent<TChild extends UIComponent<UIDrawSurface> = UICompone
 		const borderX = style.border?.enabled ? 2 : 0;
 		const borderY = style.border?.enabled ? 2 : 0;
 
-		return this.createMeasuredSize(this.getRequestedWidth(contentWidth + padding.left + padding.right + borderX), this.getRequestedHeight(contentHeight + padding.top + padding.bottom + borderY), constraints);
+		return this.createMeasuredSize(
+			this.getRequestedWidth(contentWidth + padding.left + padding.right + borderX),
+			this.getRequestedHeight(contentHeight + padding.top + padding.bottom + borderY),
+			constraints,
+		);
 	}
 
 	public override layout(rect: {

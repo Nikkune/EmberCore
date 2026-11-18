@@ -118,7 +118,8 @@ export interface UICheckableComponent<TDraw = unknown> extends UIActionableCompo
 
 export interface UIThemableComponent<TDraw = unknown> extends UIComponent<TDraw>, Themable {}
 
-export interface UIContainerComponent<TDraw = unknown, TChild extends UIComponent = UIComponent> extends UIComponent<TDraw>, ContainerLike<TChild> {}
+export interface UIContainerComponent<TDraw = unknown, TChild extends UIComponent = UIComponent>
+	extends UIComponent<TDraw>, ContainerLike<TChild> {}
 
 // ============================================================
 // Dependencies

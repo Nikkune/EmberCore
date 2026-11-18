@@ -7,17 +7,15 @@ const LOG_LEVEL_ORDER: Record<LogLevel, number> = {
 	error: 3,
 };
 
+const LOG_LEVEL_COLOR: Record<LogLevel, number> = {
+	debug: colors.lightBlue,
+	info:  colors.white,
+	warn:  colors.orange,
+	error: colors.red,
+};
+
 function getLevelColor(level: LogLevel): number {
-	switch (level) {
-		case 'debug':
-			return colors.lightBlue;
-		case 'info':
-			return colors.white;
-		case 'warn':
-			return colors.orange;
-		case 'error':
-			return colors.red;
-	}
+	return LOG_LEVEL_COLOR[level];
 }
 
 function pad(value: number): string {

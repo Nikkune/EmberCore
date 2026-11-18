@@ -3,7 +3,19 @@
 // ============================================================
 export type UIEventName = keyof UIEventMap;
 
-export type UIEvent = | MouseClickEvent | MouseScrollEvent | KeyEvent | CharEvent | PasteEvent | TimerEvent | ChangeEvent | ToggleEvent | SelectEvent | PageChangeEvent | SubmitEvent | CustomEvent;
+export type UIEvent =
+	| MouseClickEvent
+	| MouseScrollEvent
+	| KeyEvent
+	| CharEvent
+	| PasteEvent
+	| TimerEvent
+	| ChangeEvent
+	| ToggleEvent
+	| SelectEvent
+	| PageChangeEvent
+	| SubmitEvent
+	| CustomEvent;
 
 export type UIEventHandler<TEvent extends UIEvent = UIEvent> = (event: TEvent) => void;
 

@@ -97,7 +97,11 @@ function detectProjectTarget(srcDir: string, relativePath: string): BumpTarget |
 export function detectTargetFromFile(filePath: string, options: DetectOptions): BumpTarget | undefined {
 	const relativePath = normalizeRelativePath(filePath);
 
-	return (detectCoreTarget(options.srcDir, relativePath) ?? detectModuleTarget(options.srcDir, relativePath) ?? detectProjectTarget(options.srcDir, relativePath));
+	return (
+		detectCoreTarget(options.srcDir, relativePath)
+		?? detectModuleTarget(options.srcDir, relativePath)
+		?? detectProjectTarget(options.srcDir, relativePath)
+	);
 }
 
 export function detectTargetsFromFiles(filePaths: string[], options: DetectOptions): BumpTarget[] {

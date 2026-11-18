@@ -1,4 +1,6 @@
-import {drawBox, type DrawBoxOptions, drawText, type DrawTextOptions, normalizeInsets, PressableComponent, resolveTextLines, type ResolveTextLinesOptions, type UIDrawSurface} from '@modules/ui';
+import {PressableComponent} from '@modules/ui/core/components/pressableComponent';
+import {drawBox, type DrawBoxOptions, drawText, type DrawTextOptions, normalizeInsets, resolveTextLines, type ResolveTextLinesOptions} from '@modules/ui/render/renderHelpers';
+import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
 import type {ComponentDependencies, LayoutConstraints, MeasuredSize, PaginationProps, PaginationStyle, RenderContext, TextStyle, UIContext, UIEvent}                           from '@modules/ui/types';
 import {createOptions}                                                                                                                                                         from '@utils/helpers';
 
@@ -37,7 +39,11 @@ export class PaginationComponent extends PressableComponent<'pagination', Pagina
 		const contentWidth  = lines.reduce((max, line) => Math.max(max, line.text.length), 0);
 		const contentHeight = Math.max(1, lines.length);
 
-		return this.createMeasuredSize(this.props.width ?? this.props.minWidth ?? (contentWidth + padding.left + padding.right + border), this.props.height ?? this.props.minHeight ?? (contentHeight + padding.top + padding.bottom + border), constraints);
+		return this.createMeasuredSize(
+			this.props.width ?? this.props.minWidth ?? (contentWidth + padding.left + padding.right + border),
+			this.props.height ?? this.props.minHeight ?? (contentHeight + padding.top + padding.bottom + border),
+			constraints,
+		);
 	}
 
 	public override render(context: RenderContext<UIDrawSurface>): void {

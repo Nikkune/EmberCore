@@ -1,4 +1,5 @@
-import {makeColors, type UIDrawSurface}                                                                               from '@modules/ui';
+import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
+import {makeColors} from '@modules/ui/theme/tone';
 import type {BorderCharacters, BoxStyle, Color, Insets, PaddingLike, Point, Rect, RenderContext, TextStyle, TextWrap} from '@modules/ui/types';
 import {splitWords}                                                                                                   from '@modules/ui/utils/string';
 import {createOptions}                                                                                                from '@utils/helpers';
@@ -133,7 +134,7 @@ export function normalizeInsets(value?: PaddingLike): Insets {
 	if ('x' in value) horizontal = value.x ?? 0;
 	if ('y' in value) vertical = value.y ?? 0;
 
-	let result = {
+	const result = {
 		top:    vertical,
 		right:  horizontal,
 		bottom: vertical,
@@ -537,7 +538,15 @@ export function fillRect(draw: UIDrawSurface, options: FillRectOptions): void {
 	draw.fillRect(targetRect, options.character ?? ' ', options.backgroundColor, options.foregroundColor);
 }
 
-export function drawHorizontalLine(draw: UIDrawSurface, position: Point, width: number, character: string, foregroundColor?: Color, backgroundColor?: Color, clipRect?: Rect): void {
+export function drawHorizontalLine(
+	draw: UIDrawSurface,
+	position: Point,
+	width: number,
+	character: string,
+	foregroundColor?: Color,
+	backgroundColor?: Color,
+	clipRect?: Rect,
+): void {
 	drawTextLine(draw, createOptions<DrawTextLineOptions>({
 		position: position,
 		width:    width,
@@ -551,7 +560,15 @@ export function drawHorizontalLine(draw: UIDrawSurface, position: Point, width: 
 		.done());
 }
 
-export function drawVerticalLine(draw: UIDrawSurface, position: Point, height: number, character: string, foregroundColor?: Color, backgroundColor?: Color, clipRect?: Rect): void {
+export function drawVerticalLine(
+	draw: UIDrawSurface,
+	position: Point,
+	height: number,
+	character: string,
+	foregroundColor?: Color,
+	backgroundColor?: Color,
+	clipRect?: Rect,
+): void {
 	for (let index = 0; index < height; index += 1) {
 		drawTextLine(draw, createOptions<DrawTextLineOptions>({
 			position: {
@@ -624,9 +641,13 @@ export function drawBorder(draw: UIDrawSurface, options: DrawBorderOptions): voi
 		return;
 	}
 
-	const top = rect.width === 1 ? border.vertical : border.topLeft + repeat(border.horizontal, Math.max(0, rect.width - 2)) + border.topRight;
+	const top = rect.width === 1
+		? border.vertical
+		: border.topLeft + repeat(border.horizontal, Math.max(0, rect.width - 2)) + border.topRight;
 
-	const bottom = rect.width === 1 ? border.vertical : border.bottomLeft + repeat(border.horizontal, Math.max(0, rect.width - 2)) + border.bottomRight;
+	const bottom = rect.width === 1
+		? border.vertical
+		: border.bottomLeft + repeat(border.horizontal, Math.max(0, rect.width - 2)) + border.bottomRight;
 
 	drawTextLine(draw, createOptions<DrawTextLineOptions>({
 		position: {

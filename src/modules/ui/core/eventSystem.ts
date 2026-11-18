@@ -41,7 +41,15 @@ export class BasicUIEventBus implements UIEventBus {
 	private readonly subscriptions: Partial<Record<UIEventName, InternalEventSubscription[]>> = {};
 
 	public subscribe<TEvent extends UIEvent>(type: TEvent['type'], handler: UIEventHandler<TEvent>, options: EventSubscriptionOptions = {}): EventSubscription<TEvent> {
-		const subscription = new BasicEventSubscription<TEvent>(createSubscriptionId(), type, handler, this, options.once ?? false, options.order ?? 0, options.targetId);
+		const subscription = new BasicEventSubscription<TEvent>(
+			createSubscriptionId(),
+			type,
+			handler,
+			this,
+			options.once ?? false,
+			options.order ?? 0,
+			options.targetId,
+		);
 
 		const list = this.getOrCreateSubscriptions(type);
 		list.push(subscription);

@@ -70,17 +70,13 @@ export class Config {
 	}
 
 	private static merge<T extends object>(defaults: T, loaded: Partial<T>): T {
-		const result: any = {};
+		const result = {} as T;
 
 		for (const key in defaults) {
-			if (loaded[key] !== undefined) {
-				result[key] = loaded[key];
-			}
-			else {
-				result[key] = (defaults as any)[key];
-			}
+			const value = loaded[key];
+			result[key] = value !== undefined ? value as T[typeof key] : defaults[key];
 		}
 
-		return result as T;
+		return result;
 	}
 }

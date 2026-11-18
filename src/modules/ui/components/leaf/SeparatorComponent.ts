@@ -1,4 +1,6 @@
-import {BaseComponent, drawHorizontalLine, drawText, type DrawTextOptions, type UIDrawSurface} from '@modules/ui';
+import {BaseComponent} from '@modules/ui/core/components/coreComponent';
+import {drawHorizontalLine, drawText, type DrawTextOptions} from '@modules/ui/render/renderHelpers';
+import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
 import type {ComponentDependencies, LayoutConstraints, MeasuredSize, RenderContext, SeparatorProps, SeparatorStyle, TextStyle, UIContext} from '@modules/ui/types';
 import {createOptions} from '@utils/helpers';
 

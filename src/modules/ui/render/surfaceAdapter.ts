@@ -1,4 +1,4 @@
-import {makeColors}                    from '@modules/ui';
+import {makeColors} from '@modules/ui/theme/tone';
 import type {Color, Point, Rect, Size} from '@modules/ui/types';
 
 export interface UISurfaceAdapter {
