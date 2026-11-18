@@ -708,5 +708,68 @@ test('peripheral: errors name the peripheral, not a "side"', function()
 	expect(message:find("Peripheral 'minecraft:chest_9' not found", 1, true), 'message: ' .. message)
 end)
 
+-- ============================================================
+-- Layout and rendering: hidden children, overflow, region redraw
+-- ============================================================
+
+test('hidden children take no space (Stack, Grid, Box)', function()
+	local a = new(components.LabelComponent, { text = 'AAAA', visible = false })
+	local b = new(components.LabelComponent, { text = 'B' })
+	local stack = new(components.StackComponent, { direction = 'column' }, {}, { a, b })
+	local runtime, terminal = runtimeFor(stack, 10, 3)
+	runtime:render()
+	expect(b.rect.y == 1, 'stack: visible label at y=' .. b.rect.y .. ', expected 1')
+
+	b:setProps({ visible = false })
+	a:setProps({ visible = true })
+	runtime:render()
+	expect(a.rect.y == 1 and terminal.line(1):find('AAAA', 1, true), 'stack after toggling visibility: "' .. terminal.line(1) .. '"')
+	expect(not terminal.line(2):find('B', 1, true), 'hidden label still drawn')
+
+	local g1 = new(components.LabelComponent, { text = 'x', visible = false })
+	local g2 = new(components.LabelComponent, { text = 'y' })
+	local grid = new(components.GridComponent, { columns = 2 }, {}, { g1, g2 })
+	runtimeFor(grid, 10, 2):render()
+	expect(g2.rect.x == 1, 'grid: visible child in column ' .. g2.rect.x .. ', expected the first')
+
+	local big = new(components.LabelComponent, { text = 'very long text', visible = false })
+	local small = new(components.LabelComponent, { text = 'ok' })
+	local box = new(components.BoxComponent, {}, {}, { big, small })
+	local wrapper = new(components.StackComponent, { direction = 'row' }, {}, { box })
+	runtimeFor(wrapper, 20, 2):render()
+	expect(box.rect.width == 2, 'box sized by a hidden child: width ' .. box.rect.width)
+end)
+
+test('children are clipped to their container', function()
+	local buttons = {}
+	for i = 1, 3 do buttons[i] = new(components.ButtonComponent, { label = 'Btn' .. i }) end
+	local row = new(components.StackComponent, { direction = 'row', width = 10 }, {}, buttons)
+	local outer = new(components.StackComponent, { direction = 'row' }, {}, { row })
+	local runtime, terminal = runtimeFor(outer, 20, 1)
+	runtime:render()
+	local line = terminal.line(1)
+	expect(line:sub(11) == string.rep(' ', 10), 'children drawn outside the 10-wide row: "' .. line .. '"')
+
+	local pressed = 0
+	buttons[3].props.onPress = nil
+	buttons[3]:setProps({ onPress = function() pressed = pressed + 1 end })
+	runtime:render()
+	runtime:dispatch({ type = 'mouse_click', x = buttons[3].rect.x + 1, y = 1, button = 1 })
+	expect(buttons[3].rect.x > 10, 'test setup: the third button should overflow the row')
+	expect(pressed == 0, 'a button clipped out of its container can still be clicked')
+end)
+
+test('a redrawn region is cleared first (no leftovers)', function()
+	local label = new(components.LabelComponent, { text = 'x' })
+	local stack = new(components.StackComponent, { direction = 'column' }, {}, { label })
+	local runtime, terminal = runtimeFor(stack, 10, 3)
+	runtime:render()
+	terminal.setCursorPos(5, 2); terminal.write('ZZ')
+	runtime:invalidate({ reason = 'state', kind = 'region', rect = { x = 4, y = 2, width = 4, height = 1 } })
+	runtime:render()
+	expect(not terminal.line(2):find('ZZ', 1, true), 'stale characters left in the redrawn region: "' .. terminal.line(2) .. '"')
+	expect(terminal.cell(5, 2)[3] == palette.backgroundColor, 'region not cleared with the theme background')
+end)
+
 realPrint(('\n%d passed, %d failed'):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)

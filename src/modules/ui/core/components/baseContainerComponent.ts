@@ -1,5 +1,5 @@
 import {BaseComponent} from '@modules/ui/core/components/coreComponent';
-import {shrinkRect} from '@modules/ui/render/renderHelpers';
+import {intersectRects, shrinkRect} from '@modules/ui/render/renderHelpers';
 import type {BaseProps, ComponentDependencies, ComponentKind, LayoutConstraints, MeasuredSize, Rect, RenderContext, UIComponent, UIContainerComponent, UIContext, UIInvalidator} from '@modules/ui/types';
 
 export abstract class BaseContainerComponent<
@@ -68,13 +68,27 @@ export abstract class BaseContainerComponent<
 		super.destroy();
 	}
 
-	protected renderChildren(context: RenderContext<TDraw>): void {
+	/** Renders the visible children, clipped to clipRect (the container's inner area) when given. */
+	protected renderChildren(context: RenderContext<TDraw>, clipRect?: Rect): void {
+		let childContext = context;
+
+		if (clipRect) {
+			const clip = context.clipRect ? intersectRects(context.clipRect, clipRect) : clipRect;
+
+			if (!clip) return;
+
+			childContext = {
+				...context,
+				clipRect: clip,
+			};
+		}
+
 		for (const child of this.internalChildren) {
 			if (!child.visible) {
 				continue;
 			}
 
-			child.render(context);
+			child.render(childContext);
 		}
 	}
 
@@ -100,8 +114,9 @@ export abstract class BaseContainerComponent<
 		};
 	}
 
+	/** Sizes of the visible children (hidden children take no space). */
 	protected measureChildren(constraints: LayoutConstraints, context: UIContext): MeasuredSize[] {
-		return this.internalChildren.map((child) => this.measureChild(child, constraints, context));
+		return this.getVisibleChildren().map((child) => this.measureChild(child, constraints, context));
 	}
 
 	/** Lays out each child in its slot, minus the child's margin. */
