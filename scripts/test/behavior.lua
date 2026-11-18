@@ -248,6 +248,25 @@ test('default border preset is a thin frame of single-byte CC drawing characters
 	expect(terminal.cell(3, 3)[2] == colors.gray and terminal.cell(3, 3)[3] == colors.white, 'bottom should be inverted')
 end)
 
+test('double border preset is a thick frame of CC drawing characters', function()
+	local button = new(components.ButtonComponent, { label = 'Go', width = 6, backgroundColor = colors.gray, foregroundColor = colors.white })
+	local runtime, terminal = runtimeFor(button, 6, 3, themeWith({ button = { border = { enabled = true, preset = 'double' } } }))
+	runtime:render()
+	local c = string.char
+	local expected = {
+		c(0x80) .. c(0x8F):rep(4) .. c(0x80),
+		c(0x80) .. ' Go ' .. c(0x80),
+		c(0x80) .. c(0x83):rep(4) .. c(0x80),
+	}
+	for y = 1, 3 do
+		expect(terminal.line(y) == expected[y], ('line %d is %q'):format(y, terminal.line(y)))
+	end
+	-- Sides and corners are full cells (inverted empty character), top is drawn, bottom inverted.
+	expect(terminal.cell(1, 2)[3] == colors.white, 'left side should be a full cell of the border color')
+	expect(terminal.cell(3, 1)[2] == colors.white and terminal.cell(3, 1)[3] == colors.gray, 'top colors')
+	expect(terminal.cell(3, 3)[2] == colors.gray and terminal.cell(3, 3)[3] == colors.white, 'bottom should be inverted')
+end)
+
 test('withAsciiBorders() switches borders and rules to ASCII', function()
 	local theme = ui.withAsciiBorders(nil, themeWith({ button = { border = { enabled = true } } }))
 	local button = new(components.ButtonComponent, { label = 'Go', width = 6 })

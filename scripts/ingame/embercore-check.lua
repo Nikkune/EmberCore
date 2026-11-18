@@ -312,7 +312,7 @@ local function checkWidgets(side, ascii)
 		borders = ui.defaultTheme.borders,
 		components = {
 			box = { border = { enabled = true } },
-			panel = { border = { enabled = true } },
+			panel = { border = { enabled = true, preset = 'double' } },
 			badge = { text = { alignment = 'center' } },
 		},
 	}
@@ -343,7 +343,7 @@ local function checkWidgets(side, ascii)
 					new(C.LabelComponent, { text = 'margin top = 1', margin = { top = 1 } }),
 				}),
 			}),
-			new(C.PanelComponent, { title = 'Panel' }, {}, {
+			new(C.PanelComponent, { title = 'Panel (double)' }, {}, {
 				new(C.StackComponent, { direction = 'row' }, {}, {
 					badge('OK', colors.lime), badge('WARN', colors.orange), badge('ERR', colors.red),
 				}),
