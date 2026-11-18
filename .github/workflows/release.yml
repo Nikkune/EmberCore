@@ -8,6 +8,11 @@ on:
 permissions:
   contents: write
 
+# One release at a time: two quick pushes must not bump/publish concurrently.
+concurrency:
+  group: release-lua
+  cancel-in-progress: false
+
 jobs:
   release:
     if: github.actor != 'github-actions[bot]'
@@ -49,10 +54,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           
-          if git diff --quiet; then
+          # Only the version bumps in src/ are committed back (build outputs are gitignored).
+          if git diff --quiet -- src; then
             echo "No changes to commit."
           else
-            git add .
+            git add -- src
             git commit -m "chore(release): auto bump + manifests"
             git push
           fi
