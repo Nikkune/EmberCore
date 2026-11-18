@@ -313,8 +313,8 @@ do
 end
 -- End of Lua Library inline imports
 local ____exports = {}
-local ____ui = require("modules.ui.index")
-local BaseComponent = ____ui.BaseComponent
+local ____coreComponent = require("modules.ui.core.components.coreComponent")
+local BaseComponent = ____coreComponent.BaseComponent
 local ____types = require("modules.ui.types.index")
 local BaseProps = ____types.BaseProps
 local ComponentDependencies = ____types.ComponentDependencies

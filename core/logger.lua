@@ -9,26 +9,9 @@ end
 -- End of Lua Library inline imports
 local ____exports = {}
 local LOG_LEVEL_ORDER = {debug = 0, info = 1, warn = 2, error = 3}
+local LOG_LEVEL_COLOR = {debug = colors.lightBlue, info = colors.white, warn = colors.orange, error = colors.red}
 local function getLevelColor(self, level)
-    repeat
-        local ____switch3 = level
-        local ____cond3 = ____switch3 == "debug"
-        if ____cond3 then
-            return colors.lightBlue
-        end
-        ____cond3 = ____cond3 or ____switch3 == "info"
-        if ____cond3 then
-            return colors.white
-        end
-        ____cond3 = ____cond3 or ____switch3 == "warn"
-        if ____cond3 then
-            return colors.orange
-        end
-        ____cond3 = ____cond3 or ____switch3 == "error"
-        if ____cond3 then
-            return colors.red
-        end
-    until true
+    return LOG_LEVEL_COLOR[level]
 end
 local function pad(self, value)
     return value < 10 and "0" .. tostring(value) or tostring(value)
@@ -52,11 +35,11 @@ local function formatMeta(self, meta)
         do
             local value = meta[key]
             if value == nil then
-                goto __continue8
+                goto __continue7
             end
             parts[#parts + 1] = (key .. "=") .. tostring(value)
         end
-        ::__continue8::
+        ::__continue7::
     end
     return table.concat(parts, " ")
 end

@@ -203,17 +203,20 @@ do
 end
 -- End of Lua Library inline imports
 local ____exports = {}
-local ____ui = require("modules.ui.index")
-local drawBox = ____ui.drawBox
-local DrawBoxOptions = ____ui.DrawBoxOptions
-local drawText = ____ui.drawText
-local DrawTextOptions = ____ui.DrawTextOptions
-local makeToneColorOverride = ____ui.makeToneColorOverride
-local normalizeInsets = ____ui.normalizeInsets
-local PressableComponent = ____ui.PressableComponent
-local resolveTextLines = ____ui.resolveTextLines
-local ResolveTextLinesOptions = ____ui.ResolveTextLinesOptions
-local UIDrawSurface = ____ui.UIDrawSurface
+local ____pressableComponent = require("modules.ui.core.components.pressableComponent")
+local PressableComponent = ____pressableComponent.PressableComponent
+local ____renderHelpers = require("modules.ui.render.renderHelpers")
+local drawBox = ____renderHelpers.drawBox
+local DrawBoxOptions = ____renderHelpers.DrawBoxOptions
+local drawText = ____renderHelpers.drawText
+local DrawTextOptions = ____renderHelpers.DrawTextOptions
+local normalizeInsets = ____renderHelpers.normalizeInsets
+local resolveTextLines = ____renderHelpers.resolveTextLines
+local ResolveTextLinesOptions = ____renderHelpers.ResolveTextLinesOptions
+local ____surfaceAdapter = require("modules.ui.render.surfaceAdapter")
+local UIDrawSurface = ____surfaceAdapter.UIDrawSurface
+local ____tone = require("modules.ui.theme.tone")
+local makeToneColorOverride = ____tone.makeToneColorOverride
 local ____types = require("modules.ui.types.index")
 local CheckboxProps = ____types.CheckboxProps
 local CheckboxStyle = ____types.CheckboxStyle
@@ -253,7 +256,8 @@ function CheckboxComponent.prototype.measure(self, constraints, context)
     local border = ____opt_0 and ____opt_0.enabled and 2 or 0
     local marker = self:getMarker(style)
     local contentPrefix = marker .. " "
-    local availableWidth = math.max(0, (self.props.width or self.props.minWidth or constraints.maxWidth) - border - padding.left - padding.right)
+    local requestedWidth = self.props.width or self.props.minWidth or constraints.maxWidth
+    local availableWidth = math.max(0, requestedWidth - border - padding.left - padding.right)
     local textWidth = math.max(0, availableWidth - #contentPrefix)
     local lines = resolveTextLines(
         nil,

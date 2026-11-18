@@ -61,12 +61,14 @@ local function __TS__ArrayReduce(self, callbackFn, ...)
 end
 -- End of Lua Library inline imports
 local ____exports = {}
-local ____ui = require("modules.ui.index")
-local BaseComponent = ____ui.BaseComponent
-local drawText = ____ui.drawText
-local DrawTextOptions = ____ui.DrawTextOptions
-local resolveTextLines = ____ui.resolveTextLines
-local UIDrawSurface = ____ui.UIDrawSurface
+local ____coreComponent = require("modules.ui.core.components.coreComponent")
+local BaseComponent = ____coreComponent.BaseComponent
+local ____renderHelpers = require("modules.ui.render.renderHelpers")
+local drawText = ____renderHelpers.drawText
+local DrawTextOptions = ____renderHelpers.DrawTextOptions
+local resolveTextLines = ____renderHelpers.resolveTextLines
+local ____surfaceAdapter = require("modules.ui.render.surfaceAdapter")
+local UIDrawSurface = ____surfaceAdapter.UIDrawSurface
 local ____types = require("modules.ui.types.index")
 local ComponentDependencies = ____types.ComponentDependencies
 local LabelProps = ____types.LabelProps

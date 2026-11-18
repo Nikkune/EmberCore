@@ -164,8 +164,8 @@ do
 end
 -- End of Lua Library inline imports
 local ____exports = {}
-local ____ui = require("modules.ui.index")
-local InteractiveComponent = ____ui.InteractiveComponent
+local ____interactiveComponent = require("modules.ui.core.components.interactiveComponent")
+local InteractiveComponent = ____interactiveComponent.InteractiveComponent
 local ____types = require("modules.ui.types.index")
 local BaseProps = ____types.BaseProps
 local ComponentDependencies = ____types.ComponentDependencies

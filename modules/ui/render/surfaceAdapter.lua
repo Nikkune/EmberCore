@@ -20,8 +20,8 @@ local function __TS__StringAccess(self, index)
 end
 -- End of Lua Library inline imports
 local ____exports = {}
-local ____ui = require("modules.ui.index")
-local makeColors = ____ui.makeColors
+local ____tone = require("modules.ui.theme.tone")
+local makeColors = ____tone.makeColors
 local ____types = require("modules.ui.types.index")
 local Color = ____types.Color
 local Point = ____types.Point

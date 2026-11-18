@@ -65,11 +65,8 @@ end
 function Config.merge(self, defaults, loaded)
     local result = {}
     for key in pairs(defaults) do
-        if loaded[key] ~= nil then
-            result[key] = loaded[key]
-        else
-            result[key] = defaults[key]
-        end
+        local value = loaded[key]
+        result[key] = value ~= nil and value or defaults[key]
     end
     return result
 end

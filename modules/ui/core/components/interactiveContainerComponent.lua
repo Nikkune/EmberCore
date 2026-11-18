@@ -33,8 +33,8 @@ local function __TS__ClassExtends(target, base)
 end
 -- End of Lua Library inline imports
 local ____exports = {}
-local ____ui = require("modules.ui.index")
-local BaseContainerComponent = ____ui.BaseContainerComponent
+local ____baseContainerComponent = require("modules.ui.core.components.baseContainerComponent")
+local BaseContainerComponent = ____baseContainerComponent.BaseContainerComponent
 local ____types = require("modules.ui.types.index")
 local BaseProps = ____types.BaseProps
 local ComponentDependencies = ____types.ComponentDependencies

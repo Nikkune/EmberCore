@@ -3,12 +3,13 @@
   "type": "component",
   "id": "core/tank",
   "name": "Tank",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "files": [
     "core/tank.lua"
   ],
   "dependencies": [
     "core/errors",
-    "core/peripheral"
+    "core/peripheral",
+    "utils/helpers"
   ]
 }

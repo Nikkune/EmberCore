@@ -118,9 +118,10 @@ local function __TS__ArrayMap(self, callbackfn, thisArg)
 end
 -- End of Lua Library inline imports
 local ____exports = {}
-local ____ui = require("modules.ui.index")
-local makeColors = ____ui.makeColors
-local UIDrawSurface = ____ui.UIDrawSurface
+local ____surfaceAdapter = require("modules.ui.render.surfaceAdapter")
+local UIDrawSurface = ____surfaceAdapter.UIDrawSurface
+local ____tone = require("modules.ui.theme.tone")
+local makeColors = ____tone.makeColors
 local ____types = require("modules.ui.types.index")
 local BorderCharacters = ____types.BorderCharacters
 local BoxStyle = ____types.BoxStyle

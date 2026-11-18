@@ -1,0 +1,11 @@
+{
+  "manifestVersion": 1,
+  "type": "component",
+  "id": "utils/helpers",
+  "name": "Helpers",
+  "version": "1.0.0",
+  "files": [
+    "utils/helpers.lua"
+  ],
+  "dependencies": []
+}

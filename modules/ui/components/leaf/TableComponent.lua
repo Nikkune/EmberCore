@@ -81,15 +81,18 @@ local function __TS__ArrayMap(self, callbackfn, thisArg)
 end
 -- End of Lua Library inline imports
 local ____exports = {}
-local ____ui = require("modules.ui.index")
-local BaseComponent = ____ui.BaseComponent
-local drawBox = ____ui.drawBox
-local DrawBoxOptions = ____ui.DrawBoxOptions
-local drawHorizontalLine = ____ui.drawHorizontalLine
-local drawText = ____ui.drawText
-local DrawTextOptions = ____ui.DrawTextOptions
-local makeColors = ____ui.makeColors
-local UIDrawSurface = ____ui.UIDrawSurface
+local ____coreComponent = require("modules.ui.core.components.coreComponent")
+local BaseComponent = ____coreComponent.BaseComponent
+local ____renderHelpers = require("modules.ui.render.renderHelpers")
+local drawBox = ____renderHelpers.drawBox
+local DrawBoxOptions = ____renderHelpers.DrawBoxOptions
+local drawHorizontalLine = ____renderHelpers.drawHorizontalLine
+local drawText = ____renderHelpers.drawText
+local DrawTextOptions = ____renderHelpers.DrawTextOptions
+local ____surfaceAdapter = require("modules.ui.render.surfaceAdapter")
+local UIDrawSurface = ____surfaceAdapter.UIDrawSurface
+local ____tone = require("modules.ui.theme.tone")
+local makeColors = ____tone.makeColors
 local ____types = require("modules.ui.types.index")
 local ColumnDefinition = ____types.ColumnDefinition
 local ComponentDependencies = ____types.ComponentDependencies
@@ -120,11 +123,12 @@ function TableComponent.prototype.measure(self, constraints, context)
     end
     local showHeader = ____style_showHeader_0
     local columnWidths = self:resolveColumnWidths(constraints.maxWidth, style)
+    local separators = style.showBorders and math.max(0, #columnWidths - 1) or 0
     local contentWidth = __TS__ArrayReduce(
         columnWidths,
         function(____, sum, col) return sum + col.width end,
         0
-    ) + (style.showBorders and math.max(0, #columnWidths - 1) or 0)
+    ) + separators
     local rowCount = #self.props.rows + (showHeader and 1 or 0)
     local separatorCount = style.showBorders and math.max(0, rowCount - 1) or 0
     local contentHeight = rowCount + separatorCount
@@ -385,14 +389,15 @@ function TableComponent.prototype.renderDataRow(self, context, columns, row, row
     end
     local showBorders = ____style_showBorders_67
     local alternateBackground = style.alternateRowBackgroundColor
-    local ____temp_70
-    if alternateBackground ~= nil and rowIndex % 2 == 1 then
-        ____temp_70 = alternateBackground
+    local isAlternateRow = alternateBackground ~= nil and rowIndex % 2 == 1
+    local ____isAlternateRow_70
+    if isAlternateRow then
+        ____isAlternateRow_70 = alternateBackground
     else
         local ____opt_68 = style.rowStyle
-        ____temp_70 = ____opt_68 and ____opt_68.backgroundColor
+        ____isAlternateRow_70 = ____opt_68 and ____opt_68.backgroundColor
     end
-    local rowBackground = ____temp_70
+    local rowBackground = ____isAlternateRow_70
     do
         local index = 0
         while index < #columns do

@@ -69,16 +69,18 @@ local function __TS__ArrayMap(self, callbackfn, thisArg)
 end
 -- End of Lua Library inline imports
 local ____exports = {}
-local ____ui = require("modules.ui.index")
-local BaseContainerComponent = ____ui.BaseContainerComponent
-local drawBox = ____ui.drawBox
-local DrawBoxOptions = ____ui.DrawBoxOptions
-local drawHorizontalLine = ____ui.drawHorizontalLine
-local drawText = ____ui.drawText
-local DrawTextOptions = ____ui.DrawTextOptions
-local getInnerRect = ____ui.getInnerRect
-local normalizeInsets = ____ui.normalizeInsets
-local UIDrawSurface = ____ui.UIDrawSurface
+local ____baseContainerComponent = require("modules.ui.core.components.baseContainerComponent")
+local BaseContainerComponent = ____baseContainerComponent.BaseContainerComponent
+local ____renderHelpers = require("modules.ui.render.renderHelpers")
+local drawBox = ____renderHelpers.drawBox
+local DrawBoxOptions = ____renderHelpers.DrawBoxOptions
+local drawHorizontalLine = ____renderHelpers.drawHorizontalLine
+local drawText = ____renderHelpers.drawText
+local DrawTextOptions = ____renderHelpers.DrawTextOptions
+local getInnerRect = ____renderHelpers.getInnerRect
+local normalizeInsets = ____renderHelpers.normalizeInsets
+local ____surfaceAdapter = require("modules.ui.render.surfaceAdapter")
+local UIDrawSurface = ____surfaceAdapter.UIDrawSurface
 local ____types = require("modules.ui.types.index")
 local ComponentDependencies = ____types.ComponentDependencies
 local LayoutConstraints = ____types.LayoutConstraints

@@ -7,5 +7,7 @@
   "files": [
     "core/errors.lua"
   ],
-  "dependencies": []
+  "dependencies": [
+    "utils/helpers"
+  ]
 }
