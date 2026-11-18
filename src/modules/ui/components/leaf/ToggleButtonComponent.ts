@@ -13,6 +13,14 @@ export class ToggleButtonComponent extends PressableComponent<'button', ToggleBu
 		this._pressed = props.pressed ?? false;
 	}
 
+	protected override onPropsChanged(patch: Partial<ToggleButtonProps>): void {
+		if (patch.pressed !== undefined) this._pressed = patch.pressed;
+	}
+
+	public setLabel(label: string): void {
+		this.setProps({label} as Partial<ToggleButtonProps>);
+	}
+
 	public get pressed(): boolean {
 		return this._pressed;
 	}

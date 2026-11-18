@@ -10,6 +10,10 @@ export class ButtonComponent extends PressableComponent<'button', ButtonProps, U
 		super('button', props, dependencies);
 	}
 
+	public setLabel(label: string): void {
+		this.setProps({label} as Partial<ButtonProps>);
+	}
+
 	public override measure(constraints: LayoutConstraints, context: UIContext): MeasuredSize {
 		const style   = this.getResolvedStyle(context);
 		const padding = normalizeInsets(style.padding);

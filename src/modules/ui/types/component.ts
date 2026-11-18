@@ -106,6 +106,9 @@ export interface UIComponent<TDraw = unknown> extends Measurable, Layoutable, Re
 	readonly disabled: boolean;
 	/** Space kept around the component by its container (from the margin prop). */
 	readonly margin?: Insets;
+
+	/** Called by UIRuntime (and containers) so that the component's own invalidate() reaches the runtime. */
+	attachInvalidator?(invalidator: UIInvalidator): void;
 }
 
 export interface UIInteractiveComponent<TDraw = unknown> extends UIComponent<TDraw>, Interactive {}

@@ -13,6 +13,14 @@ export class CheckboxComponent extends PressableComponent<'checkbox', CheckboxPr
 		this._checked = props.checked;
 	}
 
+	protected override onPropsChanged(patch: Partial<CheckboxProps>): void {
+		if (patch.checked !== undefined) this._checked = patch.checked;
+	}
+
+	public setLabel(label: string): void {
+		this.setProps({label} as Partial<CheckboxProps>);
+	}
+
 	public get checked(): boolean {
 		return this._checked;
 	}

@@ -1,6 +1,6 @@
 import {BaseComponent} from '@modules/ui/core/components/coreComponent';
 import {shrinkRect} from '@modules/ui/render/renderHelpers';
-import type {BaseProps, ComponentDependencies, ComponentKind, LayoutConstraints, MeasuredSize, Rect, RenderContext, UIComponent, UIContainerComponent, UIContext} from '@modules/ui/types';
+import type {BaseProps, ComponentDependencies, ComponentKind, LayoutConstraints, MeasuredSize, Rect, RenderContext, UIComponent, UIContainerComponent, UIContext, UIInvalidator} from '@modules/ui/types';
 
 export abstract class BaseContainerComponent<
 	TKind extends ComponentKind,
@@ -24,7 +24,23 @@ export abstract class BaseContainerComponent<
 		if (this.internalChildren.includes(child)) return;
 
 		this.internalChildren.push(child);
-		this.invalidate({reason: 'layout'});
+
+		if (this.invalidator) {
+			child.attachInvalidator?.(this.invalidator);
+		}
+
+		this.invalidate({
+			reason: 'layout',
+			kind:   'full',
+		});
+	}
+
+	public override attachInvalidator(invalidator: UIInvalidator): void {
+		super.attachInvalidator(invalidator);
+
+		for (const child of this.internalChildren) {
+			child.attachInvalidator?.(invalidator);
+		}
 	}
 
 	public removeChild(childId: string): void {
@@ -37,7 +53,10 @@ export abstract class BaseContainerComponent<
 		const [removed] = this.internalChildren.splice(index, 1);
 
 		removed?.destroy();
-		this.invalidate({reason: 'layout'});
+		this.invalidate({
+			reason: 'layout',
+			kind:   'full',
+		});
 	}
 
 	public override destroy(): void {

@@ -132,7 +132,7 @@ local function checkUi(side, ascii)
 
 	local status = new(C.LabelComponent, { text = 'Cliquez. Q (clavier) pour quitter.' })
 	local function setStatus(text)
-		status.props.text = text
+		status:setText(text)
 	end
 
 	local group = new(C.RadioGroup, 'a')
@@ -172,31 +172,20 @@ local function checkUi(side, ascii)
 		root = root, eventBus = new(ui.BasicUIEventBus), theme = theme, surface = surface, surfaceKind = side and 'monitor' or 'terminal',
 	})
 
-	runtime:forceRender()
-
+	-- run() renders, translates CC events, dispatches them and redraws what changed.
+	-- Callbacks from Lua receive an extra first argument (self): function(_, raw).
 	local timer = os.startTimer(1)
-	while true do
-		local event, a, b, c = os.pullEvent()
-		if event == 'char' and (a == 'q' or a == 'Q') then break end
-
-		local uiEvent
-		if event == 'mouse_click' and not monitorSide then
-			uiEvent = { type = 'mouse_click', button = a, x = b, y = c }
-		elseif event == 'monitor_touch' and a == monitorSide then
-			uiEvent = { type = 'monitor_touch', x = b, y = c }
-		elseif event == 'timer' and a == timer then
-			bar.props.value = (bar.props.value + 1) % 11
-			runtime:invalidate({ reason = 'state', kind = 'region', rect = bar.rect })
-			timer = os.startTimer(1)
-		end
-
-		if uiEvent then
-			runtime:dispatch(uiEvent)
-			-- Labels and the bar change through props: redraw everything to see the result.
-			runtime:invalidate({ reason = 'state', kind = 'full' })
-		end
-		runtime:render()
-	end
+	runtime:run({
+		monitor = monitorSide,
+		onEvent = function(_, raw)
+			if raw[1] == 'char' and (raw[2] == 'q' or raw[2] == 'Q') then
+				runtime:stop()
+			elseif raw[1] == 'timer' and raw[2] == timer then
+				bar:setValue((bar.value + 1) % 11)
+				timer = os.startTimer(1)
+			end
+		end,
+	})
 
 	term.setBackgroundColor(colors.black)
 	term.setTextColor(colors.white)

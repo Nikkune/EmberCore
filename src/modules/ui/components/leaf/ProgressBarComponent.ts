@@ -9,6 +9,10 @@ export class ProgressBarComponent extends BaseComponent<'progress_bar', Progress
 		super('progress_bar', props, dependencies);
 	}
 
+	public setValue(value: number): void {
+		this.setProps({value} as Partial<ProgressBarProps>);
+	}
+
 	public get minValue(): number {
 		return this.props.minValue ?? 0;
 	}

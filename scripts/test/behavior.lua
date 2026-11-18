@@ -420,5 +420,118 @@ test('radio group: the deselected radio is notified', function()
 	expect(terminal.line(rb.rect.y):find('(o) B', 1, true), 'B was not redrawn as selected: "' .. terminal.line(rb.rect.y) .. '"')
 end)
 
+-- ============================================================
+-- Runtime ergonomics: auto redraw, setters, event bus, event loop
+-- ============================================================
+
+test('runtime: state changes made by the app trigger a redraw (invalidator attached)', function()
+	local checkbox = new(components.CheckboxComponent, { label = 'C', checked = false })
+	local stack = new(components.StackComponent, { direction = 'column' }, {}, { checkbox })
+	local runtime, terminal = runtimeFor(stack, 12, 4)
+	runtime:render()
+	expect(not runtime:isDirty(), 'runtime dirty after render')
+	checkbox:setChecked(true)
+	expect(runtime:isDirty(), 'setChecked() did not mark the runtime dirty')
+	runtime:render()
+	expect(terminal.line(checkbox.rect.y):find('[x]', 1, true), 'checkbox not redrawn: "' .. terminal.line(checkbox.rect.y) .. '"')
+
+	local late = new(components.LabelComponent, { text = 'late' })
+	stack:addChild(late)
+	runtime:render()
+	late:setText('later')
+	expect(runtime:isDirty(), 'a child added after the runtime was created is not attached')
+	runtime:render()
+	expect(terminal.line(late.rect.y):find('later', 1, true), 'added child not redrawn')
+end)
+
+test('setters: setText, setLabel, setValue, setProps redraw with the new values', function()
+	local label = new(components.LabelComponent, { text = 'a' })
+	local button = new(components.ButtonComponent, { label = 'Go' })
+	local bar = new(components.ProgressBarComponent, { value = 0, maxValue = 10, width = 10 })
+	local log = new(components.LogViewerComponent, { entries = {}, height = 2 })
+	local stack = new(components.StackComponent, { direction = 'column' }, {}, { label, button, bar, log })
+	local runtime, terminal = runtimeFor(stack, 20, 6)
+	runtime:render()
+	label:setText('Hello world')
+	button:setLabel('Stop')
+	bar:setValue(10)
+	log:addEntry({ level = 'info', message = 'started' })
+	runtime:render()
+	expect(terminal.line(label.rect.y):find('Hello world', 1, true), 'label: "' .. terminal.line(label.rect.y) .. '"')
+	expect(terminal.line(button.rect.y):find('Stop', 1, true), 'button: "' .. terminal.line(button.rect.y) .. '"')
+	expect(terminal.line(bar.rect.y):find('100%', 1, true), 'bar: "' .. terminal.line(bar.rect.y) .. '"')
+	expect(terminal.line(log.rect.y):find('started', 1, true), 'log: "' .. terminal.line(log.rect.y) .. '"')
+	label:setProps({ text = 'via setProps' })
+	runtime:render()
+	expect(terminal.line(label.rect.y):find('via setProps', 1, true), 'setProps: "' .. terminal.line(label.rect.y) .. '"')
+end)
+
+test('setProps keeps component state in sync (checked, page, pressed, selected)', function()
+	local checkbox = new(components.CheckboxComponent, { label = 'C', checked = false })
+	checkbox:setProps({ checked = true })
+	expect(checkbox.checked, 'checkbox state not updated')
+	local pagination = new(components.PaginationComponent, { page = 1, totalItems = 50, pageSize = 10 })
+	pagination:setProps({ page = 4 })
+	expect(pagination.page == 4, 'pagination page = ' .. pagination.page)
+	local toggle = new(components.ToggleButtonComponent, { label = 'T' })
+	toggle:setProps({ pressed = true })
+	expect(toggle.pressed, 'toggle state not updated')
+	local radio = new(components.RadioComponent, { label = 'R', value = 'r' })
+	radio:setProps({ selected = true })
+	expect(radio.selected, 'radio state not updated')
+end)
+
+test('event bus receives events no component handled', function()
+	local stack = new(components.StackComponent, {}, {}, { new(components.LabelComponent, { text = 'x' }) })
+	local runtime = runtimeFor(stack, 10, 3)
+	runtime:render()
+	local received = 0
+	runtime.eventBus:subscribe('mouse_click', function() received = received + 1 end)
+	runtime:dispatch({ type = 'mouse_click', x = 9, y = 3, button = 1 })
+	runtime:dispatch({ type = 'char', char = 'a' })
+	expect(received == 1, 'bus received ' .. received .. ' click(s)')
+end)
+
+test('toUIEvent translates CC events', function()
+	local e = ui.toUIEvent(nil, { 'mouse_click', 2, 5, 7 })
+	expect(e and e.type == 'mouse_click' and e.button == 2 and e.x == 5 and e.y == 7, 'mouse_click')
+	e = ui.toUIEvent(nil, { 'monitor_touch', 'right', 3, 4 }, { monitor = 'right' })
+	expect(e and e.type == 'monitor_touch' and e.x == 3 and e.y == 4, 'monitor_touch')
+	expect(ui.toUIEvent(nil, { 'monitor_touch', 'left', 3, 4 }, { monitor = 'right' }) == nil, 'touch on another monitor should be ignored')
+	expect(ui.toUIEvent(nil, { 'mouse_click', 1, 1, 1 }, { monitor = 'right' }) == nil, 'terminal clicks ignored on a monitor surface')
+	e = ui.toUIEvent(nil, { 'mouse_scroll', 1, 2, 3 })
+	expect(e and e.direction == 1 and e.x == 2, 'mouse_scroll')
+	e = ui.toUIEvent(nil, { 'key', 28, false })
+	expect(e and e.type == 'key' and e.key == 28 and e.held == false, 'key')
+	e = ui.toUIEvent(nil, { 'char', 'q' })
+	expect(e and e.char == 'q', 'char')
+	expect(ui.toUIEvent(nil, { 'redstone' }) == nil, 'unknown events give nil')
+end)
+
+test('runtime.run() renders, dispatches clicks and returns after stop()', function()
+	local pressed = 0
+	local runtime
+	local button = new(components.ButtonComponent, { label = 'Go', onPress = function() pressed = pressed + 1 end })
+	local stack = new(components.StackComponent, {}, {}, { button })
+	local terminal
+	runtime, terminal = runtimeFor(stack, 10, 3)
+	local queue = {
+		function() return 'mouse_click', 1, button.rect.x, button.rect.y end,
+		function() return 'term_resize' end,
+		function() runtime:stop(); return 'timer', 1 end,
+	}
+	local realPull = os.pullEvent
+	os.pullEvent = function()
+		local nextEvent = table.remove(queue, 1)
+		if not nextEvent then error('run() did not stop') end
+		return nextEvent()
+	end
+	local ok, err = pcall(function() runtime:run() end)
+	os.pullEvent = realPull
+	expect(ok, tostring(err))
+	expect(pressed == 1, 'button pressed ' .. pressed .. ' time(s)')
+	expect(terminal.line(button.rect.y):find('Go', 1, true), 'screen not rendered')
+end)
+
 realPrint(('\n%d passed, %d failed'):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)

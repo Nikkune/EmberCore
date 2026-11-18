@@ -16,6 +16,10 @@ export class StatusBarComponent extends BaseComponent<'status_bar', StatusBarPro
 		super('status_bar', props, dependencies);
 	}
 
+	public setSegments(segments: StatusBarSegment[]): void {
+		this.setProps({segments} as Partial<StatusBarProps>);
+	}
+
 	public override measure(constraints: LayoutConstraints, context: UIContext): MeasuredSize {
 		const style        = this.getResolvedStyle(context);
 		const contentWidth = this.getContentWidth(style);

@@ -13,6 +13,10 @@ export class PaginationComponent extends PressableComponent<'pagination', Pagina
 		this.currentPage = props.page;
 	}
 
+	protected override onPropsChanged(patch: Partial<PaginationProps>): void {
+		if (patch.page !== undefined) this.currentPage = patch.page;
+	}
+
 	public get totalPages(): number {
 		if (this.props.pageSize <= 0) {
 			return 1;

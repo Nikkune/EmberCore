@@ -16,6 +16,10 @@ export class TableComponent<T = Record<string, unknown>> extends BaseComponent<'
 		super('table', props, dependencies);
 	}
 
+	public setRows(rows: T[]): void {
+		this.setProps({rows} as Partial<TableProps<T>>);
+	}
+
 	public override measure(constraints: LayoutConstraints, context: UIContext): MeasuredSize {
 		const style      = this.getResolvedStyle(context);
 		const showHeader = style.showHeader ?? true;

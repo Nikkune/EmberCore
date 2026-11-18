@@ -9,6 +9,16 @@ export class LogViewerComponent extends BaseComponent<'log_viewer', LogViewerPro
 		super('log_viewer', props, dependencies);
 	}
 
+	/** Appends an entry; with maxEntries, only the most recent ones are kept. */
+	public addEntry(entry: LogEntry, maxEntries?: number): void {
+		const entries = [...this.props.entries, entry];
+		this.setProps({entries: maxEntries !== undefined ? entries.slice(-maxEntries) : entries});
+	}
+
+	public clearEntries(): void {
+		this.setProps({entries: []});
+	}
+
 	public override measure(constraints: LayoutConstraints, _context: UIContext): MeasuredSize {
 		const width  = this.props.width ?? this.props.minWidth ?? constraints.maxWidth;
 		const height = this.props.height ?? this.props.minHeight ?? Math.min(Math.max(1, this.props.entries.length), constraints.maxHeight);
