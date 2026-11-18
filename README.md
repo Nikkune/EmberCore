@@ -85,8 +85,14 @@ dist/          # Generated Lua output
 
 ## 📦 Deployment (In-Game)
 
-The installer is [`installer/embercore.lua`](installer/embercore.lua). Put it on the computer once
-(for example with `pastebin get <code> embercore`), then:
+The installer is [`installer/embercore.lua`](installer/embercore.lua), also on
+[Pastebin](https://pastebin.com/PKV47STh). Put it on the computer once:
+
+```
+pastebin get PKV47STh embercore
+```
+
+then:
 
 ```
 embercore install ui        install a component or project with its dependencies
@@ -100,6 +106,8 @@ Files come from the `lua` branch through `raw.githubusercontent.com` and are ins
 of the computer, so `require("core.config")` works as is. Each component is downloaded completely
 before anything is written. What is installed is recorded in `/.embercore/installed`.
 
+The paste is not updated automatically: when `installer/embercore.lua` changes, update it on Pastebin.
+
 ### 🔧 Dev mode (any server)
 
 Work in TypeScript on your machine and see every change on a computer of a server you do not own:
@@ -110,8 +118,8 @@ npm run dev
 
 It compiles continuously (`tstl --watch`), serves `luas/` and `scripts/ingame/`, and opens a public
 tunnel with [`cloudflared`](https://github.com/cloudflare/cloudflared) when it is installed
-(CC:Tweaked refuses local addresses, so the tunnel is needed even in single player). It prints the
-URL; in game:
+(CC:Tweaked refuses local addresses, so the tunnel is needed even in single player). Once the new
+URL answers (it can take a minute), it prints the commands to type in game:
 
 ```
 wget <url>/client embercore-dev
