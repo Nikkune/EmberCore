@@ -44,6 +44,9 @@ jobs:
       - name: Installer tests (fake CC:Tweaked file system and http)
         run: npm run test:installer
 
+      - name: Dev mode tests (dev server + client over curl)
+        run: npm run test:devmode
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v6
         with:
