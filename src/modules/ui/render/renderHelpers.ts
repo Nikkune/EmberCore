@@ -1,5 +1,6 @@
-import {makeColors, type UIDrawSurface}                                                                               from '@modules/ui';
-import type {BorderCharacters, BoxStyle, Color, Insets, PaddingLike, Point, Rect, RenderContext, TextStyle, TextWrap} from '@modules/ui/types';
+import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
+import {makeColors} from '@modules/ui/theme/tone';
+import type {BorderCharacters, BorderPart, BoxStyle, Color, Insets, PaddingLike, Point, Rect, RenderContext, TextStyle, TextWrap} from '@modules/ui/types';
 import {splitWords}                                                                                                   from '@modules/ui/utils/string';
 import {createOptions}                                                                                                from '@utils/helpers';
 
@@ -133,7 +134,7 @@ export function normalizeInsets(value?: PaddingLike): Insets {
 	if ('x' in value) horizontal = value.x ?? 0;
 	if ('y' in value) vertical = value.y ?? 0;
 
-	let result = {
+	const result = {
 		top:    vertical,
 		right:  horizontal,
 		bottom: vertical,
@@ -219,10 +220,10 @@ export function applyEllipsis(text: string, maxWidth: number): string {
 	}
 
 	if (maxWidth === 1) {
-		return '…';
+		return '.';
 	}
 
-	return `${text.slice(0, maxWidth - 1)}…`;
+	return `${text.slice(0, maxWidth - 1)}.`;
 }
 
 export function alignText(text: string, width: number, alignment: 'left' | 'center' | 'right' = 'left'): string {
@@ -537,7 +538,15 @@ export function fillRect(draw: UIDrawSurface, options: FillRectOptions): void {
 	draw.fillRect(targetRect, options.character ?? ' ', options.backgroundColor, options.foregroundColor);
 }
 
-export function drawHorizontalLine(draw: UIDrawSurface, position: Point, width: number, character: string, foregroundColor?: Color, backgroundColor?: Color, clipRect?: Rect): void {
+export function drawHorizontalLine(
+	draw: UIDrawSurface,
+	position: Point,
+	width: number,
+	character: string,
+	foregroundColor?: Color,
+	backgroundColor?: Color,
+	clipRect?: Rect,
+): void {
 	drawTextLine(draw, createOptions<DrawTextLineOptions>({
 		position: position,
 		width:    width,
@@ -551,7 +560,15 @@ export function drawHorizontalLine(draw: UIDrawSurface, position: Point, width: 
 		.done());
 }
 
-export function drawVerticalLine(draw: UIDrawSurface, position: Point, height: number, character: string, foregroundColor?: Color, backgroundColor?: Color, clipRect?: Rect): void {
+export function drawVerticalLine(
+	draw: UIDrawSurface,
+	position: Point,
+	height: number,
+	character: string,
+	foregroundColor?: Color,
+	backgroundColor?: Color,
+	clipRect?: Rect,
+): void {
 	for (let index = 0; index < height; index += 1) {
 		drawTextLine(draw, createOptions<DrawTextLineOptions>({
 			position: {
@@ -583,131 +600,72 @@ export function drawBorder(draw: UIDrawSurface, options: DrawBorderOptions): voi
 		return;
 	}
 
-	if (rect.width === 1 && rect.height === 1) {
+	const inverted = border.inverted ?? [];
+
+	// Inverted parts swap the colors; without a known background, use the surface's current one.
+	const drawPart = (part: BorderPart, x: number, y: number, text: string): void => {
+		if (text.length === 0) return;
+
+		const isInverted = inverted.includes(part);
+		const background = backgroundColor ?? (isInverted ? draw.getBackgroundColor() : undefined);
+
 		drawTextLine(draw, createOptions<DrawTextLineOptions>({
 			position: {
-				x: rect.x,
-				y: rect.y,
+				x,
+				y,
 			},
-			width:    1,
-			text:     border.topLeft,
-			style:    makeColors({
-				foregroundColor,
-				backgroundColor,
-			}),
+			width:    text.length,
+			text,
+			style:    isInverted
+			          ? makeColors({
+					foregroundColor: background,
+					backgroundColor: foregroundColor ?? draw.getForegroundColor(),
+				})
+			          : makeColors({
+					foregroundColor,
+					backgroundColor: background,
+				}),
 		})
 			.with('clipRect', clipRect)
 			.done());
+	};
 
+	const top    = border.top ?? border.horizontal;
+	const bottom = border.bottom ?? border.horizontal;
+	const left   = border.left ?? border.vertical;
+	const right  = border.right ?? border.vertical;
+	const rightX  = rect.x + rect.width - 1;
+	const bottomY = rect.y + rect.height - 1;
+	const middle = Math.max(0, rect.width - 2);
+
+	if (rect.width === 1 && rect.height === 1) {
+		drawPart('topLeft', rect.x, rect.y, border.topLeft);
 		return;
 	}
+
+	if (rect.width === 1) {
+		for (let y = rect.y; y <= bottomY; y += 1) {
+			drawPart('left', rect.x, y, left);
+		}
+		return;
+	}
+
+	drawPart('topLeft', rect.x, rect.y, border.topLeft);
+	drawPart('top', rect.x + 1, rect.y, repeat(top, middle));
+	drawPart('topRight', rightX, rect.y, border.topRight);
 
 	if (rect.height === 1) {
-		const middleWidth = Math.max(0, rect.width - 2);
-		const top         = rect.width === 1 ? border.topLeft : border.topLeft + repeat(border.horizontal, middleWidth) + border.topRight;
-
-		drawTextLine(draw, createOptions<DrawTextLineOptions>({
-			position: {
-				x: rect.x,
-				y: rect.y,
-			},
-			width:    rect.width,
-			text:     top,
-			style:    makeColors({
-				foregroundColor,
-				backgroundColor,
-			}),
-		})
-			.with('clipRect', clipRect)
-			.done());
-
 		return;
 	}
 
-	const top = rect.width === 1 ? border.vertical : border.topLeft + repeat(border.horizontal, Math.max(0, rect.width - 2)) + border.topRight;
-
-	const bottom = rect.width === 1 ? border.vertical : border.bottomLeft + repeat(border.horizontal, Math.max(0, rect.width - 2)) + border.bottomRight;
-
-	drawTextLine(draw, createOptions<DrawTextLineOptions>({
-		position: {
-			x: rect.x,
-			y: rect.y,
-		},
-		width:    rect.width,
-		text:     top,
-		style:    makeColors({
-			foregroundColor,
-			backgroundColor,
-		}),
-	})
-		.with('clipRect', clipRect)
-		.done());
-
-	drawTextLine(draw, createOptions<DrawTextLineOptions>({
-		position: {
-			x: rect.x,
-			y: rect.y + rect.height - 1,
-		},
-		width:    rect.width,
-		text:     bottom,
-		style:    makeColors({
-			foregroundColor,
-			backgroundColor,
-		}),
-	})
-		.with('clipRect', clipRect)
-		.done());
-
-	for (let row = 1; row < rect.height - 1; row += 1) {
-		if (rect.width === 1) {
-			drawTextLine(draw, createOptions<DrawTextLineOptions>({
-				position: {
-					x: rect.x,
-					y: rect.y + row,
-				},
-				width:    1,
-				text:     border.vertical,
-				style:    makeColors({
-					foregroundColor,
-					backgroundColor,
-				}),
-			})
-				.with('clipRect', clipRect)
-				.done());
-
-			continue;
-		}
-
-		drawTextLine(draw, createOptions<DrawTextLineOptions>({
-			position: {
-				x: rect.x,
-				y: rect.y + row,
-			},
-			width:    1,
-			text:     border.vertical,
-			style:    makeColors({
-				foregroundColor,
-				backgroundColor,
-			}),
-		})
-			.with('clipRect', clipRect)
-			.done());
-
-		drawTextLine(draw, createOptions<DrawTextLineOptions>({
-			position: {
-				x: rect.x + rect.width - 1,
-				y: rect.y + row,
-			},
-			width:    1,
-			text:     border.vertical,
-			style:    makeColors({
-				foregroundColor,
-				backgroundColor,
-			}),
-		})
-			.with('clipRect', clipRect)
-			.done());
+	for (let y = rect.y + 1; y < bottomY; y += 1) {
+		drawPart('left', rect.x, y, left);
+		drawPart('right', rightX, y, right);
 	}
+
+	drawPart('bottomLeft', rect.x, bottomY, border.bottomLeft);
+	drawPart('bottom', rect.x + 1, bottomY, repeat(bottom, middle));
+	drawPart('bottomRight', rightX, bottomY, border.bottomRight);
 }
 
 export function drawBox(draw: UIDrawSurface, options: DrawBoxOptions): Rect {

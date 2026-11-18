@@ -1,4 +1,4 @@
-import type {Color, ColorStyle, MaybeProps, Theme, Tone} from '@modules/ui/types';
+import type {Color, ColorStyle, MaybeProps, TextStyle, Theme, Tone} from '@modules/ui/types';
 import {createOptions}                                   from '@utils/helpers';
 
 export function resolveToneColors(theme: Theme, tone?: Tone): ColorStyle {
@@ -37,7 +37,12 @@ export function resolveToneColors(theme: Theme, tone?: Tone): ColorStyle {
 	}
 }
 
-export function makeToneColorOverride(tone: Tone | undefined, theme: Theme, foregroundColor?: Color, backgroundColor?: Color): Partial<ColorStyle> {
+export function makeToneColorOverride(
+	tone: Tone | undefined,
+	theme: Theme,
+	foregroundColor?: Color,
+	backgroundColor?: Color,
+): Partial<ColorStyle> {
 	const toneColors = resolveToneColors(theme, tone);
 
 	return makeColors({
@@ -50,6 +55,17 @@ export function makeColors(style: MaybeProps<ColorStyle>): Partial<ColorStyle> {
 	return createOptions<ColorStyle>({})
 		.with('backgroundColor', style.backgroundColor)
 		.with('foregroundColor', style.foregroundColor)
+		.done();
+}
+
+/**
+ * Text style whose colors follow the component box: props colors first, then the theme text style,
+ * then the resolved box colors. Without this, text is drawn with the terminal's current colors.
+ */
+export function inheritTextColors(text: TextStyle | undefined, box: Partial<ColorStyle>, props: MaybeProps<ColorStyle>): TextStyle {
+	return createOptions<TextStyle>({...(text ?? {})})
+		.with('foregroundColor', props.foregroundColor ?? text?.foregroundColor ?? box.foregroundColor)
+		.with('backgroundColor', props.backgroundColor ?? text?.backgroundColor ?? box.backgroundColor)
 		.done();
 }
 

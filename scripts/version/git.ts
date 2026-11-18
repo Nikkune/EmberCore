@@ -65,6 +65,41 @@ export function getTrackedFiles(cwd = process.cwd()): string[] {
 	return normalizeLines(output);
 }
 
+/**
+ * Commit the bump compares against: $BUMP_BASE_REF (in CI, the commit before the push, so every
+ * pushed commit is covered), or HEAD~1. An all-zero SHA (new branch) or unknown ref falls back to HEAD~1.
+ */
+export function resolveBaseRef(cwd = process.cwd()): string {
+	const candidate = process.env['BUMP_BASE_REF'];
+
+	if (candidate && !/^0+$/.test(candidate)) {
+		try {
+			execFileSync('git', ['rev-parse', '--verify', '--quiet', `${candidate}^{commit}`], {
+				cwd,
+				stdio: 'ignore',
+			});
+			return candidate;
+		} catch {
+			// unknown ref (e.g. force push): fall back below
+		}
+	}
+
+	return 'HEAD~1';
+}
+
+/** Content of a file at a given ref, or undefined if it did not exist there. */
+export function readFileAtRef(ref: string, filePath: string, cwd = process.cwd()): string | undefined {
+	try {
+		return execFileSync('git', ['show', `${ref}:${filePath.split('\\').join('/')}`], {
+			cwd,
+			encoding: 'utf-8',
+			stdio:    ['ignore', 'pipe', 'ignore'],
+		});
+	} catch {
+		return undefined;
+	}
+}
+
 export function getChangedFilesSafe(options: GitChangedFilesOptions = {}): string[] {
 	try {
 		return getChangedFiles(options);

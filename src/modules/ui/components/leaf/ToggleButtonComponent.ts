@@ -1,4 +1,7 @@
-import {drawBox, type DrawBoxOptions, drawText, type DrawTextOptions, makeToneColorOverride, normalizeInsets, PressableComponent, resolveTextLines, type ResolveTextLinesOptions, type UIDrawSurface} from '@modules/ui';
+import {PressableComponent} from '@modules/ui/core/components/pressableComponent';
+import {drawBox, type DrawBoxOptions, drawText, type DrawTextOptions, normalizeInsets, resolveTextLines, type ResolveTextLinesOptions} from '@modules/ui/render/renderHelpers';
+import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
+import {inheritTextColors, makeToneColorOverride} from '@modules/ui/theme/tone';
 import type {ButtonStyle, ComponentDependencies, LayoutConstraints, MeasuredSize, RenderContext, ToggleButtonProps, UIContext}                                                                        from '@modules/ui/types';
 import {createOptions}                                                                                                                                                                                from '@utils/helpers';
 
@@ -43,7 +46,11 @@ export class ToggleButtonComponent extends PressableComponent<'button', ToggleBu
 		const contentWidth  = lines.reduce((max, line) => Math.max(max, line.text.length), 0);
 		const contentHeight = Math.max(1, lines.length);
 
-		return this.createMeasuredSize(contentWidth + padding.left + padding.right + border, contentHeight + padding.top + padding.bottom + border, constraints);
+		return this.createMeasuredSize(
+			contentWidth + padding.left + padding.right + border,
+			contentHeight + padding.top + padding.bottom + border,
+			constraints,
+		);
 	}
 
 	public override render(context: RenderContext<UIDrawSurface>): void {
@@ -85,20 +92,30 @@ export class ToggleButtonComponent extends PressableComponent<'button', ToggleBu
 		return this.getStyle(context, (themeStyle) => {
 			const colors = themeStyle.colors;
 
-			const foreground = this.disabled ? colors?.disabled : this._pressed ? colors?.pressed ?? colors?.active ?? colors?.selected : this.focused ? colors?.active ?? colors?.selected : colors?.default;
+			// State colors are the button background; the text keeps its own color.
+			const stateBackground = this.disabled
+				? colors?.disabled
+				: this._pressed
+					? colors?.pressed ?? colors?.active ?? colors?.selected
+					: this.focused
+						? colors?.active ?? colors?.selected
+						: colors?.default;
 
-			const background = this.disabled ? colors?.disabled : this._pressed ? colors?.pressed ?? colors?.active ?? colors?.selected : this.focused ? colors?.active ?? colors?.selected : colors?.default;
-
-			const tone = makeToneColorOverride(undefined, context.theme, this.props.foregroundColor ?? foreground, this.props.backgroundColor ?? background);
+			const tone = makeToneColorOverride(
+				undefined,
+				context.theme,
+				this.props.foregroundColor ?? themeStyle.foregroundColor,
+				this.props.backgroundColor ?? stateBackground ?? themeStyle.backgroundColor,
+			);
 
 			return {
 				...themeStyle, ...tone,
-				padding: themeStyle.padding ?? {
+				padding: this.props.padding ?? themeStyle.padding ?? {
 					left:  1,
 					right: 1,
 				},
 				text:    {
-					...themeStyle.text,
+					...inheritTextColors(themeStyle.text, tone, this.props),
 					alignment: themeStyle.text?.alignment ?? 'center',
 					wrap:      themeStyle.text?.wrap ?? 'none',
 					ellipsis:  themeStyle.text?.ellipsis ?? true,

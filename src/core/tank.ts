@@ -1,4 +1,5 @@
 import {createOptions} from '@utils/helpers';
+
 import {TankError}     from './errors';
 import {Peripheral}    from './peripheral';
 
@@ -15,16 +16,17 @@ export interface FluidTank {
 	displayName?: string;
 }
 
-function mapToFluidTank(raw: LuaMap<AnyNotNil, any> | undefined): FluidTank | undefined {
+// An empty tank (nil in tanks()) becomes an empty FluidTank: a Lua array cannot hold nil values.
+function mapToFluidTank(raw: LuaMap<AnyNotNil, unknown> | undefined): FluidTank {
 	if (!raw) {
-		return undefined;
+		return {};
 	}
 
 	return createOptions<FluidTank>({})
-		.with('name', raw.get('name'))
-		.with('amount', raw.get('amount'))
-		.with('capacity', raw.get('capacity'))
-		.with('displayName', raw.get('displayName'))
+		.with('name', raw.get('name') as string | undefined)
+		.with('amount', raw.get('amount') as number | undefined)
+		.with('capacity', raw.get('capacity') as number | undefined)
+		.with('displayName', raw.get('displayName') as string | undefined)
 		.done();
 }
 
@@ -37,12 +39,19 @@ export class Tank {
 		return new Tank(name, peripheral);
 	}
 
-	public list(): (FluidTank | undefined)[] {
-		const rawTanks                          = this.peripheralRef.tanks();
-		const result: (FluidTank | undefined)[] = [];
+	public list(): FluidTank[] {
+		// tanks() may contain holes (an empty tank can be nil): a for...of (ipairs) would stop at the
+		// first one. Walk every index up to the highest one instead, keeping slot numbers aligned.
+		const rawTanks                          = this.peripheralRef.tanks() as unknown as LuaTable<number, LuaMap<AnyNotNil, unknown>>;
+		const result: FluidTank[]               = [];
+		let count                               = 0;
 
-		for (const raw of rawTanks) {
-			result.push(mapToFluidTank(raw));
+		for (const [index] of pairs(rawTanks)) {
+			if (index > count) count = index;
+		}
+
+		for (let index = 1; index <= count; index++) {
+			result.push(mapToFluidTank(rawTanks.get(index)));
 		}
 
 		return result;

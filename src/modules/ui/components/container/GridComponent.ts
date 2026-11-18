@@ -1,4 +1,6 @@
-import {BaseContainerComponent, drawBox, type DrawBoxOptions, getInnerRect, normalizeInsets, type UIDrawSurface}                        from '@modules/ui';
+import {InteractiveContainerComponent} from '@modules/ui/core/components/interactiveContainerComponent';
+import {drawBox, type DrawBoxOptions, getInnerRect, normalizeInsets} from '@modules/ui/render/renderHelpers';
+import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
 import type {ComponentDependencies, GridProps, GridStyle, LayoutConstraints, MeasuredSize, Rect, RenderContext, UIComponent, UIContext} from '@modules/ui/types';
 import {createFilledArray}                                                                                                              from '@modules/ui/utils/arrays';
 import {createOptions}                                                                                                                  from '@utils/helpers';
@@ -8,7 +10,7 @@ interface GridPlacement<TChild extends UIComponent<UIDrawSurface>> {
 	rect: Rect;
 }
 
-export class GridComponent<TChild extends UIComponent<UIDrawSurface> = UIComponent<UIDrawSurface>> extends BaseContainerComponent<'grid', GridProps, UIDrawSurface, GridStyle, TChild> {
+export class GridComponent<TChild extends UIComponent<UIDrawSurface> = UIComponent<UIDrawSurface>> extends InteractiveContainerComponent<'grid', GridProps, UIDrawSurface, GridStyle, TChild> {
 	public constructor(props: GridProps, dependencies: ComponentDependencies = {}, children: TChild[] = []) {
 		super('grid', props, dependencies, children);
 	}
@@ -47,7 +49,11 @@ export class GridComponent<TChild extends UIComponent<UIDrawSurface> = UICompone
 		const borderX = style.border?.enabled ? 2 : 0;
 		const borderY = style.border?.enabled ? 2 : 0;
 
-		return this.createMeasuredSize(this.getRequestedWidth(contentWidth + padding.left + padding.right + borderX), this.getRequestedHeight(contentHeight + padding.top + padding.bottom + borderY), constraints);
+		return this.createMeasuredSize(
+			this.getRequestedWidth(contentWidth + padding.left + padding.right + borderX),
+			this.getRequestedHeight(contentHeight + padding.top + padding.bottom + borderY),
+			constraints,
+		);
 	}
 
 	public override layout(rect: {
@@ -84,10 +90,10 @@ export class GridComponent<TChild extends UIComponent<UIDrawSurface> = UICompone
 	}
 
 	protected override getResolvedStyle(context: UIContext | RenderContext<UIDrawSurface>): Partial<GridStyle> {
-		return this.getStyle(context, (themeStyle) => createOptions<GridStyle>(themeStyle)
+		return this.getStyle(context, (themeStyle) => createOptions<GridStyle>({...themeStyle})
 			.with('foregroundColor', this.props.foregroundColor ?? themeStyle.foregroundColor ?? context.theme.palette.text)
 			.with('backgroundColor', this.props.backgroundColor ?? themeStyle.backgroundColor ?? context.theme.palette.surface)
-			.with('padding', themeStyle.padding ?? 0)
+			.with('padding', this.props.padding ?? themeStyle.padding ?? 0)
 			.done());
 	}
 
@@ -143,7 +149,7 @@ export class GridComponent<TChild extends UIComponent<UIDrawSurface> = UICompone
 			const row         = Math.floor(index / columns);
 			const columnWidth = columnWidths[column] ?? 0;
 
-			const measured = child.measure({
+			const measured = this.measureChild(child, {
 				minWidth:  0,
 				maxWidth:  columnWidth,
 				minHeight: 0,

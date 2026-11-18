@@ -1,10 +1,16 @@
-import {drawBox, type DrawBoxOptions, drawText, type DrawTextOptions, normalizeInsets, PressableComponent, resolveTextLines, type ResolveTextLinesOptions, type UIDrawSurface} from '@modules/ui';
+import {PressableComponent} from '@modules/ui/core/components/pressableComponent';
+import {drawBox, type DrawBoxOptions, drawText, type DrawTextOptions, getInnerRect, normalizeInsets, resolveTextLines, type ResolveTextLinesOptions} from '@modules/ui/render/renderHelpers';
+import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
 import type {ComponentDependencies, LayoutConstraints, MeasuredSize, PaginationProps, PaginationStyle, RenderContext, TextStyle, UIContext, UIEvent}                           from '@modules/ui/types';
 import {createOptions}                                                                                                                                                         from '@utils/helpers';
 
 export class PaginationComponent extends PressableComponent<'pagination', PaginationProps, UIDrawSurface, PaginationStyle> {
+	/** Displayed page: starts at props.page, then follows clicks and setPage(). */
+	private currentPage: number;
+
 	public constructor(props: PaginationProps, dependencies: ComponentDependencies = {}) {
 		super('pagination', props, dependencies);
+		this.currentPage = props.page;
 	}
 
 	public get totalPages(): number {
@@ -16,7 +22,17 @@ export class PaginationComponent extends PressableComponent<'pagination', Pagina
 	}
 
 	public get page(): number {
-		return this.clamp(this.props.page, 1, this.totalPages);
+		return this.clamp(this.currentPage, 1, this.totalPages);
+	}
+
+	/** Sets the displayed page without calling onPageChange (e.g. when the data source changes). */
+	public setPage(page: number): void {
+		const nextPage = this.clamp(page, 1, this.totalPages);
+
+		if (nextPage === this.page) return;
+
+		this.currentPage = nextPage;
+		this.invalidate(this.createStateInvalidation());
 	}
 
 	public override measure(constraints: LayoutConstraints, context: UIContext): MeasuredSize {
@@ -37,7 +53,11 @@ export class PaginationComponent extends PressableComponent<'pagination', Pagina
 		const contentWidth  = lines.reduce((max, line) => Math.max(max, line.text.length), 0);
 		const contentHeight = Math.max(1, lines.length);
 
-		return this.createMeasuredSize(this.props.width ?? this.props.minWidth ?? (contentWidth + padding.left + padding.right + border), this.props.height ?? this.props.minHeight ?? (contentHeight + padding.top + padding.bottom + border), constraints);
+		return this.createMeasuredSize(
+			this.props.width ?? this.props.minWidth ?? (contentWidth + padding.left + padding.right + border),
+			this.props.height ?? this.props.minHeight ?? (contentHeight + padding.top + padding.bottom + border),
+			constraints,
+		);
 	}
 
 	public override render(context: RenderContext<UIDrawSurface>): void {
@@ -76,7 +96,7 @@ export class PaginationComponent extends PressableComponent<'pagination', Pagina
 
 				this.focus();
 
-				const targetPage = this.resolveTargetPageFromX(event.x);
+				const targetPage = this.resolveTargetPageFromX(event.x, context);
 
 				if (targetPage === this.page) {
 					return null;
@@ -100,14 +120,14 @@ export class PaginationComponent extends PressableComponent<'pagination', Pagina
 	}
 
 	protected override getResolvedStyle(context: UIContext | RenderContext<UIDrawSurface>): Partial<PaginationStyle> {
-		return this.getStyle(context, (themeStyle) => createOptions<PaginationStyle>(themeStyle)
-			.with('padding', themeStyle.padding ?? 0)
-			.with('text', createOptions<TextStyle>(themeStyle.text ?? {})
+		return this.getStyle(context, (themeStyle) => createOptions<PaginationStyle>({...themeStyle})
+			.with('padding', this.props.padding ?? themeStyle.padding ?? 0)
+			.with('text', createOptions<TextStyle>({...(themeStyle.text ?? {})})
 				.with('alignment', themeStyle.text?.alignment ?? 'center')
 				.with('wrap', themeStyle.text?.wrap ?? 'none')
 				.with('ellipsis', themeStyle.text?.ellipsis ?? true)
-				.with('foregroundColor', themeStyle.text?.foregroundColor ?? this.props.foregroundColor ?? context.theme.palette.text)
-				.with('backgroundColor', themeStyle.text?.backgroundColor ?? this.props.backgroundColor ?? themeStyle.backgroundColor)
+				.with('foregroundColor', this.props.foregroundColor ?? themeStyle.text?.foregroundColor ?? context.theme.palette.text)
+				.with('backgroundColor', this.props.backgroundColor ?? themeStyle.text?.backgroundColor ?? themeStyle.backgroundColor)
 				.done())
 			.with('showFirstLast', themeStyle.showFirstLast ?? true)
 			.with('showPrevNext', themeStyle.showPrevNext ?? true)
@@ -121,6 +141,7 @@ export class PaginationComponent extends PressableComponent<'pagination', Pagina
 			return false;
 		}
 
+		this.currentPage = nextPage;
 		this.props.onPageChange?.(nextPage);
 		return true;
 	}
@@ -149,16 +170,36 @@ export class PaginationComponent extends PressableComponent<'pagination', Pagina
 		return parts.join(' ');
 	}
 
-	private resolveTargetPageFromX(x: number): number {
-		const relativeX = x - this.rect.x;
-		const width     = Math.max(1, this.rect.width);
+	/** Maps a click to the page of the control under the pointer: <<, <, > or >>. */
+	private resolveTargetPageFromX(x: number, context: UIContext): number {
+		const style     = this.getResolvedStyle(context);
+		const innerRect = getInnerRect(this.rect, style);
+		const text      = this.getDisplayText(style);
+		const alignment = style.text?.alignment ?? 'center';
 
-		if (relativeX < Math.floor(width * 0.25)) {
-			return Math.max(1, this.page - 1);
-		}
+		const free   = Math.max(0, innerRect.width - text.length);
+		const offset = alignment === 'right' ? free : alignment === 'center' ? Math.floor(free / 2) : 0;
+		const index  = x - innerRect.x - offset;
 
-		if (relativeX >= Math.ceil(width * 0.75)) {
-			return Math.min(this.totalPages, this.page + 1);
+		let position = 0;
+
+		for (const token of text.split(' ')) {
+			if (index >= position && index < position + token.length) {
+				switch (token) {
+					case '<<':
+						return 1;
+					case '<':
+						return this.page - 1;
+					case '>':
+						return this.page + 1;
+					case '>>':
+						return this.totalPages;
+					default:
+						return this.page;
+				}
+			}
+
+			position += token.length + 1;
 		}
 
 		return this.page;

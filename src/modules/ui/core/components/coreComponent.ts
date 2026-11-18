@@ -1,4 +1,5 @@
-import type {BaseProps, Color, ComponentDependencies, ComponentKind, InvalidationRequest, LayoutConstraints, MeasuredSize, Point, Rect, RenderContext, ThemeComponentKind, UIComponent, UIContext, UIInvalidator} from '@modules/ui/types';
+import {normalizeInsets} from '@modules/ui/render/renderHelpers';
+import type {BaseProps, Color, ComponentDependencies, ComponentKind, Insets, InvalidationRequest, LayoutConstraints, MarginProps, MeasuredSize, Point, Rect, RenderContext, ThemeComponentKind, UIComponent, UIContext, UIInvalidator} from '@modules/ui/types';
 
 let componentIdCounter = 0;
 
@@ -7,7 +8,12 @@ function createComponentId(kind: ComponentKind): string {
 	return `ui_${kind}_${componentIdCounter}`;
 }
 
-export abstract class BaseComponent<TKind extends ComponentKind, TProps extends BaseProps = BaseProps, TDraw = unknown, TStyle extends object = never> implements UIComponent<TDraw> {
+export abstract class BaseComponent<
+	TKind extends ComponentKind,
+	TProps extends BaseProps = BaseProps,
+	TDraw = unknown,
+	TStyle extends object = never,
+> implements UIComponent<TDraw> {
 	public readonly id: string;
 	public readonly kind: TKind;
 
@@ -36,6 +42,10 @@ export abstract class BaseComponent<TKind extends ComponentKind, TProps extends 
 
 	public get disabled(): boolean {
 		return this.props.disabled ?? false;
+	}
+
+	public get margin(): Insets {
+		return normalizeInsets((this.props as MarginProps).margin);
 	}
 
 	public layout(rect: Rect, _context: UIContext): void {
@@ -113,7 +123,10 @@ export abstract class BaseComponent<TKind extends ComponentKind, TProps extends 
 		return (components[kind] ?? {}) as Partial<TStyle>;
 	}
 
-	protected getStyle(context: UIContext | RenderContext<TDraw>, override?: Partial<TStyle> | ((themeStyle: Partial<TStyle>) => Partial<TStyle>)): Partial<TStyle> {
+	protected getStyle(
+		context: UIContext | RenderContext<TDraw>,
+		override?: Partial<TStyle> | ((themeStyle: Partial<TStyle>) => Partial<TStyle>),
+	): Partial<TStyle> {
 		const themeStyle = this.getThemeStyle(context);
 
 		if (!override) {

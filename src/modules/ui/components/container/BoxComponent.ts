@@ -1,8 +1,10 @@
-import {BaseContainerComponent, drawBox, type DrawBoxOptions, drawText, type DrawTextOptions, getInnerRect, normalizeInsets, type UIDrawSurface} from '@modules/ui';
+import {InteractiveContainerComponent} from '@modules/ui/core/components/interactiveContainerComponent';
+import {drawBox, type DrawBoxOptions, drawText, type DrawTextOptions, getInnerRect, normalizeInsets} from '@modules/ui/render/renderHelpers';
+import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
 import type {BoxProps, BoxStyle, ComponentDependencies, LayoutConstraints, MeasuredSize, RenderContext, TextStyle, UIComponent, UIContext}       from '@modules/ui/types';
 import {createOptions}                                                                                                                       from '@utils/helpers';
 
-export class BoxComponent<TChild extends UIComponent<UIDrawSurface> = UIComponent<UIDrawSurface>> extends BaseContainerComponent<'box', BoxProps, UIDrawSurface, BoxStyle, TChild> {
+export class BoxComponent<TChild extends UIComponent<UIDrawSurface> = UIComponent<UIDrawSurface>> extends InteractiveContainerComponent<'box', BoxProps, UIDrawSurface, BoxStyle, TChild> {
 	public constructor(props: BoxProps, dependencies: ComponentDependencies = {}, children: TChild[] = []) {
 		super('box', props, dependencies, children);
 	}
@@ -68,10 +70,10 @@ export class BoxComponent<TChild extends UIComponent<UIDrawSurface> = UIComponen
 	}
 
 	protected override getResolvedStyle(context: UIContext | RenderContext<UIDrawSurface>): Partial<BoxStyle> {
-		return this.getStyle(context, (themeStyle) => createOptions<BoxStyle>(themeStyle)
+		return this.getStyle(context, (themeStyle) => createOptions<BoxStyle>({...themeStyle})
 			.with('foregroundColor', this.props.foregroundColor ?? themeStyle.foregroundColor ?? context.theme.palette.text)
 			.with('backgroundColor', this.props.backgroundColor ?? themeStyle.backgroundColor ?? context.theme.palette.surface)
-			.with('padding', themeStyle.padding ?? 0)
+			.with('padding', this.props.padding ?? themeStyle.padding ?? 0)
 			.done());
 	}
 

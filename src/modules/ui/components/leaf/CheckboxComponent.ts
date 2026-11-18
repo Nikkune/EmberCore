@@ -1,4 +1,7 @@
-import {drawBox, type DrawBoxOptions, drawText, type DrawTextOptions, makeToneColorOverride, normalizeInsets, PressableComponent, resolveTextLines, type ResolveTextLinesOptions, type UIDrawSurface} from '@modules/ui';
+import {PressableComponent} from '@modules/ui/core/components/pressableComponent';
+import {drawBox, type DrawBoxOptions, drawText, type DrawTextOptions, normalizeInsets, resolveTextLines, type ResolveTextLinesOptions} from '@modules/ui/render/renderHelpers';
+import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
+import {inheritTextColors, makeToneColorOverride} from '@modules/ui/theme/tone';
 import type {CheckboxProps, CheckboxStyle, ComponentDependencies, LayoutConstraints, MeasuredSize, RenderContext, TextStyle, UIContext}                                                               from '@modules/ui/types';
 import {createOptions}                                                                                                                                                                                from '@utils/helpers';
 
@@ -32,7 +35,8 @@ export class CheckboxComponent extends PressableComponent<'checkbox', CheckboxPr
 		const border         = style.border?.enabled ? 2 : 0;
 		const marker         = this.getMarker(style);
 		const contentPrefix  = `${marker} `;
-		const availableWidth = Math.max(0, (this.props.width ?? this.props.minWidth ?? constraints.maxWidth) - border - padding.left - padding.right);
+		const requestedWidth = this.props.width ?? this.props.minWidth ?? constraints.maxWidth;
+		const availableWidth = Math.max(0, requestedWidth - border - padding.left - padding.right);
 
 		const textWidth = Math.max(0, availableWidth - contentPrefix.length);
 
@@ -50,7 +54,11 @@ export class CheckboxComponent extends PressableComponent<'checkbox', CheckboxPr
 
 		const contentHeight = Math.max(1, lines.length);
 
-		return this.createMeasuredSize(contentWidth + padding.left + padding.right + border, contentHeight + padding.top + padding.bottom + border, constraints);
+		return this.createMeasuredSize(
+			contentWidth + padding.left + padding.right + border,
+			contentHeight + padding.top + padding.bottom + border,
+			constraints,
+		);
 	}
 
 	public override render(context: RenderContext<UIDrawSurface>): void {
@@ -88,7 +96,7 @@ export class CheckboxComponent extends PressableComponent<'checkbox', CheckboxPr
 			fillBackground: style.text?.backgroundColor !== undefined,
 		})
 			.with('style', createOptions<TextStyle>({
-				...style.text,
+				...(style.text ?? {}),
 			})
 				.with('foregroundColor', style.checkColor ?? style.text?.foregroundColor ?? context.theme.palette.text)
 				.with('wrap', 'none')
@@ -126,18 +134,23 @@ export class CheckboxComponent extends PressableComponent<'checkbox', CheckboxPr
 
 	protected override getResolvedStyle(context: UIContext | RenderContext<UIDrawSurface>): Partial<CheckboxStyle> {
 		return this.getStyle(context, (themeStyle) => {
-			const tone = makeToneColorOverride(undefined, context.theme, this.props.foregroundColor ?? themeStyle.foregroundColor, this.props.backgroundColor ?? themeStyle.backgroundColor);
+			const tone = makeToneColorOverride(
+				undefined,
+				context.theme,
+				this.props.foregroundColor ?? themeStyle.foregroundColor,
+				this.props.backgroundColor ?? themeStyle.backgroundColor,
+			);
 
 			return {
 				...themeStyle, ...tone,
 
-				padding: themeStyle.padding ?? {
+				padding: this.props.padding ?? themeStyle.padding ?? {
 					left:  1,
 					right: 1,
 				},
 
 				text: {
-					...themeStyle.text,
+					...inheritTextColors(themeStyle.text, tone, this.props),
 					alignment: themeStyle.text?.alignment ?? 'left',
 					wrap:      themeStyle.text?.wrap ?? 'none',
 					ellipsis:  themeStyle.text?.ellipsis ?? true,

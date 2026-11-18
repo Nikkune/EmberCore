@@ -1,4 +1,6 @@
-import {BaseComponent, drawText, type DrawTextOptions, type UIDrawSurface}                                                                                  from '@modules/ui';
+import {BaseComponent} from '@modules/ui/core/components/coreComponent';
+import {drawText, type DrawTextOptions} from '@modules/ui/render/renderHelpers';
+import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
 import type {ComponentDependencies, LayoutConstraints, MeasuredSize, RenderContext, StatusBarProps, StatusBarSegment, StatusBarStyle, TextStyle, UIContext} from '@modules/ui/types';
 import {createOptions}                                                                                                                                      from '@utils/helpers';
 
@@ -54,15 +56,15 @@ export class StatusBarComponent extends BaseComponent<'status_bar', StatusBarPro
 	}
 
 	protected override getResolvedStyle(context: UIContext | RenderContext<UIDrawSurface>): Partial<StatusBarStyle> {
-		return this.getStyle(context, (themeStyle) => createOptions<StatusBarStyle>(themeStyle)
+		return this.getStyle(context, (themeStyle) => createOptions<StatusBarStyle>({...themeStyle})
 			.with('foregroundColor', this.props.foregroundColor ?? themeStyle.foregroundColor ?? context.theme.palette.text)
 			.with('backgroundColor', this.props.backgroundColor ?? themeStyle.backgroundColor ?? context.theme.palette.surface)
-			.with('text', createOptions<TextStyle>(themeStyle.text ?? {})
+			.with('text', createOptions<TextStyle>({...(themeStyle.text ?? {})})
 				.with('alignment', themeStyle.text?.alignment ?? 'left')
 				.with('wrap', themeStyle.text?.wrap ?? 'none')
 				.with('ellipsis', themeStyle.text?.ellipsis ?? true)
-				.with('foregroundColor', themeStyle.text?.foregroundColor ?? this.props.foregroundColor ?? themeStyle.foregroundColor ?? context.theme.palette.text)
-				.with('backgroundColor', themeStyle.text?.backgroundColor ?? this.props.backgroundColor ?? themeStyle.backgroundColor ?? context.theme.palette.surface)
+				.with('foregroundColor', this.props.foregroundColor ?? themeStyle.text?.foregroundColor ?? themeStyle.foregroundColor ?? context.theme.palette.text)
+				.with('backgroundColor', this.props.backgroundColor ?? themeStyle.text?.backgroundColor ?? themeStyle.backgroundColor ?? context.theme.palette.surface)
 				.done())
 			.done());
 	}
@@ -126,7 +128,11 @@ export class StatusBarComponent extends BaseComponent<'status_bar', StatusBarPro
 		return resolved.filter((segment) => segment.width > 0);
 	}
 
-	private getSegmentStyle(segment: StatusBarSegment, style: Partial<StatusBarStyle>, context: UIContext | RenderContext<UIDrawSurface>): Partial<TextStyle> {
+	private getSegmentStyle(
+		segment: StatusBarSegment,
+		style: Partial<StatusBarStyle>,
+		context: UIContext | RenderContext<UIDrawSurface>,
+	): Partial<TextStyle> {
 		const alignment = segment.alignment === 'center' ? 'center' : segment.alignment === 'right' ? 'right' : 'left';
 
 		return createOptions<TextStyle>(style.text ?? {})

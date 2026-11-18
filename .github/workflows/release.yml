@@ -30,6 +30,19 @@ jobs:
 
       - name: Prepare release
         run: npm run prepare:release
+        env:
+          # Compare with the commit before the push: covers every pushed commit, and lets
+          # run-bump see versions changed by hand in them.
+          BUMP_BASE_REF: ${{ github.event.before }}
+
+      - name: Install Lua 5.1 (closest to CC:Tweaked's Cobalt VM)
+        run: sudo apt-get update && sudo apt-get install -y lua5.1
+
+      - name: Smoke test (blocks publishing a runtime that cannot load)
+        run: npm run test:smoke
+
+      - name: Behaviour tests (blocks publishing a broken runtime)
+        run: npm run test:behavior
 
       - name: Commit version bumps and manifests
         run: |

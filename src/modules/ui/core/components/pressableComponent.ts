@@ -1,7 +1,12 @@
-import {FocusableComponent}                                                                                                                                                  from '@modules/ui';
+import {FocusableComponent} from '@modules/ui/core/components/focusableComponent';
 import type {BaseProps, ComponentDependencies, ComponentKind, InvalidationRequest, LayoutConstraints, MeasuredSize, RenderContext, UIContext, UIEvent, UIPressableComponent} from '@modules/ui/types';
 
-export abstract class PressableComponent<TKind extends ComponentKind, TProps extends BaseProps = BaseProps, TDraw = unknown, TStyle extends object = never> extends FocusableComponent<TKind, TProps, TDraw, TStyle> implements UIPressableComponent<TDraw> {
+export abstract class PressableComponent<
+	TKind extends ComponentKind,
+	TProps extends BaseProps = BaseProps,
+	TDraw = unknown,
+	TStyle extends object = never,
+> extends FocusableComponent<TKind, TProps, TDraw, TStyle> implements UIPressableComponent<TDraw> {
 	protected constructor(kind: TKind, props: TProps, dependencies: ComponentDependencies = {}) {
 		super(kind, props, dependencies);
 	}

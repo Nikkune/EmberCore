@@ -1,7 +1,7 @@
 # 🔥 EmberCore
 
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)
-![Lua](https://img.shields.io/badge/Lua-5.2-2C2D72)
+![Lua](https://img.shields.io/badge/Lua-5.1-2C2D72)
 ![CC:Tweaked](https://img.shields.io/badge/CC:Tweaked-supported-orange)
 ![Status](https://img.shields.io/badge/status-WIP-ff6b2d)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -123,7 +123,7 @@ EmberCore is built around three core principles:
 
 * TypeScript
 * TypeScriptToLua
-* Lua 5.2
+* Lua 5.1 (CC:Tweaked's Cobalt VM)
 * ComputerCraft / CC:Tweaked
 
 ---

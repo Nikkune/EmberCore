@@ -1,4 +1,7 @@
-import {BaseComponent, drawBox, type DrawBoxOptions, drawText, type DrawTextOptions, makeToneColorOverride, normalizeInsets, resolveTextLines, type ResolveTextLinesOptions, type UIDrawSurface} from '@modules/ui';
+import {BaseComponent} from '@modules/ui/core/components/coreComponent';
+import {drawBox, type DrawBoxOptions, drawText, type DrawTextOptions, normalizeInsets, resolveTextLines, type ResolveTextLinesOptions} from '@modules/ui/render/renderHelpers';
+import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
+import {inheritTextColors, makeToneColorOverride} from '@modules/ui/theme/tone';
 import type {BadgeProps, BadgeStyle, ComponentDependencies, LayoutConstraints, MeasuredSize, RenderContext, UIContext}                                                                           from '@modules/ui/types';
 import {createOptions}                                                                                                                                                                           from '@utils/helpers';
 
@@ -25,7 +28,11 @@ export class BadgeComponent extends BaseComponent<'badge', BadgeProps, UIDrawSur
 		const contentWidth  = lines.reduce((max, l) => Math.max(max, l.text.length), 0);
 		const contentHeight = Math.max(1, lines.length);
 
-		return this.createMeasuredSize(contentWidth + padding.left + padding.right + border, contentHeight + padding.top + padding.bottom + border, constraints);
+		return this.createMeasuredSize(
+			contentWidth + padding.left + padding.right + border,
+			contentHeight + padding.top + padding.bottom + border,
+			constraints,
+		);
 	}
 
 	public override render(context: RenderContext<UIDrawSurface>) {
@@ -60,12 +67,12 @@ export class BadgeComponent extends BaseComponent<'badge', BadgeProps, UIDrawSur
 
 			return {
 				...themeStyle, ...tone,
-				padding: themeStyle.padding ?? {
+				padding: this.props.padding ?? themeStyle.padding ?? {
 					left:  1,
 					right: 1,
 				},
 				text:    {
-					...themeStyle.text,
+					...inheritTextColors(themeStyle.text, tone, this.props),
 					alignment: themeStyle.text?.alignment ?? 'center',
 					wrap: themeStyle.text?.wrap ?? 'none',
 					ellipsis: themeStyle.text?.ellipsis ?? true,

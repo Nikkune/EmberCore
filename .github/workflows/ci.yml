@@ -26,8 +26,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Lint
+        run: npm run lint
+
       - name: Build all
         run: npm run build:all
+
+      - name: Install Lua 5.1 (closest to CC:Tweaked's Cobalt VM)
+        run: sudo apt-get update && sudo apt-get install -y lua5.1
+
+      - name: Smoke test (simulated install + module loading)
+        run: npm run test:smoke
+
+      - name: Behaviour tests (fake CC:Tweaked environment)
+        run: npm run test:behavior
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v6
