@@ -1,9 +1,9 @@
 import {PressableComponent} from '@modules/ui/core/components/pressableComponent';
 import {drawBox, type DrawBoxOptions, drawText, type DrawTextOptions, normalizeInsets, resolveTextLines, type ResolveTextLinesOptions} from '@modules/ui/render/renderHelpers';
 import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
-import {makeToneColorOverride} from '@modules/ui/theme/tone';
+import {inheritTextColors, makeToneColorOverride} from '@modules/ui/theme/tone';
 import type {RadioGroup}                                                                                                                                                                              from '@modules/ui/components/leaf/RadioGroup';
-import type {ComponentDependencies, LayoutConstraints, MeasuredSize, RadioProps, RadioStyle, RenderContext, TextStyle, UIContext}                                                                     from '@modules/ui/types';
+import type {ComponentDependencies, InvalidationRequest, LayoutConstraints, MeasuredSize, RadioProps, RadioStyle, Rect, RenderContext, TextStyle, UIContext}                                                                     from '@modules/ui/types';
 import {createOptions}                                                                                                                                                                                from '@utils/helpers';
 
 export class RadioComponent<T = string> extends PressableComponent<'radio', RadioProps<T>, UIDrawSurface, RadioStyle> {
@@ -27,8 +27,32 @@ export class RadioComponent<T = string> extends PressableComponent<'radio', Radi
 
 				this._selected = selected;
 				this.invalidate(this.createStateInvalidation());
+				this.props.onSelect?.(selected);
 			});
 		}
+	}
+
+	protected override onPropsChanged(patch: Partial<RadioProps<T>>): void {
+		if (patch.selected !== undefined) this.setSelected(patch.selected);
+	}
+
+	public setLabel(label: string): void {
+		this.setProps({label} as Partial<RadioProps<T>>);
+	}
+
+	/**
+	 * In a group, selecting this radio also changes another one elsewhere on screen:
+	 * request a full redraw so the deselected radio is repainted too.
+	 */
+	protected override createStateInvalidation(rect?: Rect): InvalidationRequest {
+		if (this.radioGroup) {
+			return {
+				reason: 'state',
+				kind:   'full',
+			};
+		}
+
+		return super.createStateInvalidation(rect);
 	}
 
 	public override destroy(): void {
@@ -125,7 +149,7 @@ export class RadioComponent<T = string> extends PressableComponent<'radio', Radi
 			fillBackground: style.text?.backgroundColor !== undefined,
 		})
 			.with('style', createOptions<TextStyle>({
-				...style.text,
+				...(style.text ?? {}),
 			})
 				.with('wrap', 'none')
 				.with('ellipsis', false)
@@ -157,13 +181,8 @@ export class RadioComponent<T = string> extends PressableComponent<'radio', Radi
 
 	protected override onPress(_context: UIContext): boolean {
 		if (this.radioGroup) {
-			const changed = this.radioGroup.select(this.props.value);
-
-			if (changed) {
-				this.props.onSelect?.(true);
-			}
-
-			return changed;
+			// onSelect is called by the group subscription, for the newly selected and the deselected radio.
+			return this.radioGroup.select(this.props.value);
 		}
 
 		if (this._selected) {
@@ -184,12 +203,12 @@ export class RadioComponent<T = string> extends PressableComponent<'radio', Radi
 
 			return {
 				...themeStyle, ...tone,
-				padding: themeStyle.padding ?? {
+				padding: this.props.padding ?? themeStyle.padding ?? {
 					left:  1,
 					right: 1,
 				},
 				text:    {
-					...themeStyle.text,
+					...inheritTextColors(themeStyle.text, tone, this.props),
 					alignment: themeStyle.text?.alignment ?? 'left',
 					wrap:      themeStyle.text?.wrap ?? 'none',
 					ellipsis:  themeStyle.text?.ellipsis ?? true,

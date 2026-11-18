@@ -9,6 +9,16 @@ export class LogViewerComponent extends BaseComponent<'log_viewer', LogViewerPro
 		super('log_viewer', props, dependencies);
 	}
 
+	/** Appends an entry; with maxEntries, only the most recent ones are kept. */
+	public addEntry(entry: LogEntry, maxEntries?: number): void {
+		const entries = [...this.props.entries, entry];
+		this.setProps({entries: maxEntries !== undefined ? entries.slice(-maxEntries) : entries});
+	}
+
+	public clearEntries(): void {
+		this.setProps({entries: []});
+	}
+
 	public override measure(constraints: LayoutConstraints, _context: UIContext): MeasuredSize {
 		const width  = this.props.width ?? this.props.minWidth ?? constraints.maxWidth;
 		const height = this.props.height ?? this.props.minHeight ?? Math.min(Math.max(1, this.props.entries.length), constraints.maxHeight);
@@ -59,14 +69,14 @@ export class LogViewerComponent extends BaseComponent<'log_viewer', LogViewerPro
 	}
 
 	protected override getResolvedStyle(context: UIContext | RenderContext<UIDrawSurface>): Partial<LogViewerStyle> {
-		return this.getStyle(context, (themeStyle) => createOptions<LogViewerStyle>(themeStyle)
-			.with('padding', themeStyle.padding ?? 0)
-			.with('lineStyle', createOptions<TextStyle>(themeStyle.lineStyle ?? {})
+		return this.getStyle(context, (themeStyle) => createOptions<LogViewerStyle>({...themeStyle})
+			.with('padding', this.props.padding ?? themeStyle.padding ?? 0)
+			.with('lineStyle', createOptions<TextStyle>({...(themeStyle.lineStyle ?? {})})
 				.with('alignment', themeStyle.lineStyle?.alignment ?? 'left')
 				.with('wrap', themeStyle.lineStyle?.wrap ?? 'none')
 				.with('ellipsis', themeStyle.lineStyle?.ellipsis ?? true)
-				.with('foregroundColor', themeStyle.lineStyle?.foregroundColor ?? this.props.foregroundColor ?? context.theme.palette.text)
-				.with('backgroundColor', themeStyle.lineStyle?.backgroundColor ?? this.props.backgroundColor ?? themeStyle.backgroundColor)
+				.with('foregroundColor', this.props.foregroundColor ?? themeStyle.lineStyle?.foregroundColor ?? context.theme.palette.text)
+				.with('backgroundColor', this.props.backgroundColor ?? themeStyle.lineStyle?.backgroundColor ?? themeStyle.backgroundColor)
 				.done())
 			.with('showTimestamp', themeStyle.showTimestamp ?? true)
 			.with('autoScroll', themeStyle.autoScroll ?? true)
@@ -114,7 +124,7 @@ export class LogViewerComponent extends BaseComponent<'log_viewer', LogViewerPro
 		const levelForeground = style.levelColors?.[entry.level];
 
 		return {
-			...style.lineStyle,
+			...(style.lineStyle ?? {}),
 			foregroundColor: levelForeground ?? style.lineStyle?.foregroundColor ?? context.theme.palette.text,
 		};
 	}

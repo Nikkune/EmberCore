@@ -1,13 +1,17 @@
 import {PressableComponent} from '@modules/ui/core/components/pressableComponent';
 import {drawBox, type DrawBoxOptions, drawText, type DrawTextOptions, normalizeInsets, resolveTextLines, type ResolveTextLinesOptions} from '@modules/ui/render/renderHelpers';
 import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
-import {makeToneColorOverride} from '@modules/ui/theme/tone';
+import {inheritTextColors, makeToneColorOverride} from '@modules/ui/theme/tone';
 import type {ButtonProps, ButtonStyle, ComponentDependencies, LayoutConstraints, MeasuredSize, RenderContext, UIContext}                                                                              from '@modules/ui/types';
 import {createOptions} from '@utils/helpers';
 
 export class ButtonComponent extends PressableComponent<'button', ButtonProps, UIDrawSurface, ButtonStyle> {
 	public constructor(props: ButtonProps, dependencies: ComponentDependencies = {}) {
 		super('button', props, dependencies);
+	}
+
+	public setLabel(label: string): void {
+		this.setProps({label} as Partial<ButtonProps>);
 	}
 
 	public override measure(constraints: LayoutConstraints, context: UIContext): MeasuredSize {
@@ -71,40 +75,34 @@ export class ButtonComponent extends PressableComponent<'button', ButtonProps, U
 	protected override getResolvedStyle(context: UIContext | RenderContext<UIDrawSurface>): Partial<ButtonStyle> {
 		return this.getStyle(context, (themeStyle) => {
 			const isDisabled = this.disabled;
-			const isFocused  = this.focused;
-
 			const colors = themeStyle.colors;
 
-			const foreground = isDisabled
-			                   ? colors?.disabled
-			                   : isFocused
-			                     ? colors?.active ?? colors?.selected
-			                     : colors?.default;
-
-			const background = isDisabled
-			                   ? colors?.disabled
-			                   : isFocused
-			                     ? colors?.active ?? colors?.selected
-			                     : colors?.default;
+			// State colors are the button background; the text keeps its own color.
+			// A click flashes the active color; focus alone does not color the button.
+			const stateBackground = isDisabled
+			                        ? colors?.disabled
+			                        : this.flashing
+			                          ? colors?.active ?? colors?.selected ?? colors?.pressed
+			                          : colors?.default;
 
 			const tone = makeToneColorOverride(
 				undefined,
 				context.theme,
-				this.props.foregroundColor ?? foreground,
-				this.props.backgroundColor ?? background,
+				this.props.foregroundColor ?? themeStyle.foregroundColor,
+				this.props.backgroundColor ?? stateBackground ?? themeStyle.backgroundColor,
 			);
 
 			return {
 				...themeStyle,
 				...tone,
 
-				padding: themeStyle.padding ?? {
+				padding: this.props.padding ?? themeStyle.padding ?? {
 					left:  1,
 					right: 1,
 				},
 
 				text: {
-					...themeStyle.text,
+					...inheritTextColors(themeStyle.text, tone, this.props),
 					alignment: themeStyle.text?.alignment ?? 'center',
 					wrap:      themeStyle.text?.wrap ?? 'none',
 					ellipsis:  themeStyle.text?.ellipsis ?? true,

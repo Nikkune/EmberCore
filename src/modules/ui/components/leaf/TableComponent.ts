@@ -1,6 +1,7 @@
 import {BaseComponent} from '@modules/ui/core/components/coreComponent';
 import {drawBox, type DrawBoxOptions, drawHorizontalLine, drawText, type DrawTextOptions} from '@modules/ui/render/renderHelpers';
 import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
+import {getColumnRuleCharacter, getRuleCharacter} from '@modules/ui/theme/theme';
 import {makeColors} from '@modules/ui/theme/tone';
 import type {ColumnDefinition, ComponentDependencies, LayoutConstraints, MeasuredSize, RenderContext, TableProps, TableStyle, TextStyle, UIContext} from '@modules/ui/types';
 import {createOptions}                                                                                                                              from '@utils/helpers';
@@ -13,6 +14,10 @@ interface ResolvedColumn<T = Record<string, unknown>> {
 export class TableComponent<T = Record<string, unknown>> extends BaseComponent<'table', TableProps<T>, UIDrawSurface, TableStyle> {
 	public constructor(props: TableProps<T>, dependencies: ComponentDependencies = {}) {
 		super('table', props, dependencies);
+	}
+
+	public setRows(rows: T[]): void {
+		this.setProps({rows} as Partial<TableProps<T>>);
 	}
 
 	public override measure(constraints: LayoutConstraints, context: UIContext): MeasuredSize {
@@ -68,7 +73,7 @@ export class TableComponent<T = Record<string, unknown>> extends BaseComponent<'
 				drawHorizontalLine(context.draw, {
 					x: innerRect.x,
 					y: currentY,
-				}, innerRect.width, '─', style.separatorColor, style.backgroundColor, context.clipRect);
+				}, innerRect.width, getRuleCharacter(context.theme), style.separatorColor, style.backgroundColor, context.clipRect);
 				currentY += 1;
 			}
 		}
@@ -86,32 +91,32 @@ export class TableComponent<T = Record<string, unknown>> extends BaseComponent<'
 				drawHorizontalLine(context.draw, {
 					x: innerRect.x,
 					y: currentY,
-				}, innerRect.width, '─', style.separatorColor, style.backgroundColor, context.clipRect);
+				}, innerRect.width, getRuleCharacter(context.theme), style.separatorColor, style.backgroundColor, context.clipRect);
 				currentY += 1;
 			}
 		}
 	}
 
 	protected override getResolvedStyle(context: UIContext | RenderContext<UIDrawSurface>): Partial<TableStyle> {
-		return this.getStyle(context, (themeStyle) => createOptions<TableStyle>(themeStyle)
+		return this.getStyle(context, (themeStyle) => createOptions<TableStyle>({...themeStyle})
 			.with('foregroundColor', this.props.foregroundColor ?? themeStyle.foregroundColor ?? context.theme.palette.text)
 			.with('backgroundColor', this.props.backgroundColor ?? themeStyle.backgroundColor ?? context.theme.palette.surface)
 			.with('showHeader', themeStyle.showHeader ?? true)
 			.with('showBorders', themeStyle.showBorders ?? true)
 			.with('separatorColor', themeStyle.separatorColor ?? context.theme.palette.border)
-			.with('headerStyle', createOptions<TextStyle>(themeStyle.headerStyle ?? {})
+			.with('headerStyle', createOptions<TextStyle>({...(themeStyle.headerStyle ?? {})})
 				.with('alignment', themeStyle.headerStyle?.alignment ?? 'left')
 				.with('wrap', themeStyle.headerStyle?.wrap ?? 'none')
 				.with('ellipsis', themeStyle.headerStyle?.ellipsis ?? true)
-				.with('foregroundColor', themeStyle.headerStyle?.foregroundColor ?? context.theme.palette.text)
-				.with('backgroundColor', themeStyle.headerStyle?.backgroundColor ?? themeStyle.backgroundColor)
+				.with('foregroundColor', this.props.foregroundColor ?? themeStyle.headerStyle?.foregroundColor ?? context.theme.palette.text)
+				.with('backgroundColor', this.props.backgroundColor ?? themeStyle.headerStyle?.backgroundColor ?? themeStyle.backgroundColor)
 				.done())
-			.with('rowStyle', createOptions<TextStyle>(themeStyle.rowStyle ?? {})
+			.with('rowStyle', createOptions<TextStyle>({...(themeStyle.rowStyle ?? {})})
 				.with('alignment', themeStyle.rowStyle?.alignment ?? 'left')
 				.with('wrap', themeStyle.rowStyle?.wrap ?? 'none')
 				.with('ellipsis', themeStyle.rowStyle?.ellipsis ?? true)
-				.with('foregroundColor', themeStyle.rowStyle?.foregroundColor ?? context.theme.palette.text)
-				.with('backgroundColor', themeStyle.rowStyle?.backgroundColor ?? themeStyle.backgroundColor)
+				.with('foregroundColor', this.props.foregroundColor ?? themeStyle.rowStyle?.foregroundColor ?? context.theme.palette.text)
+				.with('backgroundColor', this.props.backgroundColor ?? themeStyle.rowStyle?.backgroundColor ?? themeStyle.backgroundColor)
 				.done())
 			.done());
 	}
@@ -200,7 +205,7 @@ export class TableComponent<T = Record<string, unknown>> extends BaseComponent<'
 						width:  1,
 						height: 1,
 					},
-					text:           '│',
+					text:           getColumnRuleCharacter(context.theme),
 					fillBackground: style.backgroundColor !== undefined,
 				})
 					.with('style', makeColors({
@@ -268,7 +273,7 @@ export class TableComponent<T = Record<string, unknown>> extends BaseComponent<'
 						width:  1,
 						height: 1,
 					},
-					text:           '│',
+					text:           getColumnRuleCharacter(context.theme),
 					fillBackground: rowBackground !== undefined || style.backgroundColor !== undefined,
 				})
 					.with('style', makeColors({
@@ -284,13 +289,13 @@ export class TableComponent<T = Record<string, unknown>> extends BaseComponent<'
 	}
 
 	private resolveHeaderCellStyle(column: ColumnDefinition<T>, style: Partial<TableStyle>): Partial<TextStyle> {
-		return createOptions<TextStyle>(style.headerStyle ?? {})
+		return createOptions<TextStyle>({...(style.headerStyle ?? {})})
 			.with('alignment', column.alignment ?? style.headerStyle?.alignment ?? 'left')
 			.done();
 	}
 
 	private resolveRowCellStyle(column: ColumnDefinition<T>, style: Partial<TableStyle>): Partial<TextStyle> {
-		return createOptions<TextStyle>(style.rowStyle ?? {})
+		return createOptions<TextStyle>({...(style.rowStyle ?? {})})
 			.with('alignment', column.alignment ?? style.rowStyle?.alignment ?? 'left')
 			.done();
 	}

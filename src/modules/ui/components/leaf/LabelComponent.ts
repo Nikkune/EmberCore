@@ -9,6 +9,10 @@ export class LabelComponent extends BaseComponent<'label', LabelProps, UIDrawSur
 		super('label', props, dependencies);
 	}
 
+	public setText(text: string): void {
+		this.setProps({text} as Partial<LabelProps>);
+	}
+
 	public override measure(constraints: LayoutConstraints, context: UIContext): MeasuredSize {
 		const style = this.getResolvedStyle(context);
 

@@ -1,4 +1,5 @@
-import type {BaseProps, Color, ComponentDependencies, ComponentKind, InvalidationRequest, LayoutConstraints, MeasuredSize, Point, Rect, RenderContext, ThemeComponentKind, UIComponent, UIContext, UIInvalidator} from '@modules/ui/types';
+import {normalizeInsets} from '@modules/ui/render/renderHelpers';
+import type {BaseProps, Color, ComponentDependencies, ComponentKind, Insets, InvalidationRequest, LayoutConstraints, MarginProps, MeasuredSize, Point, Rect, RenderContext, ThemeComponentKind, UIComponent, UIContext, UIInvalidator} from '@modules/ui/types';
 
 let componentIdCounter = 0;
 
@@ -23,9 +24,9 @@ export abstract class BaseComponent<
 		height: 0,
 	};
 
-	protected readonly props: TProps;
+	protected props: TProps;
 	protected readonly dependencies: ComponentDependencies;
-	protected readonly invalidator?: UIInvalidator | undefined;
+	protected invalidator?: UIInvalidator | undefined;
 
 	protected constructor(kind: TKind, props: TProps, dependencies: ComponentDependencies = {}) {
 		this.kind         = kind;
@@ -43,8 +44,38 @@ export abstract class BaseComponent<
 		return this.props.disabled ?? false;
 	}
 
+	public get margin(): Insets {
+		return normalizeInsets((this.props as MarginProps).margin);
+	}
+
 	public layout(rect: Rect, _context: UIContext): void {
 		this.rect = rect;
+	}
+
+	/**
+	 * Updates some props after creation and redraws (with a new layout, since sizes may change).
+	 * Components with internal state (checked, pressed, selected, page) keep it in sync.
+	 */
+	public setProps(patch: Partial<TProps>): void {
+		this.props = {
+			...this.props,
+			...patch,
+		};
+		this.onPropsChanged(patch);
+		this.invalidate({
+			reason: 'layout',
+			kind:   'full',
+		});
+	}
+
+	/** Hook for components whose internal state mirrors a prop. */
+	protected onPropsChanged(_patch: Partial<TProps>): void {
+		// no-op by default
+	}
+
+	/** Lets UIRuntime receive this component's invalidations; containers forward it to their children. */
+	public attachInvalidator(invalidator: UIInvalidator): void {
+		this.invalidator = invalidator;
 	}
 
 	public invalidate(request: InvalidationRequest = {reason: 'manual'}): void {

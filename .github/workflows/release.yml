@@ -8,6 +8,11 @@ on:
 permissions:
   contents: write
 
+# One release at a time: two quick pushes must not bump/publish concurrently.
+concurrency:
+  group: release-lua
+  cancel-in-progress: false
+
 jobs:
   release:
     if: github.actor != 'github-actions[bot]'
@@ -30,22 +35,30 @@ jobs:
 
       - name: Prepare release
         run: npm run prepare:release
+        env:
+          # Compare with the commit before the push: covers every pushed commit, and lets
+          # run-bump see versions changed by hand in them.
+          BUMP_BASE_REF: ${{ github.event.before }}
 
-      - name: Install Lua 5.2
-        run: sudo apt-get update && sudo apt-get install -y lua5.2
+      - name: Install Lua 5.1 (closest to CC:Tweaked's Cobalt VM)
+        run: sudo apt-get update && sudo apt-get install -y lua5.1
 
       - name: Smoke test (blocks publishing a runtime that cannot load)
         run: npm run test:smoke
+
+      - name: Behaviour tests (blocks publishing a broken runtime)
+        run: npm run test:behavior
 
       - name: Commit version bumps and manifests
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           
-          if git diff --quiet; then
+          # Only the version bumps in src/ are committed back (build outputs are gitignored).
+          if git diff --quiet -- src; then
             echo "No changes to commit."
           else
-            git add .
+            git add -- src
             git commit -m "chore(release): auto bump + manifests"
             git push
           fi

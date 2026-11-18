@@ -60,7 +60,7 @@ export class BasicUIEventBus implements UIEventBus {
 
 	public subscribeOnce<TEvent extends UIEvent>(type: TEvent['type'], handler: UIEventHandler<TEvent>, options?: Omit<EventSubscriptionOptions, 'once'>): EventSubscription<TEvent> {
 		return this.subscribe(type, handler, {
-			...options,
+			...(options ?? {}),
 			once: true,
 		});
 	}

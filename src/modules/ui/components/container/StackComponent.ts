@@ -1,6 +1,7 @@
-import {BaseContainerComponent} from '@modules/ui/core/components/baseContainerComponent';
+import {InteractiveContainerComponent} from '@modules/ui/core/components/interactiveContainerComponent';
 import {drawBox, type DrawBoxOptions, getInnerRect, normalizeInsets} from '@modules/ui/render/renderHelpers';
 import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
+import {makeColors} from '@modules/ui/theme/tone';
 import type {ComponentDependencies, CrossAxisAlignment, LayoutConstraints, MainAxisAlignment, MeasuredSize, Rect, RenderContext, StackProps, StackStyle, UIComponent, UIContext, WrapMode} from '@modules/ui/types';
 import {createOptions}                                                                                                                                                                     from '@utils/helpers';
 
@@ -21,7 +22,7 @@ interface StackPlacement<TChild extends UIComponent<UIDrawSurface>> {
 	rect: Rect;
 }
 
-export class StackComponent<TChild extends UIComponent<UIDrawSurface> = UIComponent<UIDrawSurface>> extends BaseContainerComponent<'stack', StackProps, UIDrawSurface, StackStyle, TChild> {
+export class StackComponent<TChild extends UIComponent<UIDrawSurface> = UIComponent<UIDrawSurface>> extends InteractiveContainerComponent<'stack', StackProps, UIDrawSurface, StackStyle, TChild> {
 	public constructor(props: StackProps, dependencies: ComponentDependencies = {}, children: TChild[] = []) {
 		super('stack', props, dependencies, children);
 	}
@@ -37,7 +38,7 @@ export class StackComponent<TChild extends UIComponent<UIDrawSurface> = UICompon
 		const children = this.children.map((child, index) => ({
 			child,
 			index,
-			size: child.measure(innerConstraints, context),
+			size: this.measureChild(child, innerConstraints, context),
 		}));
 
 		const lines = this.createLines(children, direction, wrap, spacing, direction === 'row' ? innerConstraints.maxWidth : innerConstraints.maxHeight);
@@ -89,14 +90,18 @@ export class StackComponent<TChild extends UIComponent<UIDrawSurface> = UICompon
 			.with('clipRect', context.clipRect)
 			.done());
 
-		this.renderChildren(context);
+		// Children without their own colors are drawn with this container's (transparent layouts pass theirs through).
+		context.draw.withColors(makeColors({
+			foregroundColor: style.foregroundColor,
+			backgroundColor: style.backgroundColor,
+		}), () => this.renderChildren(context));
 	}
 
 	protected override getResolvedStyle(context: UIContext | RenderContext<UIDrawSurface>): Partial<StackStyle> {
-		return this.getStyle(context, (themeStyle) => createOptions<StackStyle>(themeStyle)
-			.with('foregroundColor', this.props.foregroundColor ?? themeStyle.foregroundColor ?? context.theme.palette.text)
-			.with('backgroundColor', this.props.backgroundColor ?? themeStyle.backgroundColor ?? context.theme.palette.surface)
-			.with('padding', themeStyle.padding ?? 0)
+		return this.getStyle(context, (themeStyle) => createOptions<StackStyle>({...themeStyle})
+			.with('foregroundColor', this.props.foregroundColor ?? themeStyle.foregroundColor)
+			.with('backgroundColor', this.props.backgroundColor ?? themeStyle.backgroundColor)
+			.with('padding', this.props.padding ?? themeStyle.padding ?? 0)
 			.done());
 	}
 
@@ -129,7 +134,7 @@ export class StackComponent<TChild extends UIComponent<UIDrawSurface> = UICompon
 		}
 
 		const measured: MeasuredChild<TChild>[] = children.map((child, index) => {
-			const size = child.measure({
+			const size = this.measureChild(child, {
 				minWidth:  0,
 				maxWidth:  innerRect.width,
 				minHeight: 0,
@@ -148,13 +153,16 @@ export class StackComponent<TChild extends UIComponent<UIDrawSurface> = UICompon
 
 		const lines = this.createLines(measured, direction, wrap, spacing, availableMain);
 
-		const totalCross = lines.reduce((sum, line) => sum + line.crossSize, 0) + Math.max(0, lines.length - 1) * spacing;
+		// `justify` only applies to the main axis. On the cross axis, a single line (nowrap) spans the
+		// whole available size so that `alignment` positions the items; wrapped lines are packed at the start.
+		const singleLine = lines[0];
 
-		const remainingCross = Math.max(0, availableCross - totalCross);
-		const crossJustify   = this.resolveCrossJustify(remainingCross, spacing, lines.length, justify);
+		if (wrap === 'nowrap' && singleLine) {
+			singleLine.crossSize = Math.max(singleLine.crossSize, availableCross);
+		}
 
 		const placements: StackPlacement<TChild>[] = [];
-		let currentCross                           = crossJustify.startOffset;
+		let currentCross                           = 0;
 
 		for (const line of lines) {
 			const remainingMain = Math.max(0, availableMain - line.mainSize);
@@ -189,7 +197,7 @@ export class StackComponent<TChild extends UIComponent<UIDrawSurface> = UICompon
 				currentMain += itemMain + mainJustify.betweenSpacing;
 			}
 
-			currentCross += line.crossSize + crossJustify.betweenSpacing;
+			currentCross += line.crossSize + spacing;
 		}
 
 		return placements;
@@ -301,60 +309,6 @@ export class StackComponent<TChild extends UIComponent<UIDrawSurface> = UICompon
 					betweenSpacing: spacing,
 				};
 		}
-	}
-
-	private resolveCrossJustify(remainingCross: number, spacing: number, lineCount: number, justify: MainAxisAlignment): {
-		startOffset: number;
-		betweenSpacing: number;
-	} {
-		if (lineCount <= 0) {
-			return {
-				startOffset:    0,
-				betweenSpacing: spacing,
-			};
-		}
-
-		if (justify === 'space-between' && lineCount > 1) {
-			return {
-				startOffset:    0,
-				betweenSpacing: spacing + Math.floor(remainingCross / (lineCount - 1)),
-			};
-		}
-
-		if (justify === 'space-around') {
-			const gap = Math.floor(remainingCross / lineCount);
-			return {
-				startOffset:    Math.floor(gap / 2),
-				betweenSpacing: spacing + gap,
-			};
-		}
-
-		if (justify === 'space-evenly') {
-			const gap = Math.floor(remainingCross / (lineCount + 1));
-			return {
-				startOffset:    gap,
-				betweenSpacing: spacing + gap,
-			};
-		}
-
-		if (justify === 'center') {
-			return {
-				startOffset:    Math.floor(remainingCross / 2),
-				betweenSpacing: spacing,
-			};
-		}
-
-		if (justify === 'end') {
-			return {
-				startOffset:    remainingCross,
-				betweenSpacing: spacing,
-			};
-		}
-
-		return {
-			startOffset:    0,
-			betweenSpacing: spacing,
-		};
 	}
 
 	private resolveCrossOffset(alignment: CrossAxisAlignment, availableCross: number, childCross: number): number {

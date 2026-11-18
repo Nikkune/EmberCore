@@ -44,6 +44,19 @@ export class Peripheral {
 		return value as unknown as string;
 	}
 
+	/**
+	 * True when the peripheral has the given type, including secondary types
+	 * (e.g. a chest is both "minecraft:chest" and "inventory").
+	 * Falls back to the primary type on CC versions without peripheral.hasType.
+	 */
+	public static hasType(name: PeripheralName, expectedType: string): boolean {
+		if (typeof peripheral.hasType === 'function') {
+			return peripheral.hasType(name, expectedType) === true;
+		}
+
+		return this.getType(name) === expectedType;
+	}
+
 	public static wrap<T>(name: PeripheralName): T | undefined {
 		const wrapped = peripheral.wrap(name);
 
@@ -85,9 +98,9 @@ export class Peripheral {
 	}
 
 	public static wrapType<T>(name: PeripheralName, expectedType: string): T | undefined {
-		const actualType = this.getType(name);
+		if (!this.hasType(name, expectedType)) {
+			const actualType = this.getType(name);
 
-		if (actualType !== expectedType) {
 			log.debug('Peripheral type mismatch', {
 				name,
 				action:   'wrapType',
@@ -102,9 +115,8 @@ export class Peripheral {
 	}
 
 	public static requireType<T>(name: PeripheralName, expectedType: string): T {
-		const actualType = this.getType(name);
-
-		if (actualType !== expectedType) {
+		if (!this.hasType(name, expectedType)) {
+			const actualType = this.getType(name);
 			const message = `Peripheral on side '${name}' has type '${actualType ?? 'nil'}', expected '${expectedType}'`;
 			log.error(message, {
 				name,
@@ -135,7 +147,8 @@ export class Peripheral {
 	}
 
 	public static findByType<T>(expectedType: string): T | undefined {
-		const wrapped = peripheral.find(expectedType);
+		// peripheral.find returns every match as separate values: keep the first one.
+		const [wrapped] = peripheral.find(expectedType);
 
 		if (wrapped === undefined || wrapped === null) {
 			log.debug('No peripheral found by type', {
@@ -176,8 +189,7 @@ export class Peripheral {
 
 	public static findNameByType(expectedType: string): string | undefined {
 		for (const side of peripheral.getNames()) {
-			const type = this.getType(side);
-			if (type === expectedType) {
+			if (this.hasType(side, expectedType)) {
 				return side;
 			}
 		}

@@ -1,13 +1,17 @@
 import {BaseComponent} from '@modules/ui/core/components/coreComponent';
 import {drawBox, type DrawBoxOptions, drawText, type DrawTextOptions, normalizeInsets, resolveTextLines, type ResolveTextLinesOptions} from '@modules/ui/render/renderHelpers';
 import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
-import {makeToneColorOverride} from '@modules/ui/theme/tone';
+import {inheritTextColors, makeToneColorOverride} from '@modules/ui/theme/tone';
 import type {BadgeProps, BadgeStyle, ComponentDependencies, LayoutConstraints, MeasuredSize, RenderContext, UIContext}                                                                           from '@modules/ui/types';
 import {createOptions}                                                                                                                                                                           from '@utils/helpers';
 
 export class BadgeComponent extends BaseComponent<'badge', BadgeProps, UIDrawSurface, BadgeStyle> {
 	public constructor(props: BadgeProps, dependencies: ComponentDependencies = {}) {
 		super('badge', props, dependencies);
+	}
+
+	public setLabel(label: string): void {
+		this.setProps({label} as Partial<BadgeProps>);
 	}
 
 	public override measure(constraints: LayoutConstraints, context: UIContext): MeasuredSize {
@@ -67,12 +71,12 @@ export class BadgeComponent extends BaseComponent<'badge', BadgeProps, UIDrawSur
 
 			return {
 				...themeStyle, ...tone,
-				padding: themeStyle.padding ?? {
+				padding: this.props.padding ?? themeStyle.padding ?? {
 					left:  1,
 					right: 1,
 				},
 				text:    {
-					...themeStyle.text,
+					...inheritTextColors(themeStyle.text, tone, this.props),
 					alignment: themeStyle.text?.alignment ?? 'center',
 					wrap: themeStyle.text?.wrap ?? 'none',
 					ellipsis: themeStyle.text?.ellipsis ?? true,

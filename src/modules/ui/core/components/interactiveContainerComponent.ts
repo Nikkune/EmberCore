@@ -1,12 +1,22 @@
 import {BaseContainerComponent} from '@modules/ui/core/components/baseContainerComponent';
-import type {BaseProps, ComponentDependencies, ComponentKind, InvalidationRequest, LayoutConstraints, MeasuredSize, Point, RenderContext, UIContext, UIEvent, UIInteractiveComponent} from '@modules/ui/types';
+import type {BaseProps, ComponentDependencies, ComponentKind, InvalidationRequest, LayoutConstraints, MeasuredSize, Point, RenderContext, UIComponent, UIContext, UIEvent, UIInteractiveComponent} from '@modules/ui/types';
 
+/** True when the component can receive events (it implements hitTest and dispatch). */
+export function isInteractiveComponent<TDraw>(component: UIComponent<TDraw>): component is UIInteractiveComponent<TDraw> {
+	const candidate = component as Partial<UIInteractiveComponent<TDraw>>;
+	return typeof candidate.hitTest === 'function' && typeof candidate.dispatch === 'function';
+}
+
+/**
+ * A container that forwards events to its children. Children may be any component:
+ * only the interactive ones (buttons, checkboxes, nested containers...) receive events.
+ */
 export abstract class InteractiveContainerComponent<
 	TKind extends ComponentKind,
 	TProps extends BaseProps = BaseProps,
 	TDraw = unknown,
 	TStyle extends object = never,
-	TChild extends UIInteractiveComponent<TDraw> = UIInteractiveComponent<TDraw>,
+	TChild extends UIComponent<TDraw> = UIComponent<TDraw>,
 > extends BaseContainerComponent<TKind, TProps, TDraw, TStyle, TChild> implements UIInteractiveComponent<TDraw> {
 	protected readonly eventBus = this.dependencies.eventBus;
 
@@ -22,7 +32,7 @@ export abstract class InteractiveContainerComponent<
 		for (let index = this.internalChildren.length - 1; index >= 0; index--) {
 			const child = this.internalChildren[index];
 
-			if (child?.hitTest(point)) {
+			if (child && isInteractiveComponent(child) && child.hitTest(point)) {
 				return true;
 			}
 		}
@@ -37,7 +47,7 @@ export abstract class InteractiveContainerComponent<
 			for (let index = this.internalChildren.length - 1; index >= 0; index--) {
 				const child = this.internalChildren[index];
 
-				if (!child) continue;
+				if (!child || !isInteractiveComponent(child)) continue;
 
 				const childResult = child.dispatch(event, context);
 
@@ -60,7 +70,7 @@ export abstract class InteractiveContainerComponent<
 		for (let index = this.internalChildren.length - 1; index >= 0; index--) {
 			const child = this.internalChildren[index];
 
-			if (!child || !child.visible || child.disabled) {
+			if (!child || !child.visible || child.disabled || !isInteractiveComponent(child)) {
 				continue;
 			}
 

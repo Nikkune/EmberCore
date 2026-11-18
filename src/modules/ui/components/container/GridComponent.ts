@@ -1,6 +1,7 @@
-import {BaseContainerComponent} from '@modules/ui/core/components/baseContainerComponent';
+import {InteractiveContainerComponent} from '@modules/ui/core/components/interactiveContainerComponent';
 import {drawBox, type DrawBoxOptions, getInnerRect, normalizeInsets} from '@modules/ui/render/renderHelpers';
 import type {UIDrawSurface} from '@modules/ui/render/surfaceAdapter';
+import {makeColors} from '@modules/ui/theme/tone';
 import type {ComponentDependencies, GridProps, GridStyle, LayoutConstraints, MeasuredSize, Rect, RenderContext, UIComponent, UIContext} from '@modules/ui/types';
 import {createFilledArray}                                                                                                              from '@modules/ui/utils/arrays';
 import {createOptions}                                                                                                                  from '@utils/helpers';
@@ -10,7 +11,7 @@ interface GridPlacement<TChild extends UIComponent<UIDrawSurface>> {
 	rect: Rect;
 }
 
-export class GridComponent<TChild extends UIComponent<UIDrawSurface> = UIComponent<UIDrawSurface>> extends BaseContainerComponent<'grid', GridProps, UIDrawSurface, GridStyle, TChild> {
+export class GridComponent<TChild extends UIComponent<UIDrawSurface> = UIComponent<UIDrawSurface>> extends InteractiveContainerComponent<'grid', GridProps, UIDrawSurface, GridStyle, TChild> {
 	public constructor(props: GridProps, dependencies: ComponentDependencies = {}, children: TChild[] = []) {
 		super('grid', props, dependencies, children);
 	}
@@ -86,14 +87,18 @@ export class GridComponent<TChild extends UIComponent<UIDrawSurface> = UICompone
 			.with('clipRect', context.clipRect)
 			.done());
 
-		this.renderChildren(context);
+		// Children without their own colors are drawn with this container's (transparent layouts pass theirs through).
+		context.draw.withColors(makeColors({
+			foregroundColor: style.foregroundColor,
+			backgroundColor: style.backgroundColor,
+		}), () => this.renderChildren(context));
 	}
 
 	protected override getResolvedStyle(context: UIContext | RenderContext<UIDrawSurface>): Partial<GridStyle> {
-		return this.getStyle(context, (themeStyle) => createOptions<GridStyle>(themeStyle)
-			.with('foregroundColor', this.props.foregroundColor ?? themeStyle.foregroundColor ?? context.theme.palette.text)
-			.with('backgroundColor', this.props.backgroundColor ?? themeStyle.backgroundColor ?? context.theme.palette.surface)
-			.with('padding', themeStyle.padding ?? 0)
+		return this.getStyle(context, (themeStyle) => createOptions<GridStyle>({...themeStyle})
+			.with('foregroundColor', this.props.foregroundColor ?? themeStyle.foregroundColor)
+			.with('backgroundColor', this.props.backgroundColor ?? themeStyle.backgroundColor)
+			.with('padding', this.props.padding ?? themeStyle.padding ?? 0)
 			.done());
 	}
 
@@ -149,7 +154,7 @@ export class GridComponent<TChild extends UIComponent<UIDrawSurface> = UICompone
 			const row         = Math.floor(index / columns);
 			const columnWidth = columnWidths[column] ?? 0;
 
-			const measured = child.measure({
+			const measured = this.measureChild(child, {
 				minWidth:  0,
 				maxWidth:  columnWidth,
 				minHeight: 0,
