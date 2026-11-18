@@ -48,31 +48,16 @@ function ComputerCraftSurfaceAdapter.fromTerminal(self, target)
     if target then
         return __TS__New(____exports.ComputerCraftSurfaceAdapter, target)
     end
-    local current = term.current()
-    local wrappedTarget = {
-        getSize = function() return current.getSize() end,
-        clear = function() return current.clear() end,
-        clearLine = function() return current.clearLine() end,
-        setCursorPos = function(____, x, y) return current.setCursorPos(x, y) end,
-        getCursorPos = function() return current.getCursorPos() end,
-        write = function(____, text) return current.write(text) end,
-        setTextColor = function(____, color) return current.setTextColor(color) end,
-        getTextColor = function() return current.getTextColor() end,
-        setBackgroundColor = function(____, color) return current.setBackgroundColor(color) end,
-        getBackgroundColor = function() return current.getBackgroundColor() end,
-        isColor = function() return current.isColor() end
-    }
-    return __TS__New(____exports.ComputerCraftSurfaceAdapter, wrappedTarget)
+    return __TS__New(
+        ____exports.ComputerCraftSurfaceAdapter,
+        term.current()
+    )
 end
 function ComputerCraftSurfaceAdapter.fromMonitor(self, target)
     return __TS__New(____exports.ComputerCraftSurfaceAdapter, target)
 end
 function ComputerCraftSurfaceAdapter.prototype.getSize(self)
-    local width, height = table.unpack(
-        self.target:getSize(),
-        1,
-        2
-    )
+    local width, height = self.target.getSize()
     return {width = width, height = height}
 end
 function ComputerCraftSurfaceAdapter.prototype.getWidth(self)
@@ -83,13 +68,13 @@ function ComputerCraftSurfaceAdapter.prototype.getHeight(self)
 end
 function ComputerCraftSurfaceAdapter.prototype.clear(self, backgroundColor)
     if backgroundColor == nil then
-        self.target:clear()
+        self.target.clear()
         return
     end
     self:withColors(
         {backgroundColor = backgroundColor},
         function()
-            self.target:clear()
+            self.target.clear()
         end
     )
 end
@@ -101,31 +86,27 @@ function ComputerCraftSurfaceAdapter.prototype.clearLine(self, y, backgroundColo
     self:withColors(
         makeColors(nil, {backgroundColor = backgroundColor}),
         function()
-            self.target:setCursorPos(1, y)
-            self.target:clearLine()
+            self.target.setCursorPos(1, y)
+            self.target.clearLine()
         end
     )
     self:setCursor(currentCursor)
 end
 function ComputerCraftSurfaceAdapter.prototype.setCursor(self, position)
-    self.target:setCursorPos(position.x, position.y)
+    self.target.setCursorPos(position.x, position.y)
 end
 function ComputerCraftSurfaceAdapter.prototype.getCursor(self)
-    local x, y = table.unpack(
-        self.target:getCursorPos(),
-        1,
-        2
-    )
+    local x, y = self.target.getCursorPos()
     return {x = x, y = y}
 end
 function ComputerCraftSurfaceAdapter.prototype.write(self, text)
-    self.target:write(text)
+    self.target.write(text)
 end
 function ComputerCraftSurfaceAdapter.prototype.writeAt(self, position, text)
     self:withCursor(
         position,
         function()
-            self.target:write(text)
+            self.target.write(text)
         end
     )
 end
@@ -136,10 +117,10 @@ function ComputerCraftSurfaceAdapter.prototype.blitAt(self, position, text, text
         function()
             local blit = target.blit
             if type(blit) == "function" then
-                blit(target, text, textColors, backgroundColors)
+                blit(text, textColors, backgroundColors)
                 return
             end
-            self.target:write(text)
+            self.target.write(text)
         end
     )
 end
@@ -207,16 +188,16 @@ function ComputerCraftSurfaceAdapter.prototype.strokeRect(self, rect, character,
     )
 end
 function ComputerCraftSurfaceAdapter.prototype.setForegroundColor(self, color)
-    self.target:setTextColor(color)
+    self.target.setTextColor(color)
 end
 function ComputerCraftSurfaceAdapter.prototype.getForegroundColor(self)
-    return self.target:getTextColor()
+    return self.target.getTextColor()
 end
 function ComputerCraftSurfaceAdapter.prototype.setBackgroundColor(self, color)
-    self.target:setBackgroundColor(color)
+    self.target.setBackgroundColor(color)
 end
 function ComputerCraftSurfaceAdapter.prototype.getBackgroundColor(self)
-    return self.target:getBackgroundColor()
+    return self.target.getBackgroundColor()
 end
 function ComputerCraftSurfaceAdapter.prototype.withColors(self, options, fn)
     local previousForeground = self:getForegroundColor()
@@ -238,7 +219,7 @@ function ComputerCraftSurfaceAdapter.prototype.withColors(self, options, fn)
     end
 end
 function ComputerCraftSurfaceAdapter.prototype.isColorSupported(self)
-    return self.target:isColor()
+    return self.target.isColor()
 end
 function ComputerCraftSurfaceAdapter.prototype.withCursor(self, position, fn)
     local previousCursor = self:getCursor()

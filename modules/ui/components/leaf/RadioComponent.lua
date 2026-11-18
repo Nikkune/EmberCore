@@ -216,15 +216,18 @@ local ResolveTextLinesOptions = ____renderHelpers.ResolveTextLinesOptions
 local ____surfaceAdapter = require("modules.ui.render.surfaceAdapter")
 local UIDrawSurface = ____surfaceAdapter.UIDrawSurface
 local ____tone = require("modules.ui.theme.tone")
+local inheritTextColors = ____tone.inheritTextColors
 local makeToneColorOverride = ____tone.makeToneColorOverride
 local ____RadioGroup = require("modules.ui.components.leaf.RadioGroup")
 local RadioGroup = ____RadioGroup.RadioGroup
 local ____types = require("modules.ui.types.index")
 local ComponentDependencies = ____types.ComponentDependencies
+local InvalidationRequest = ____types.InvalidationRequest
 local LayoutConstraints = ____types.LayoutConstraints
 local MeasuredSize = ____types.MeasuredSize
 local RadioProps = ____types.RadioProps
 local RadioStyle = ____types.RadioStyle
+local Rect = ____types.Rect
 local RenderContext = ____types.RenderContext
 local TextStyle = ____types.TextStyle
 local UIContext = ____types.UIContext
@@ -259,13 +262,33 @@ function RadioComponent.prototype.____constructor(self, props, dependencies, gro
             end
             self._selected = selected
             self:invalidate(self:createStateInvalidation())
+            local ____this_3
+            ____this_3 = self.props
+            local ____opt_2 = ____this_3.onSelect
+            if ____opt_2 ~= nil then
+                ____opt_2(____this_3, selected)
+            end
         end)
     end
 end
+function RadioComponent.prototype.onPropsChanged(self, patch)
+    if patch.selected ~= nil then
+        self:setSelected(patch.selected)
+    end
+end
+function RadioComponent.prototype.setLabel(self, label)
+    self:setProps({label = label})
+end
+function RadioComponent.prototype.createStateInvalidation(self, rect)
+    if self.radioGroup then
+        return {reason = "state", kind = "full"}
+    end
+    return PressableComponent.prototype.createStateInvalidation(self, rect)
+end
 function RadioComponent.prototype.destroy(self)
-    local ____opt_2 = self.unsubscribeGroup
-    if ____opt_2 ~= nil then
-        ____opt_2(self)
+    local ____opt_4 = self.unsubscribeGroup
+    if ____opt_4 ~= nil then
+        ____opt_4(self)
     end
     self.unsubscribeGroup = nil
     PressableComponent.prototype.destroy(self)
@@ -288,8 +311,8 @@ end
 function RadioComponent.prototype.measure(self, constraints, context)
     local style = self:getResolvedStyle(context)
     local padding = normalizeInsets(nil, style.padding)
-    local ____opt_4 = style.border
-    local border = ____opt_4 and ____opt_4.enabled and 2 or 0
+    local ____opt_6 = style.border
+    local border = ____opt_6 and ____opt_6.enabled and 2 or 0
     local marker = self:getMarker(style)
     local contentPrefix = marker .. " "
     local requestedWidth = self.props.width or self.props.minWidth or constraints.maxWidth
@@ -318,8 +341,8 @@ function RadioComponent.prototype.render(self, context)
         return
     end
     local style = self:getResolvedStyle(context)
-    local ____opt_6 = style.border
-    local borderCharacters = ____opt_6 and ____opt_6.enabled and context.theme.borders[style.border.preset or "single"] or nil
+    local ____opt_8 = style.border
+    local borderCharacters = ____opt_8 and ____opt_8.enabled and context.theme.borders[style.border.preset or "single"] or nil
     local innerRect = drawBox(
         nil,
         context.draw,
@@ -331,60 +354,51 @@ function RadioComponent.prototype.render(self, context)
     local marker = self:getMarker(style)
     local markerText = marker .. " "
     local markerWidth = math.min(#markerText, innerRect.width)
-    local ____drawText_20 = drawText
-    local ____context_19 = context
-    local ____createOptions_17 = createOptions
-    local ____temp_16 = {x = innerRect.x, y = innerRect.y, width = markerWidth, height = innerRect.height}
-    local ____opt_14 = style.text
-    local ____self_13 = ____createOptions_17(nil, {rect = ____temp_16, text = markerText, fillBackground = (____opt_14 and ____opt_14.backgroundColor) ~= nil})
-    local ____self_13_with_18 = ____self_13.with
-    local ____self_11 = createOptions(
+    local ____drawText_22 = drawText
+    local ____context_21 = context
+    local ____createOptions_19 = createOptions
+    local ____temp_18 = {x = innerRect.x, y = innerRect.y, width = markerWidth, height = innerRect.height}
+    local ____opt_16 = style.text
+    local ____self_15 = ____createOptions_19(nil, {rect = ____temp_18, text = markerText, fillBackground = (____opt_16 and ____opt_16.backgroundColor) ~= nil})
+    local ____self_15_with_20 = ____self_15.with
+    local ____self_13 = createOptions(
         nil,
-        __TS__ObjectAssign({}, style.text)
+        __TS__ObjectAssign({}, style.text or ({}))
     ):with("wrap", "none"):with("ellipsis", false)
-    local ____self_11_with_12 = ____self_11.with
-    local ____style_dotColor_10 = style.dotColor
-    if ____style_dotColor_10 == nil then
-        local ____opt_8 = style.text
-        ____style_dotColor_10 = ____opt_8 and ____opt_8.foregroundColor
+    local ____self_13_with_14 = ____self_13.with
+    local ____style_dotColor_12 = style.dotColor
+    if ____style_dotColor_12 == nil then
+        local ____opt_10 = style.text
+        ____style_dotColor_12 = ____opt_10 and ____opt_10.foregroundColor
     end
-    ____drawText_20(
+    ____drawText_22(
         nil,
-        ____context_19,
-        ____self_13_with_18(
-            ____self_13,
+        ____context_21,
+        ____self_15_with_20(
+            ____self_15,
             "style",
-            ____self_11_with_12(____self_11, "foregroundColor", ____style_dotColor_10 or context.theme.palette.text):done()
+            ____self_13_with_14(____self_13, "foregroundColor", ____style_dotColor_12 or context.theme.palette.text):done()
         ):with("clipRect", context.clipRect):done()
     )
     local textRectWidth = math.max(0, innerRect.width - #markerText)
     if textRectWidth <= 0 then
         return
     end
-    local ____drawText_27 = drawText
-    local ____context_26 = context
-    local ____createOptions_25 = createOptions
-    local ____temp_23 = {x = innerRect.x + #markerText, y = innerRect.y, width = textRectWidth, height = innerRect.height}
-    local ____self_props_label_24 = self.props.label
-    local ____opt_21 = style.text
-    ____drawText_27(
+    local ____drawText_29 = drawText
+    local ____context_28 = context
+    local ____createOptions_27 = createOptions
+    local ____temp_25 = {x = innerRect.x + #markerText, y = innerRect.y, width = textRectWidth, height = innerRect.height}
+    local ____self_props_label_26 = self.props.label
+    local ____opt_23 = style.text
+    ____drawText_29(
         nil,
-        ____context_26,
-        ____createOptions_25(nil, {rect = ____temp_23, text = ____self_props_label_24, fillBackground = (____opt_21 and ____opt_21.backgroundColor) ~= nil}):with("style", style.text):with("clipRect", context.clipRect):done()
+        ____context_28,
+        ____createOptions_27(nil, {rect = ____temp_25, text = ____self_props_label_26, fillBackground = (____opt_23 and ____opt_23.backgroundColor) ~= nil}):with("style", style.text):with("clipRect", context.clipRect):done()
     )
 end
 function RadioComponent.prototype.onPress(self, _context)
     if self.radioGroup then
-        local changed = self.radioGroup:select(self.props.value)
-        if changed then
-            local ____this_29
-            ____this_29 = self.props
-            local ____opt_28 = ____this_29.onSelect
-            if ____opt_28 ~= nil then
-                ____opt_28(____this_29, true)
-            end
-        end
-        return changed
+        return self.radioGroup:select(self.props.value)
     end
     if self._selected then
         return false
@@ -412,8 +426,8 @@ function RadioComponent.prototype.getResolvedStyle(self, context)
                 background
             )
             local ____themeStyle_42 = themeStyle
-            local ____temp_43 = themeStyle.padding or ({left = 1, right = 1})
-            local ____themeStyle_text_39 = themeStyle.text
+            local ____temp_43 = self.props.padding or themeStyle.padding or ({left = 1, right = 1})
+            local ____inheritTextColors_result_39 = inheritTextColors(nil, themeStyle.text, tone, self.props)
             local ____opt_32 = themeStyle.text
             local ____temp_40 = ____opt_32 and ____opt_32.alignment or "left"
             local ____opt_34 = themeStyle.text
@@ -429,7 +443,7 @@ function RadioComponent.prototype.getResolvedStyle(self, context)
                 tone,
                 {
                     padding = ____temp_43,
-                    text = __TS__ObjectAssign({}, ____themeStyle_text_39, {alignment = ____temp_40, wrap = ____temp_41, ellipsis = ____temp_38})
+                    text = __TS__ObjectAssign({}, ____inheritTextColors_result_39, {alignment = ____temp_40, wrap = ____temp_41, ellipsis = ____temp_38})
                 }
             )
         end

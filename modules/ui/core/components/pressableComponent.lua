@@ -55,6 +55,7 @@ function PressableComponent.prototype.____constructor(self, kind, props, depende
         dependencies = {}
     end
     FocusableComponent.prototype.____constructor(self, kind, props, dependencies)
+    self.flashing = false
 end
 function PressableComponent.prototype.press(self, context)
     return self:onPress(context)
@@ -67,7 +68,8 @@ function PressableComponent.prototype.handleEvent(self, event, context)
             do
                 self:focus()
                 local changed = self:press(context)
-                if not changed then
+                local flashed = self:flash()
+                if not changed and not flashed then
                     return nil
                 end
                 return self:createStateInvalidation()
@@ -78,7 +80,23 @@ function PressableComponent.prototype.handleEvent(self, event, context)
         end
     until true
 end
+function PressableComponent.prototype.flash(self)
+    local invalidator = self.invalidator
+    if not (invalidator and invalidator.schedule) then
+        return false
+    end
+    self.flashing = true
+    invalidator:schedule(
+        ____exports.PressableComponent.FLASH_SECONDS,
+        function()
+            self.flashing = false
+            self:invalidate(self:createStateInvalidation())
+        end
+    )
+    return true
+end
 function PressableComponent.prototype.onPress(self, _context)
     return false
 end
+PressableComponent.FLASH_SECONDS = 0.2
 return ____exports

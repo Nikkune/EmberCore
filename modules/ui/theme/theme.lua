@@ -25,21 +25,37 @@ local ASCII_BORDER = {
     horizontal = "-",
     vertical = "|"
 }
+local function ccChar(self, pixels)
+    return string.char(128 + pixels)
+end
 local SINGLE_BORDER = {
-    topLeft = "┌",
-    topRight = "┐",
-    bottomLeft = "└",
-    bottomRight = "┘",
-    horizontal = "─",
-    vertical = "│"
+    topLeft = ccChar(nil, 1 + 2 + 4 + 16),
+    topRight = ccChar(nil, 4 + 16),
+    bottomLeft = ccChar(nil, 2 + 8),
+    bottomRight = ccChar(nil, 1 + 4),
+    horizontal = ccChar(nil, 1 + 2),
+    vertical = ccChar(nil, 1 + 4 + 16),
+    top = ccChar(nil, 1 + 2),
+    bottom = ccChar(nil, 1 + 2 + 4 + 8),
+    left = ccChar(nil, 1 + 4 + 16),
+    right = ccChar(nil, 1 + 4 + 16),
+    inverted = {
+        "topRight",
+        "bottomLeft",
+        "bottomRight",
+        "bottom",
+        "right"
+    },
+    rule = ccChar(nil, 4 + 8),
+    columnRule = ccChar(nil, 1 + 4 + 16)
 }
 local DOUBLE_BORDER = {
-    topLeft = "╔",
-    topRight = "╗",
-    bottomLeft = "╚",
-    bottomRight = "╝",
-    horizontal = "═",
-    vertical = "║"
+    topLeft = "#",
+    topRight = "#",
+    bottomLeft = "#",
+    bottomRight = "#",
+    horizontal = "=",
+    vertical = "H"
 }
 local COLORED_BORDER = {
     topLeft = " ",
@@ -65,6 +81,19 @@ ____exports.defaultTheme = {name = "default", palette = {
     border = colors.lightGray,
     selection = colors.blue
 }, borders = {ascii = ASCII_BORDER, single = SINGLE_BORDER, double = DOUBLE_BORDER, colored = COLORED_BORDER}, components = {}}
+function ____exports.withAsciiBorders(self, theme)
+    return __TS__ObjectAssign(
+        {},
+        theme,
+        {borders = __TS__ObjectAssign({}, theme.borders, {single = ASCII_BORDER, double = ASCII_BORDER})}
+    )
+end
+function ____exports.getRuleCharacter(self, theme)
+    return theme.borders.single.rule or theme.borders.single.horizontal
+end
+function ____exports.getColumnRuleCharacter(self, theme)
+    return theme.borders.single.columnRule or theme.borders.single.vertical
+end
 function ____exports.getBorderCharacters(self, theme, preset)
     if preset == nil then
         preset = "ascii"

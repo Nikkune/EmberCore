@@ -116,6 +116,26 @@ local function __TS__ArrayMap(self, callbackfn, thisArg)
     end
     return result
 end
+
+local function __TS__ArrayIncludes(self, searchElement, fromIndex)
+    if fromIndex == nil then
+        fromIndex = 0
+    end
+    local len = #self
+    local k = fromIndex
+    if fromIndex < 0 then
+        k = len + fromIndex
+    end
+    if k < 0 then
+        k = 0
+    end
+    for i = k + 1, len do
+        if self[i] == searchElement then
+            return true
+        end
+    end
+    return false
+end
 -- End of Lua Library inline imports
 local ____exports = {}
 local ____surfaceAdapter = require("modules.ui.render.surfaceAdapter")
@@ -124,6 +144,7 @@ local ____tone = require("modules.ui.theme.tone")
 local makeColors = ____tone.makeColors
 local ____types = require("modules.ui.types.index")
 local BorderCharacters = ____types.BorderCharacters
+local BorderPart = ____types.BorderPart
 local BoxStyle = ____types.BoxStyle
 local Color = ____types.Color
 local Insets = ____types.Insets
@@ -269,9 +290,9 @@ function ____exports.applyEllipsis(self, text, maxWidth)
         return text
     end
     if maxWidth == 1 then
-        return "…"
+        return "."
     end
-    return __TS__StringSlice(text, 0, maxWidth - 1) .. "…"
+    return __TS__StringSlice(text, 0, maxWidth - 1) .. "."
 end
 function ____exports.alignText(self, text, width, alignment)
     if alignment == nil then
@@ -389,37 +410,47 @@ function ____exports.wrapLineByWord(self, text, width)
     local current = ""
     for ____, word in ipairs(words) do
         do
-            if #current == 0 then
+            local __continue60
+            repeat
+                if #current == 0 then
+                    if #word <= width then
+                        current = word
+                        __continue60 = true
+                        break
+                    end
+                    local chunks = ____exports.wrapLineByCharacter(nil, word, width)
+                    __TS__ArrayPushArray(result, chunks)
+                    __continue60 = true
+                    break
+                end
+                local candidate = (current .. " ") .. word
+                if #candidate <= width then
+                    current = candidate
+                    __continue60 = true
+                    break
+                end
+                result[#result + 1] = current
                 if #word <= width then
                     current = word
-                    goto __continue60
+                    __continue60 = true
+                    break
                 end
                 local chunks = ____exports.wrapLineByCharacter(nil, word, width)
-                __TS__ArrayPushArray(result, chunks)
-                goto __continue60
-            end
-            local candidate = (current .. " ") .. word
-            if #candidate <= width then
-                current = candidate
-                goto __continue60
-            end
-            result[#result + 1] = current
-            if #word <= width then
-                current = word
-                goto __continue60
-            end
-            local chunks = ____exports.wrapLineByCharacter(nil, word, width)
-            __TS__ArrayPushArray(
-                result,
-                __TS__ArraySlice(
-                    chunks,
-                    0,
-                    math.max(0, #chunks - 1)
+                __TS__ArrayPushArray(
+                    result,
+                    __TS__ArraySlice(
+                        chunks,
+                        0,
+                        math.max(0, #chunks - 1)
+                    )
                 )
-            )
-            current = chunks[#chunks] or ""
+                current = chunks[#chunks] or ""
+                __continue60 = true
+            until true
+            if not __continue60 then
+                break
+            end
         end
-        ::__continue60::
     end
     if #current > 0 or #result == 0 then
         result[#result + 1] = current
@@ -439,21 +470,29 @@ function ____exports.wrapText(self, text, width, wrap)
         local sourceLineIndex = 0
         while sourceLineIndex < #sourceLines do
             do
-                local sourceLine = sourceLines[sourceLineIndex + 1]
-                if wrap == "none" then
-                    pushWrappedLine(nil, result, sourceLine, sourceLineIndex)
-                    goto __continue70
-                end
-                local wrappedLines = wrap == "word" and ____exports.wrapLineByWord(nil, sourceLine, width) or ____exports.wrapLineByCharacter(nil, sourceLine, width)
-                if #wrappedLines == 0 then
-                    pushWrappedLine(nil, result, "", sourceLineIndex)
-                    goto __continue70
-                end
-                for ____, line in ipairs(wrappedLines) do
-                    pushWrappedLine(nil, result, line, sourceLineIndex)
+                local __continue70
+                repeat
+                    local sourceLine = sourceLines[sourceLineIndex + 1]
+                    if wrap == "none" then
+                        pushWrappedLine(nil, result, sourceLine, sourceLineIndex)
+                        __continue70 = true
+                        break
+                    end
+                    local wrappedLines = wrap == "word" and ____exports.wrapLineByWord(nil, sourceLine, width) or ____exports.wrapLineByCharacter(nil, sourceLine, width)
+                    if #wrappedLines == 0 then
+                        pushWrappedLine(nil, result, "", sourceLineIndex)
+                        __continue70 = true
+                        break
+                    end
+                    for ____, line in ipairs(wrappedLines) do
+                        pushWrappedLine(nil, result, line, sourceLineIndex)
+                    end
+                    __continue70 = true
+                until true
+                if not __continue70 then
+                    break
                 end
             end
-            ::__continue70::
             sourceLineIndex = sourceLineIndex + 1
         end
     end
@@ -586,127 +625,131 @@ function ____exports.drawBorder(self, draw, options)
     if rect.width <= 0 or rect.height <= 0 then
         return
     end
+    local inverted = border.inverted or ({})
+    local function drawPart(____, part, x, y, text)
+        if #text == 0 then
+            return
+        end
+        local isInverted = __TS__ArrayIncludes(inverted, part)
+        local background = backgroundColor or (isInverted and draw:getBackgroundColor() or nil)
+        ____exports.drawTextLine(
+            nil,
+            draw,
+            createOptions(
+                nil,
+                {
+                    position = {x = x, y = y},
+                    width = #text,
+                    text = text,
+                    style = isInverted and makeColors(
+                        nil,
+                        {
+                            foregroundColor = background,
+                            backgroundColor = foregroundColor or draw:getForegroundColor()
+                        }
+                    ) or makeColors(nil, {foregroundColor = foregroundColor, backgroundColor = background})
+                }
+            ):with("clipRect", clipRect):done()
+        )
+    end
+    local top = border.top or border.horizontal
+    local bottom = border.bottom or border.horizontal
+    local left = border.left or border.vertical
+    local right = border.right or border.vertical
+    local rightX = rect.x + rect.width - 1
+    local bottomY = rect.y + rect.height - 1
+    local middle = math.max(0, rect.width - 2)
     if rect.width == 1 and rect.height == 1 then
-        ____exports.drawTextLine(
+        drawPart(
             nil,
-            draw,
-            createOptions(
-                nil,
-                {
-                    position = {x = rect.x, y = rect.y},
-                    width = 1,
-                    text = border.topLeft,
-                    style = makeColors(nil, {foregroundColor = foregroundColor, backgroundColor = backgroundColor})
-                }
-            ):with("clipRect", clipRect):done()
+            "topLeft",
+            rect.x,
+            rect.y,
+            border.topLeft
         )
         return
     end
-    if rect.height == 1 then
-        local middleWidth = math.max(0, rect.width - 2)
-        local top = rect.width == 1 and border.topLeft or (border.topLeft .. ____exports["repeat"](nil, border.horizontal, middleWidth)) .. border.topRight
-        ____exports.drawTextLine(
-            nil,
-            draw,
-            createOptions(
-                nil,
-                {
-                    position = {x = rect.x, y = rect.y},
-                    width = rect.width,
-                    text = top,
-                    style = makeColors(nil, {foregroundColor = foregroundColor, backgroundColor = backgroundColor})
-                }
-            ):with("clipRect", clipRect):done()
-        )
-        return
-    end
-    local top = rect.width == 1 and border.vertical or (border.topLeft .. ____exports["repeat"](
-        nil,
-        border.horizontal,
-        math.max(0, rect.width - 2)
-    )) .. border.topRight
-    local bottom = rect.width == 1 and border.vertical or (border.bottomLeft .. ____exports["repeat"](
-        nil,
-        border.horizontal,
-        math.max(0, rect.width - 2)
-    )) .. border.bottomRight
-    ____exports.drawTextLine(
-        nil,
-        draw,
-        createOptions(
-            nil,
-            {
-                position = {x = rect.x, y = rect.y},
-                width = rect.width,
-                text = top,
-                style = makeColors(nil, {foregroundColor = foregroundColor, backgroundColor = backgroundColor})
-            }
-        ):with("clipRect", clipRect):done()
-    )
-    ____exports.drawTextLine(
-        nil,
-        draw,
-        createOptions(
-            nil,
-            {
-                position = {x = rect.x, y = rect.y + rect.height - 1},
-                width = rect.width,
-                text = bottom,
-                style = makeColors(nil, {foregroundColor = foregroundColor, backgroundColor = backgroundColor})
-            }
-        ):with("clipRect", clipRect):done()
-    )
-    do
-        local row = 1
-        while row < rect.height - 1 do
-            do
-                if rect.width == 1 then
-                    ____exports.drawTextLine(
-                        nil,
-                        draw,
-                        createOptions(
-                            nil,
-                            {
-                                position = {x = rect.x, y = rect.y + row},
-                                width = 1,
-                                text = border.vertical,
-                                style = makeColors(nil, {foregroundColor = foregroundColor, backgroundColor = backgroundColor})
-                            }
-                        ):with("clipRect", clipRect):done()
-                    )
-                    goto __continue99
-                end
-                ____exports.drawTextLine(
+    if rect.width == 1 then
+        do
+            local y = rect.y
+            while y <= bottomY do
+                drawPart(
                     nil,
-                    draw,
-                    createOptions(
-                        nil,
-                        {
-                            position = {x = rect.x, y = rect.y + row},
-                            width = 1,
-                            text = border.vertical,
-                            style = makeColors(nil, {foregroundColor = foregroundColor, backgroundColor = backgroundColor})
-                        }
-                    ):with("clipRect", clipRect):done()
+                    "left",
+                    rect.x,
+                    y,
+                    left
                 )
-                ____exports.drawTextLine(
-                    nil,
-                    draw,
-                    createOptions(
-                        nil,
-                        {
-                            position = {x = rect.x + rect.width - 1, y = rect.y + row},
-                            width = 1,
-                            text = border.vertical,
-                            style = makeColors(nil, {foregroundColor = foregroundColor, backgroundColor = backgroundColor})
-                        }
-                    ):with("clipRect", clipRect):done()
-                )
+                y = y + 1
             end
-            ::__continue99::
-            row = row + 1
+        end
+        return
+    end
+    drawPart(
+        nil,
+        "topLeft",
+        rect.x,
+        rect.y,
+        border.topLeft
+    )
+    drawPart(
+        nil,
+        "top",
+        rect.x + 1,
+        rect.y,
+        ____exports["repeat"](nil, top, middle)
+    )
+    drawPart(
+        nil,
+        "topRight",
+        rightX,
+        rect.y,
+        border.topRight
+    )
+    if rect.height == 1 then
+        return
+    end
+    do
+        local y = rect.y + 1
+        while y < bottomY do
+            drawPart(
+                nil,
+                "left",
+                rect.x,
+                y,
+                left
+            )
+            drawPart(
+                nil,
+                "right",
+                rightX,
+                y,
+                right
+            )
+            y = y + 1
         end
     end
+    drawPart(
+        nil,
+        "bottomLeft",
+        rect.x,
+        bottomY,
+        border.bottomLeft
+    )
+    drawPart(
+        nil,
+        "bottom",
+        rect.x + 1,
+        bottomY,
+        ____exports["repeat"](nil, bottom, middle)
+    )
+    drawPart(
+        nil,
+        "bottomRight",
+        rightX,
+        bottomY,
+        border.bottomRight
+    )
 end
 function ____exports.drawBox(self, draw, options)
     local style = options.style

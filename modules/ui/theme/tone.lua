@@ -16,6 +16,7 @@ local ____types = require("modules.ui.types.index")
 local Color = ____types.Color
 local ColorStyle = ____types.ColorStyle
 local MaybeProps = ____types.MaybeProps
+local TextStyle = ____types.TextStyle
 local Theme = ____types.Theme
 local Tone = ____types.Tone
 local ____helpers = require("utils.helpers")
@@ -55,6 +56,12 @@ end
 function ____exports.makeToneColorOverride(self, tone, theme, foregroundColor, backgroundColor)
     local toneColors = ____exports.resolveToneColors(nil, theme, tone)
     return ____exports.makeColors(nil, {foregroundColor = foregroundColor or toneColors.foregroundColor, backgroundColor = backgroundColor or toneColors.backgroundColor})
+end
+function ____exports.inheritTextColors(self, text, box, props)
+    return createOptions(
+        nil,
+        __TS__ObjectAssign({}, text or ({}))
+    ):with("foregroundColor", props.foregroundColor or text and text.foregroundColor or box.foregroundColor):with("backgroundColor", props.backgroundColor or text and text.backgroundColor or box.backgroundColor):done()
 end
 function ____exports.applyTone(self, style, theme, tone)
     local toneColors = ____exports.resolveToneColors(nil, theme, tone)

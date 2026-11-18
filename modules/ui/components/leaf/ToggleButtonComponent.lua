@@ -216,6 +216,7 @@ local ResolveTextLinesOptions = ____renderHelpers.ResolveTextLinesOptions
 local ____surfaceAdapter = require("modules.ui.render.surfaceAdapter")
 local UIDrawSurface = ____surfaceAdapter.UIDrawSurface
 local ____tone = require("modules.ui.theme.tone")
+local inheritTextColors = ____tone.inheritTextColors
 local makeToneColorOverride = ____tone.makeToneColorOverride
 local ____types = require("modules.ui.types.index")
 local ButtonStyle = ____types.ButtonStyle
@@ -241,6 +242,14 @@ function ToggleButtonComponent.prototype.____constructor(self, props, dependenci
         ____props_pressed_0 = false
     end
     self._pressed = ____props_pressed_0
+end
+function ToggleButtonComponent.prototype.onPropsChanged(self, patch)
+    if patch.pressed ~= nil then
+        self._pressed = patch.pressed
+    end
+end
+function ToggleButtonComponent.prototype.setLabel(self, label)
+    self:setProps({label = label})
 end
 function ToggleButtonComponent.prototype.setPressed(self, value)
     if self._pressed == value then
@@ -323,70 +332,51 @@ function ToggleButtonComponent.prototype.getResolvedStyle(self, context)
         context,
         function(____, themeStyle)
             local colors = themeStyle.colors
-            local ____table_disabled_31
+            local ____table_disabled_33
             if self.disabled then
-                ____table_disabled_31 = colors and colors.disabled
+                ____table_disabled_33 = colors and colors.disabled
             else
-                local ____table__pressed_30
-                if self._pressed then
-                    ____table__pressed_30 = colors and colors.pressed or colors and colors.active or colors and colors.selected
+                local ____table_flashing_32
+                if self.flashing then
+                    ____table_flashing_32 = colors and colors.active or colors and colors.selected or colors and colors.pressed
                 else
-                    local ____table_focused_29
-                    if self.focused then
-                        ____table_focused_29 = colors and colors.active or colors and colors.selected
+                    local ____table__pressed_31
+                    if self._pressed then
+                        ____table__pressed_31 = colors and colors.pressed or colors and colors.active or colors and colors.selected
                     else
-                        ____table_focused_29 = colors and colors.default
+                        ____table__pressed_31 = colors and colors.default
                     end
-                    ____table__pressed_30 = ____table_focused_29
+                    ____table_flashing_32 = ____table__pressed_31
                 end
-                ____table_disabled_31 = ____table__pressed_30
+                ____table_disabled_33 = ____table_flashing_32
             end
-            local foreground = ____table_disabled_31
-            local ____table_disabled_48
-            if self.disabled then
-                ____table_disabled_48 = colors and colors.disabled
-            else
-                local ____table__pressed_47
-                if self._pressed then
-                    ____table__pressed_47 = colors and colors.pressed or colors and colors.active or colors and colors.selected
-                else
-                    local ____table_focused_46
-                    if self.focused then
-                        ____table_focused_46 = colors and colors.active or colors and colors.selected
-                    else
-                        ____table_focused_46 = colors and colors.default
-                    end
-                    ____table__pressed_47 = ____table_focused_46
-                end
-                ____table_disabled_48 = ____table__pressed_47
-            end
-            local background = ____table_disabled_48
+            local stateBackground = ____table_disabled_33
             local tone = makeToneColorOverride(
                 nil,
                 nil,
                 context.theme,
-                self.props.foregroundColor or foreground,
-                self.props.backgroundColor or background
+                self.props.foregroundColor or themeStyle.foregroundColor,
+                self.props.backgroundColor or stateBackground or themeStyle.backgroundColor
             )
-            local ____themeStyle_59 = themeStyle
-            local ____temp_60 = themeStyle.padding or ({left = 1, right = 1})
-            local ____themeStyle_text_56 = themeStyle.text
-            local ____opt_49 = themeStyle.text
-            local ____temp_57 = ____opt_49 and ____opt_49.alignment or "center"
-            local ____opt_51 = themeStyle.text
-            local ____temp_58 = ____opt_51 and ____opt_51.wrap or "none"
-            local ____opt_53 = themeStyle.text
-            local ____temp_55 = ____opt_53 and ____opt_53.ellipsis
-            if ____temp_55 == nil then
-                ____temp_55 = true
+            local ____themeStyle_44 = themeStyle
+            local ____temp_45 = self.props.padding or themeStyle.padding or ({left = 1, right = 1})
+            local ____inheritTextColors_result_41 = inheritTextColors(nil, themeStyle.text, tone, self.props)
+            local ____opt_34 = themeStyle.text
+            local ____temp_42 = ____opt_34 and ____opt_34.alignment or "center"
+            local ____opt_36 = themeStyle.text
+            local ____temp_43 = ____opt_36 and ____opt_36.wrap or "none"
+            local ____opt_38 = themeStyle.text
+            local ____temp_40 = ____opt_38 and ____opt_38.ellipsis
+            if ____temp_40 == nil then
+                ____temp_40 = true
             end
             return __TS__ObjectAssign(
                 {},
-                ____themeStyle_59,
+                ____themeStyle_44,
                 tone,
                 {
-                    padding = ____temp_60,
-                    text = __TS__ObjectAssign({}, ____themeStyle_text_56, {alignment = ____temp_57, wrap = ____temp_58, ellipsis = ____temp_55})
+                    padding = ____temp_45,
+                    text = __TS__ObjectAssign({}, ____inheritTextColors_result_41, {alignment = ____temp_42, wrap = ____temp_43, ellipsis = ____temp_40})
                 }
             )
         end

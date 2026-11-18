@@ -97,8 +97,7 @@ end
 function Results.unwrap(self, result)
     if not result.ok then
         error(
-            nil,
-            "Tried to unwrap an error result: " .. tostring(nil, result.error),
+            "Tried to unwrap an error result: " .. tostring(result.error),
             2
         )
     end
@@ -122,7 +121,7 @@ function Results.try(self, fn)
                     EmberError,
                     "Unknown error",
                     "UNKNOWN_ERROR",
-                    {cause = tostring(nil, caught)}
+                    {cause = tostring(caught)}
                 )
             )
         end

@@ -60,6 +60,17 @@ local function __TS__ArrayReduce(self, callbackFn, ...)
     return accumulator
 end
 
+local function __TS__ObjectAssign(target, ...)
+    local sources = {...}
+    for i = 1, #sources do
+        local source = sources[i]
+        for key in pairs(source) do
+            target[key] = source[key]
+        end
+    end
+    return target
+end
+
 local function __TS__ArrayFilter(self, callbackfn, thisArg)
     local result = {}
     local len = 0
@@ -91,6 +102,9 @@ local drawText = ____renderHelpers.drawText
 local DrawTextOptions = ____renderHelpers.DrawTextOptions
 local ____surfaceAdapter = require("modules.ui.render.surfaceAdapter")
 local UIDrawSurface = ____surfaceAdapter.UIDrawSurface
+local ____theme = require("modules.ui.theme.theme")
+local getColumnRuleCharacter = ____theme.getColumnRuleCharacter
+local getRuleCharacter = ____theme.getRuleCharacter
 local ____tone = require("modules.ui.theme.tone")
 local makeColors = ____tone.makeColors
 local ____types = require("modules.ui.types.index")
@@ -114,6 +128,9 @@ function TableComponent.prototype.____constructor(self, props, dependencies)
         dependencies = {}
     end
     BaseComponent.prototype.____constructor(self, "table", props, dependencies)
+end
+function TableComponent.prototype.setRows(self, rows)
+    self:setProps({rows = rows})
 end
 function TableComponent.prototype.measure(self, constraints, context)
     local style = self:getResolvedStyle(context)
@@ -183,7 +200,7 @@ function TableComponent.prototype.render(self, context)
                 context.draw,
                 {x = innerRect.x, y = currentY},
                 innerRect.width,
-                "─",
+                getRuleCharacter(nil, context.theme),
                 style.separatorColor,
                 style.backgroundColor,
                 context.clipRect
@@ -214,7 +231,7 @@ function TableComponent.prototype.render(self, context)
                     context.draw,
                     {x = innerRect.x, y = currentY},
                     innerRect.width,
-                    "─",
+                    getRuleCharacter(nil, context.theme),
                     style.separatorColor,
                     style.backgroundColor,
                     context.clipRect
@@ -229,68 +246,93 @@ function TableComponent.prototype.getResolvedStyle(self, context)
     return self:getStyle(
         context,
         function(____, themeStyle)
-            local ____self_52 = createOptions(nil, themeStyle):with("foregroundColor", self.props.foregroundColor or themeStyle.foregroundColor or context.theme.palette.text):with("backgroundColor", self.props.backgroundColor or themeStyle.backgroundColor or context.theme.palette.surface)
-            local ____self_52_with_53 = ____self_52.with
-            local ____themeStyle_showHeader_51 = themeStyle.showHeader
-            if ____themeStyle_showHeader_51 == nil then
-                ____themeStyle_showHeader_51 = true
+            local ____self_56 = createOptions(
+                nil,
+                __TS__ObjectAssign({}, themeStyle)
+            ):with("foregroundColor", self.props.foregroundColor or themeStyle.foregroundColor or context.theme.palette.text):with("backgroundColor", self.props.backgroundColor or themeStyle.backgroundColor or context.theme.palette.surface)
+            local ____self_56_with_57 = ____self_56.with
+            local ____themeStyle_showHeader_55 = themeStyle.showHeader
+            if ____themeStyle_showHeader_55 == nil then
+                ____themeStyle_showHeader_55 = true
             end
-            local ____self_50 = ____self_52_with_53(____self_52, "showHeader", ____themeStyle_showHeader_51)
-            local ____self_50_with_54 = ____self_50.with
-            local ____themeStyle_showBorders_49 = themeStyle.showBorders
-            if ____themeStyle_showBorders_49 == nil then
-                ____themeStyle_showBorders_49 = true
+            local ____self_54 = ____self_56_with_57(____self_56, "showHeader", ____themeStyle_showHeader_55)
+            local ____self_54_with_58 = ____self_54.with
+            local ____themeStyle_showBorders_53 = themeStyle.showBorders
+            if ____themeStyle_showBorders_53 == nil then
+                ____themeStyle_showBorders_53 = true
             end
-            local ____self_48 = ____self_50_with_54(____self_50, "showBorders", ____themeStyle_showBorders_49):with("separatorColor", themeStyle.separatorColor or context.theme.palette.border)
-            local ____self_48_with_55 = ____self_48.with
-            local ____self_42 = createOptions(nil, themeStyle.headerStyle or ({}))
-            local ____self_42_with_43 = ____self_42.with
-            local ____opt_40 = themeStyle.headerStyle
-            local ____self_39 = ____self_42_with_43(____self_42, "alignment", ____opt_40 and ____opt_40.alignment or "left")
-            local ____self_39_with_44 = ____self_39.with
-            local ____opt_37 = themeStyle.headerStyle
-            local ____self_36 = ____self_39_with_44(____self_39, "wrap", ____opt_37 and ____opt_37.wrap or "none")
-            local ____self_36_with_45 = ____self_36.with
-            local ____opt_33 = themeStyle.headerStyle
-            local ____temp_35 = ____opt_33 and ____opt_33.ellipsis
-            if ____temp_35 == nil then
-                ____temp_35 = true
-            end
-            local ____self_32 = ____self_36_with_45(____self_36, "ellipsis", ____temp_35)
-            local ____self_32_with_46 = ____self_32.with
-            local ____opt_30 = themeStyle.headerStyle
-            local ____self_29 = ____self_32_with_46(____self_32, "foregroundColor", ____opt_30 and ____opt_30.foregroundColor or context.theme.palette.text)
-            local ____self_29_with_47 = ____self_29.with
-            local ____opt_27 = themeStyle.headerStyle
-            local ____self_26 = ____self_48_with_55(
-                ____self_48,
-                "headerStyle",
-                ____self_29_with_47(____self_29, "backgroundColor", ____opt_27 and ____opt_27.backgroundColor or themeStyle.backgroundColor):done()
+            local ____self_52 = ____self_54_with_58(____self_54, "showBorders", ____themeStyle_showBorders_53):with("separatorColor", themeStyle.separatorColor or context.theme.palette.border)
+            local ____self_52_with_59 = ____self_52.with
+            local ____self_46 = createOptions(
+                nil,
+                __TS__ObjectAssign({}, themeStyle.headerStyle or ({}))
             )
-            local ____self_26_with_56 = ____self_26.with
-            local ____self_20 = createOptions(nil, themeStyle.rowStyle or ({}))
-            local ____self_20_with_21 = ____self_20.with
-            local ____opt_18 = themeStyle.rowStyle
-            local ____self_17 = ____self_20_with_21(____self_20, "alignment", ____opt_18 and ____opt_18.alignment or "left")
-            local ____self_17_with_22 = ____self_17.with
-            local ____opt_15 = themeStyle.rowStyle
-            local ____self_14 = ____self_17_with_22(____self_17, "wrap", ____opt_15 and ____opt_15.wrap or "none")
-            local ____self_14_with_23 = ____self_14.with
-            local ____opt_11 = themeStyle.rowStyle
-            local ____temp_13 = ____opt_11 and ____opt_11.ellipsis
-            if ____temp_13 == nil then
-                ____temp_13 = true
+            local ____self_46_with_47 = ____self_46.with
+            local ____opt_44 = themeStyle.headerStyle
+            local ____self_43 = ____self_46_with_47(____self_46, "alignment", ____opt_44 and ____opt_44.alignment or "left")
+            local ____self_43_with_48 = ____self_43.with
+            local ____opt_41 = themeStyle.headerStyle
+            local ____self_40 = ____self_43_with_48(____self_43, "wrap", ____opt_41 and ____opt_41.wrap or "none")
+            local ____self_40_with_49 = ____self_40.with
+            local ____opt_37 = themeStyle.headerStyle
+            local ____temp_39 = ____opt_37 and ____opt_37.ellipsis
+            if ____temp_39 == nil then
+                ____temp_39 = true
             end
-            local ____self_10 = ____self_14_with_23(____self_14, "ellipsis", ____temp_13)
-            local ____self_10_with_24 = ____self_10.with
-            local ____opt_8 = themeStyle.rowStyle
-            local ____self_7 = ____self_10_with_24(____self_10, "foregroundColor", ____opt_8 and ____opt_8.foregroundColor or context.theme.palette.text)
-            local ____self_7_with_25 = ____self_7.with
-            local ____opt_5 = themeStyle.rowStyle
-            return ____self_26_with_56(
-                ____self_26,
+            local ____self_36 = ____self_40_with_49(____self_40, "ellipsis", ____temp_39)
+            local ____self_36_with_50 = ____self_36.with
+            local ____self_props_foregroundColor_35 = self.props.foregroundColor
+            if ____self_props_foregroundColor_35 == nil then
+                local ____opt_33 = themeStyle.headerStyle
+                ____self_props_foregroundColor_35 = ____opt_33 and ____opt_33.foregroundColor
+            end
+            local ____self_32 = ____self_36_with_50(____self_36, "foregroundColor", ____self_props_foregroundColor_35 or context.theme.palette.text)
+            local ____self_32_with_51 = ____self_32.with
+            local ____self_props_backgroundColor_31 = self.props.backgroundColor
+            if ____self_props_backgroundColor_31 == nil then
+                local ____opt_29 = themeStyle.headerStyle
+                ____self_props_backgroundColor_31 = ____opt_29 and ____opt_29.backgroundColor
+            end
+            local ____self_28 = ____self_52_with_59(
+                ____self_52,
+                "headerStyle",
+                ____self_32_with_51(____self_32, "backgroundColor", ____self_props_backgroundColor_31 or themeStyle.backgroundColor):done()
+            )
+            local ____self_28_with_60 = ____self_28.with
+            local ____self_22 = createOptions(
+                nil,
+                __TS__ObjectAssign({}, themeStyle.rowStyle or ({}))
+            )
+            local ____self_22_with_23 = ____self_22.with
+            local ____opt_20 = themeStyle.rowStyle
+            local ____self_19 = ____self_22_with_23(____self_22, "alignment", ____opt_20 and ____opt_20.alignment or "left")
+            local ____self_19_with_24 = ____self_19.with
+            local ____opt_17 = themeStyle.rowStyle
+            local ____self_16 = ____self_19_with_24(____self_19, "wrap", ____opt_17 and ____opt_17.wrap or "none")
+            local ____self_16_with_25 = ____self_16.with
+            local ____opt_13 = themeStyle.rowStyle
+            local ____temp_15 = ____opt_13 and ____opt_13.ellipsis
+            if ____temp_15 == nil then
+                ____temp_15 = true
+            end
+            local ____self_12 = ____self_16_with_25(____self_16, "ellipsis", ____temp_15)
+            local ____self_12_with_26 = ____self_12.with
+            local ____self_props_foregroundColor_11 = self.props.foregroundColor
+            if ____self_props_foregroundColor_11 == nil then
+                local ____opt_9 = themeStyle.rowStyle
+                ____self_props_foregroundColor_11 = ____opt_9 and ____opt_9.foregroundColor
+            end
+            local ____self_8 = ____self_12_with_26(____self_12, "foregroundColor", ____self_props_foregroundColor_11 or context.theme.palette.text)
+            local ____self_8_with_27 = ____self_8.with
+            local ____self_props_backgroundColor_7 = self.props.backgroundColor
+            if ____self_props_backgroundColor_7 == nil then
+                local ____opt_5 = themeStyle.rowStyle
+                ____self_props_backgroundColor_7 = ____opt_5 and ____opt_5.backgroundColor
+            end
+            return ____self_28_with_60(
+                ____self_28,
                 "rowStyle",
-                ____self_7_with_25(____self_7, "backgroundColor", ____opt_5 and ____opt_5.backgroundColor or themeStyle.backgroundColor):done()
+                ____self_8_with_27(____self_8, "backgroundColor", ____self_props_backgroundColor_7 or themeStyle.backgroundColor):done()
             ):done()
         end
     )
@@ -300,11 +342,11 @@ function TableComponent.prototype.resolveColumnWidths(self, availableWidth, styl
     if #columns == 0 then
         return {}
     end
-    local ____style_showBorders_57 = style.showBorders
-    if ____style_showBorders_57 == nil then
-        ____style_showBorders_57 = false
+    local ____style_showBorders_61 = style.showBorders
+    if ____style_showBorders_61 == nil then
+        ____style_showBorders_61 = false
     end
-    local showBorders = ____style_showBorders_57
+    local showBorders = ____style_showBorders_61
     local separatorWidth = showBorders and math.max(0, #columns - 1) or 0
     local usableWidth = math.max(0, availableWidth - separatorWidth)
     local fixedWidth = __TS__ArrayReduce(
@@ -340,27 +382,27 @@ function TableComponent.prototype.resolveColumnWidths(self, availableWidth, styl
 end
 function TableComponent.prototype.renderHeaderRow(self, context, columns, y, style, innerRect)
     local currentX = innerRect.x
-    local ____style_showBorders_58 = style.showBorders
-    if ____style_showBorders_58 == nil then
-        ____style_showBorders_58 = false
+    local ____style_showBorders_62 = style.showBorders
+    if ____style_showBorders_62 == nil then
+        ____style_showBorders_62 = false
     end
-    local showBorders = ____style_showBorders_58
+    local showBorders = ____style_showBorders_62
     do
         local index = 0
         while index < #columns do
-            local ____columns_index_59 = columns[index + 1]
-            local column = ____columns_index_59.column
-            local width = ____columns_index_59.width
-            local ____drawText_66 = drawText
-            local ____context_65 = context
-            local ____createOptions_64 = createOptions
-            local ____temp_62 = {x = currentX, y = y, width = width, height = 1}
-            local ____column_title_63 = column.title
-            local ____opt_60 = style.headerStyle
-            ____drawText_66(
+            local ____columns_index_63 = columns[index + 1]
+            local column = ____columns_index_63.column
+            local width = ____columns_index_63.width
+            local ____drawText_70 = drawText
+            local ____context_69 = context
+            local ____createOptions_68 = createOptions
+            local ____temp_66 = {x = currentX, y = y, width = width, height = 1}
+            local ____column_title_67 = column.title
+            local ____opt_64 = style.headerStyle
+            ____drawText_70(
                 nil,
-                ____context_65,
-                ____createOptions_64(nil, {rect = ____temp_62, text = ____column_title_63, fillBackground = (____opt_60 and ____opt_60.backgroundColor) ~= nil}):with(
+                ____context_69,
+                ____createOptions_68(nil, {rect = ____temp_66, text = ____column_title_67, fillBackground = (____opt_64 and ____opt_64.backgroundColor) ~= nil}):with(
                     "style",
                     self:resolveHeaderCellStyle(column, style)
                 ):with("clipRect", context.clipRect):done()
@@ -370,7 +412,14 @@ function TableComponent.prototype.renderHeaderRow(self, context, columns, y, sty
                 drawText(
                     nil,
                     context,
-                    createOptions(nil, {rect = {x = currentX, y = y, width = 1, height = 1}, text = "│", fillBackground = style.backgroundColor ~= nil}):with(
+                    createOptions(
+                        nil,
+                        {
+                            rect = {x = currentX, y = y, width = 1, height = 1},
+                            text = getColumnRuleCharacter(nil, context.theme),
+                            fillBackground = style.backgroundColor ~= nil
+                        }
+                    ):with(
                         "style",
                         makeColors(nil, {foregroundColor = style.separatorColor, backgroundColor = style.backgroundColor})
                     ):with("clipRect", context.clipRect):done()
@@ -383,27 +432,27 @@ function TableComponent.prototype.renderHeaderRow(self, context, columns, y, sty
 end
 function TableComponent.prototype.renderDataRow(self, context, columns, row, rowIndex, y, style, innerRect)
     local currentX = innerRect.x
-    local ____style_showBorders_67 = style.showBorders
-    if ____style_showBorders_67 == nil then
-        ____style_showBorders_67 = false
+    local ____style_showBorders_71 = style.showBorders
+    if ____style_showBorders_71 == nil then
+        ____style_showBorders_71 = false
     end
-    local showBorders = ____style_showBorders_67
+    local showBorders = ____style_showBorders_71
     local alternateBackground = style.alternateRowBackgroundColor
     local isAlternateRow = alternateBackground ~= nil and rowIndex % 2 == 1
-    local ____isAlternateRow_70
+    local ____isAlternateRow_74
     if isAlternateRow then
-        ____isAlternateRow_70 = alternateBackground
+        ____isAlternateRow_74 = alternateBackground
     else
-        local ____opt_68 = style.rowStyle
-        ____isAlternateRow_70 = ____opt_68 and ____opt_68.backgroundColor
+        local ____opt_72 = style.rowStyle
+        ____isAlternateRow_74 = ____opt_72 and ____opt_72.backgroundColor
     end
-    local rowBackground = ____isAlternateRow_70
+    local rowBackground = ____isAlternateRow_74
     do
         local index = 0
         while index < #columns do
-            local ____columns_index_71 = columns[index + 1]
-            local column = ____columns_index_71.column
-            local width = ____columns_index_71.width
+            local ____columns_index_75 = columns[index + 1]
+            local column = ____columns_index_75.column
+            local width = ____columns_index_75.width
             local text = self:renderCellValue(column, row, rowIndex)
             drawText(
                 nil,
@@ -421,7 +470,14 @@ function TableComponent.prototype.renderDataRow(self, context, columns, row, row
                 drawText(
                     nil,
                     context,
-                    createOptions(nil, {rect = {x = currentX, y = y, width = 1, height = 1}, text = "│", fillBackground = rowBackground ~= nil or style.backgroundColor ~= nil}):with(
+                    createOptions(
+                        nil,
+                        {
+                            rect = {x = currentX, y = y, width = 1, height = 1},
+                            text = getColumnRuleCharacter(nil, context.theme),
+                            fillBackground = rowBackground ~= nil or style.backgroundColor ~= nil
+                        }
+                    ):with(
                         "style",
                         makeColors(nil, {foregroundColor = style.separatorColor, backgroundColor = rowBackground or style.backgroundColor})
                     ):with("clipRect", context.clipRect):done()
@@ -433,24 +489,30 @@ function TableComponent.prototype.renderDataRow(self, context, columns, row, row
     end
 end
 function TableComponent.prototype.resolveHeaderCellStyle(self, column, style)
-    local ____self_75 = createOptions(nil, style.headerStyle or ({}))
-    local ____self_75_with_76 = ____self_75.with
-    local ____column_alignment_74 = column.alignment
-    if ____column_alignment_74 == nil then
-        local ____opt_72 = style.headerStyle
-        ____column_alignment_74 = ____opt_72 and ____opt_72.alignment
+    local ____self_79 = createOptions(
+        nil,
+        __TS__ObjectAssign({}, style.headerStyle or ({}))
+    )
+    local ____self_79_with_80 = ____self_79.with
+    local ____column_alignment_78 = column.alignment
+    if ____column_alignment_78 == nil then
+        local ____opt_76 = style.headerStyle
+        ____column_alignment_78 = ____opt_76 and ____opt_76.alignment
     end
-    return ____self_75_with_76(____self_75, "alignment", ____column_alignment_74 or "left"):done()
+    return ____self_79_with_80(____self_79, "alignment", ____column_alignment_78 or "left"):done()
 end
 function TableComponent.prototype.resolveRowCellStyle(self, column, style)
-    local ____self_80 = createOptions(nil, style.rowStyle or ({}))
-    local ____self_80_with_81 = ____self_80.with
-    local ____column_alignment_79 = column.alignment
-    if ____column_alignment_79 == nil then
-        local ____opt_77 = style.rowStyle
-        ____column_alignment_79 = ____opt_77 and ____opt_77.alignment
+    local ____self_84 = createOptions(
+        nil,
+        __TS__ObjectAssign({}, style.rowStyle or ({}))
+    )
+    local ____self_84_with_85 = ____self_84.with
+    local ____column_alignment_83 = column.alignment
+    if ____column_alignment_83 == nil then
+        local ____opt_81 = style.rowStyle
+        ____column_alignment_83 = ____opt_81 and ____opt_81.alignment
     end
-    return ____self_80_with_81(____self_80, "alignment", ____column_alignment_79 or "left"):done()
+    return ____self_84_with_85(____self_84, "alignment", ____column_alignment_83 or "left"):done()
 end
 function TableComponent.prototype.renderCellValue(self, column, row, rowIndex)
     if column.render then

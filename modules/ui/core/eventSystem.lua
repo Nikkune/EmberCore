@@ -358,38 +358,52 @@ function BasicUIEventBus.prototype.subscribeOnce(self, ____type, handler, option
     return self:subscribe(
         ____type,
         handler,
-        __TS__ObjectAssign({}, options, {once = true})
+        __TS__ObjectAssign({}, options or ({}), {once = true})
     )
 end
 function BasicUIEventBus.prototype.unsubscribe(self, subscriptionId)
     for eventType in pairs(self.subscriptions) do
         do
-            local ____type = eventType
-            local list = self.subscriptions[____type]
-            if not list or #list == 0 then
-                goto __continue14
-            end
-            do
-                local i = 0
-                while i < #list do
-                    do
-                        local subscription = list[i + 1]
-                        if subscription == nil then
-                            goto __continue17
-                        end
-                        if subscription.id ~= subscriptionId then
-                            goto __continue17
-                        end
-                        subscription:setActive(false)
-                        __TS__ArraySplice(list, i, 1)
-                        return true
-                    end
-                    ::__continue17::
-                    i = i + 1
+            local __continue14
+            repeat
+                local ____type = eventType
+                local list = self.subscriptions[____type]
+                if not list or #list == 0 then
+                    __continue14 = true
+                    break
                 end
+                do
+                    local i = 0
+                    while i < #list do
+                        do
+                            local __continue17
+                            repeat
+                                local subscription = list[i + 1]
+                                if subscription == nil then
+                                    __continue17 = true
+                                    break
+                                end
+                                if subscription.id ~= subscriptionId then
+                                    __continue17 = true
+                                    break
+                                end
+                                subscription:setActive(false)
+                                __TS__ArraySplice(list, i, 1)
+                                return true
+                            until true
+                            if not __continue17 then
+                                break
+                            end
+                        end
+                        i = i + 1
+                    end
+                end
+                __continue14 = true
+            until true
+            if not __continue14 then
+                break
             end
         end
-        ::__continue14::
     end
     return false
 end
@@ -407,25 +421,33 @@ function BasicUIEventBus.prototype.dispatch(self, event)
         return {dispatched = false, listenerCount = 0, cancelled = ____event_cancelled_3, propagationStopped = ____event_propagationStopped_4}
     end
     local listenerCount = 0
-    local snapshot = {table.unpack(list)}
+    local snapshot = {unpack(list)}
     for ____, subscription in ipairs(snapshot) do
         do
-            if not subscription.active then
-                goto __continue23
-            end
-            if subscription.targetId ~= nil and subscription.targetId ~= event.targetId then
-                goto __continue23
-            end
-            listenerCount = listenerCount + 1
-            subscription:handler(event)
-            if subscription.once then
-                self:unsubscribe(subscription.id)
-            end
-            if event.propagationStopped then
+            local __continue23
+            repeat
+                if not subscription.active then
+                    __continue23 = true
+                    break
+                end
+                if subscription.targetId ~= nil and subscription.targetId ~= event.targetId then
+                    __continue23 = true
+                    break
+                end
+                listenerCount = listenerCount + 1
+                subscription:handler(event)
+                if subscription.once then
+                    self:unsubscribe(subscription.id)
+                end
+                if event.propagationStopped then
+                    break
+                end
+                __continue23 = true
+            until true
+            if not __continue23 then
                 break
             end
         end
-        ::__continue23::
     end
     local ____temp_7 = listenerCount > 0
     local ____listenerCount_8 = listenerCount
@@ -476,18 +498,25 @@ function BasicUIEventBus.prototype.has(self, ____type)
 end
 function BasicUIEventBus.prototype.getSubscriptions(self, ____type)
     if ____type ~= nil then
-        return {table.unpack(self.subscriptions[____type] or ({}))}
+        return {unpack(self.subscriptions[____type] or ({}))}
     end
     local allSubscriptions = {}
     for eventType in pairs(self.subscriptions) do
         do
-            local list = self.subscriptions[eventType]
-            if not list or #list == 0 then
-                goto __continue44
+            local __continue44
+            repeat
+                local list = self.subscriptions[eventType]
+                if not list or #list == 0 then
+                    __continue44 = true
+                    break
+                end
+                __TS__ArrayPushArray(allSubscriptions, list)
+                __continue44 = true
+            until true
+            if not __continue44 then
+                break
             end
-            __TS__ArrayPushArray(allSubscriptions, list)
         end
-        ::__continue44::
     end
     return allSubscriptions
 end

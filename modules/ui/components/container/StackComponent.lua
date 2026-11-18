@@ -67,10 +67,21 @@ local function __TS__ArrayReduce(self, callbackFn, ...)
     end
     return accumulator
 end
+
+local function __TS__ObjectAssign(target, ...)
+    local sources = {...}
+    for i = 1, #sources do
+        local source = sources[i]
+        for key in pairs(source) do
+            target[key] = source[key]
+        end
+    end
+    return target
+end
 -- End of Lua Library inline imports
 local ____exports = {}
-local ____baseContainerComponent = require("modules.ui.core.components.baseContainerComponent")
-local BaseContainerComponent = ____baseContainerComponent.BaseContainerComponent
+local ____interactiveContainerComponent = require("modules.ui.core.components.interactiveContainerComponent")
+local InteractiveContainerComponent = ____interactiveContainerComponent.InteractiveContainerComponent
 local ____renderHelpers = require("modules.ui.render.renderHelpers")
 local drawBox = ____renderHelpers.drawBox
 local DrawBoxOptions = ____renderHelpers.DrawBoxOptions
@@ -78,6 +89,8 @@ local getInnerRect = ____renderHelpers.getInnerRect
 local normalizeInsets = ____renderHelpers.normalizeInsets
 local ____surfaceAdapter = require("modules.ui.render.surfaceAdapter")
 local UIDrawSurface = ____surfaceAdapter.UIDrawSurface
+local ____tone = require("modules.ui.theme.tone")
+local makeColors = ____tone.makeColors
 local ____types = require("modules.ui.types.index")
 local ComponentDependencies = ____types.ComponentDependencies
 local CrossAxisAlignment = ____types.CrossAxisAlignment
@@ -96,7 +109,7 @@ local createOptions = ____helpers.createOptions
 ____exports.StackComponent = __TS__Class()
 local StackComponent = ____exports.StackComponent
 StackComponent.name = "StackComponent"
-__TS__ClassExtends(StackComponent, BaseContainerComponent)
+__TS__ClassExtends(StackComponent, InteractiveContainerComponent)
 function StackComponent.prototype.____constructor(self, props, dependencies, children)
     if dependencies == nil then
         dependencies = {}
@@ -104,7 +117,7 @@ function StackComponent.prototype.____constructor(self, props, dependencies, chi
     if children == nil then
         children = {}
     end
-    BaseContainerComponent.prototype.____constructor(
+    InteractiveContainerComponent.prototype.____constructor(
         self,
         "stack",
         props,
@@ -123,7 +136,7 @@ function StackComponent.prototype.measure(self, constraints, context)
         function(____, child, index) return {
             child = child,
             index = index,
-            size = child:measure(innerConstraints, context)
+            size = self:measureChild(child, innerConstraints, context)
         } end
     )
     local lines = self:createLines(
@@ -157,7 +170,7 @@ function StackComponent.prototype.measure(self, constraints, context)
     )
 end
 function StackComponent.prototype.layout(self, rect, context)
-    BaseContainerComponent.prototype.layout(self, rect, context)
+    InteractiveContainerComponent.prototype.layout(self, rect, context)
     local style = self:getResolvedStyle(context)
     local innerRect = getInnerRect(nil, self.rect, style)
     local placements = self:createPlacements(innerRect, context)
@@ -178,12 +191,18 @@ function StackComponent.prototype.render(self, context)
         context.draw,
         createOptions(nil, {rect = self.rect, style = style}):with("borderCharacters", borderCharacters):with("clipRect", context.clipRect):done()
     )
-    self:renderChildren(context)
+    context.draw:withColors(
+        makeColors(nil, {foregroundColor = style.foregroundColor, backgroundColor = style.backgroundColor}),
+        function() return self:renderChildren(context) end
+    )
 end
 function StackComponent.prototype.getResolvedStyle(self, context)
     return self:getStyle(
         context,
-        function(____, themeStyle) return createOptions(nil, themeStyle):with("foregroundColor", self.props.foregroundColor or themeStyle.foregroundColor or context.theme.palette.text):with("backgroundColor", self.props.backgroundColor or themeStyle.backgroundColor or context.theme.palette.surface):with("padding", themeStyle.padding or 0):done() end
+        function(____, themeStyle) return createOptions(
+            nil,
+            __TS__ObjectAssign({}, themeStyle)
+        ):with("foregroundColor", self.props.foregroundColor or themeStyle.foregroundColor):with("backgroundColor", self.props.backgroundColor or themeStyle.backgroundColor):with("padding", self.props.padding or themeStyle.padding or 0):done() end
     )
 end
 function StackComponent.prototype.getInnerConstraints(self, constraints, style)
@@ -202,7 +221,7 @@ function StackComponent.prototype.getInnerConstraints(self, constraints, style)
     }
 end
 function StackComponent.prototype.createPlacements(self, innerRect, context)
-    local children = {table.unpack(self.children)}
+    local children = {unpack(self.children)}
     local direction = self.props.direction or "column"
     local spacing = self.props.spacing or 0
     local alignment = self.props.alignment or "start"
@@ -214,7 +233,7 @@ function StackComponent.prototype.createPlacements(self, innerRect, context)
     local measured = __TS__ArrayMap(
         children,
         function(____, child, index)
-            local size = child:measure({minWidth = 0, maxWidth = innerRect.width, minHeight = 0, maxHeight = innerRect.height}, context)
+            local size = self:measureChild(child, {minWidth = 0, maxWidth = innerRect.width, minHeight = 0, maxHeight = innerRect.height}, context)
             return {child = child, index = index, size = size}
         end
     )
@@ -227,15 +246,12 @@ function StackComponent.prototype.createPlacements(self, innerRect, context)
         spacing,
         availableMain
     )
-    local totalCross = __TS__ArrayReduce(
-        lines,
-        function(____, sum, line) return sum + line.crossSize end,
-        0
-    ) + math.max(0, #lines - 1) * spacing
-    local remainingCross = math.max(0, availableCross - totalCross)
-    local crossJustify = self:resolveCrossJustify(remainingCross, spacing, #lines, justify)
+    local singleLine = lines[1]
+    if wrap == "nowrap" and singleLine then
+        singleLine.crossSize = math.max(singleLine.crossSize, availableCross)
+    end
     local placements = {}
-    local currentCross = crossJustify.startOffset
+    local currentCross = 0
     for ____, line in ipairs(lines) do
         local remainingMain = math.max(0, availableMain - line.mainSize)
         local mainJustify = self:resolveMainJustify(remainingMain, spacing, #line.items, justify)
@@ -249,7 +265,7 @@ function StackComponent.prototype.createPlacements(self, innerRect, context)
             placements[#placements + 1] = {child = item.child, rect = rect}
             currentMain = currentMain + (itemMain + mainJustify.betweenSpacing)
         end
-        currentCross = currentCross + (line.crossSize + crossJustify.betweenSpacing)
+        currentCross = currentCross + (line.crossSize + spacing)
     end
     return placements
 end
@@ -265,18 +281,25 @@ function StackComponent.prototype.createLines(self, children, direction, wrap, s
     local currentMain = 0
     for ____, item in ipairs(children) do
         do
-            local itemMain = direction == "row" and item.size.width or item.size.height
-            local nextMain = #current == 0 and itemMain or currentMain + spacing + itemMain
-            if #current > 0 and nextMain > availableMain then
-                lines[#lines + 1] = self:createLine(current, direction, spacing)
-                current = {item}
-                currentMain = itemMain
-                goto __continue25
+            local __continue26
+            repeat
+                local itemMain = direction == "row" and item.size.width or item.size.height
+                local nextMain = #current == 0 and itemMain or currentMain + spacing + itemMain
+                if #current > 0 and nextMain > availableMain then
+                    lines[#lines + 1] = self:createLine(current, direction, spacing)
+                    current = {item}
+                    currentMain = itemMain
+                    __continue26 = true
+                    break
+                end
+                current[#current + 1] = item
+                currentMain = nextMain
+                __continue26 = true
+            until true
+            if not __continue26 then
+                break
             end
-            current[#current + 1] = item
-            currentMain = nextMain
         end
-        ::__continue25::
     end
     if #current > 0 then
         lines[#lines + 1] = self:createLine(current, direction, spacing)
@@ -307,27 +330,27 @@ function StackComponent.prototype.resolveMainJustify(self, remainingMain, spacin
         return {startOffset = 0, betweenSpacing = spacing}
     end
     repeat
-        local ____switch34 = justify
-        local ____cond34 = ____switch34 == "center"
-        if ____cond34 then
+        local ____switch35 = justify
+        local ____cond35 = ____switch35 == "center"
+        if ____cond35 then
             return {
                 startOffset = math.floor(remainingMain / 2),
                 betweenSpacing = spacing
             }
         end
-        ____cond34 = ____cond34 or ____switch34 == "end"
-        if ____cond34 then
+        ____cond35 = ____cond35 or ____switch35 == "end"
+        if ____cond35 then
             return {startOffset = remainingMain, betweenSpacing = spacing}
         end
-        ____cond34 = ____cond34 or ____switch34 == "space-between"
-        if ____cond34 then
+        ____cond35 = ____cond35 or ____switch35 == "space-between"
+        if ____cond35 then
             return {
                 startOffset = 0,
                 betweenSpacing = childCount > 1 and spacing + math.floor(remainingMain / (childCount - 1)) or spacing
             }
         end
-        ____cond34 = ____cond34 or ____switch34 == "space-around"
-        if ____cond34 then
+        ____cond35 = ____cond35 or ____switch35 == "space-around"
+        if ____cond35 then
             do
                 local gap = childCount > 0 and math.floor(remainingMain / childCount) or 0
                 return {
@@ -336,64 +359,32 @@ function StackComponent.prototype.resolveMainJustify(self, remainingMain, spacin
                 }
             end
         end
-        ____cond34 = ____cond34 or ____switch34 == "space-evenly"
-        if ____cond34 then
+        ____cond35 = ____cond35 or ____switch35 == "space-evenly"
+        if ____cond35 then
             do
                 local gap = math.floor(remainingMain / (childCount + 1))
                 return {startOffset = gap, betweenSpacing = spacing + gap}
             end
         end
-        ____cond34 = ____cond34 or ____switch34 == "start"
+        ____cond35 = ____cond35 or ____switch35 == "start"
         do
             return {startOffset = 0, betweenSpacing = spacing}
         end
     until true
 end
-function StackComponent.prototype.resolveCrossJustify(self, remainingCross, spacing, lineCount, justify)
-    if lineCount <= 0 then
-        return {startOffset = 0, betweenSpacing = spacing}
-    end
-    if justify == "space-between" and lineCount > 1 then
-        return {
-            startOffset = 0,
-            betweenSpacing = spacing + math.floor(remainingCross / (lineCount - 1))
-        }
-    end
-    if justify == "space-around" then
-        local gap = math.floor(remainingCross / lineCount)
-        return {
-            startOffset = math.floor(gap / 2),
-            betweenSpacing = spacing + gap
-        }
-    end
-    if justify == "space-evenly" then
-        local gap = math.floor(remainingCross / (lineCount + 1))
-        return {startOffset = gap, betweenSpacing = spacing + gap}
-    end
-    if justify == "center" then
-        return {
-            startOffset = math.floor(remainingCross / 2),
-            betweenSpacing = spacing
-        }
-    end
-    if justify == "end" then
-        return {startOffset = remainingCross, betweenSpacing = spacing}
-    end
-    return {startOffset = 0, betweenSpacing = spacing}
-end
 function StackComponent.prototype.resolveCrossOffset(self, alignment, availableCross, childCross)
     local remaining = math.max(0, availableCross - childCross)
     repeat
-        local ____switch45 = alignment
-        local ____cond45 = ____switch45 == "center"
-        if ____cond45 then
+        local ____switch39 = alignment
+        local ____cond39 = ____switch39 == "center"
+        if ____cond39 then
             return math.floor(remaining / 2)
         end
-        ____cond45 = ____cond45 or ____switch45 == "end"
-        if ____cond45 then
+        ____cond39 = ____cond39 or ____switch39 == "end"
+        if ____cond39 then
             return remaining
         end
-        ____cond45 = ____cond45 or (____switch45 == "stretch" or ____switch45 == "start")
+        ____cond39 = ____cond39 or (____switch39 == "stretch" or ____switch39 == "start")
         do
             return 0
         end

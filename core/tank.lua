@@ -22,7 +22,7 @@ local ____peripheral = require("core.peripheral")
 local Peripheral = ____peripheral.Peripheral
 local function mapToFluidTank(self, raw)
     if not raw then
-        return nil
+        return {}
     end
     return createOptions(nil, {}):with("name", raw.name):with("amount", raw.amount):with("capacity", raw.capacity):with("displayName", raw.displayName):done()
 end
@@ -40,8 +40,18 @@ end
 function Tank.prototype.list(self)
     local rawTanks = self.peripheralRef.tanks()
     local result = {}
-    for ____, raw in ipairs(rawTanks) do
-        result[#result + 1] = mapToFluidTank(nil, raw)
+    local count = 0
+    for index in pairs(rawTanks) do
+        if index > count then
+            count = index
+        end
+    end
+    do
+        local index = 1
+        while index <= count do
+            result[#result + 1] = mapToFluidTank(nil, rawTanks[index])
+            index = index + 1
+        end
     end
     return result
 end

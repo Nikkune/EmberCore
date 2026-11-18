@@ -67,10 +67,21 @@ local function __TS__ArrayMap(self, callbackfn, thisArg)
     end
     return result
 end
+
+local function __TS__ObjectAssign(target, ...)
+    local sources = {...}
+    for i = 1, #sources do
+        local source = sources[i]
+        for key in pairs(source) do
+            target[key] = source[key]
+        end
+    end
+    return target
+end
 -- End of Lua Library inline imports
 local ____exports = {}
-local ____baseContainerComponent = require("modules.ui.core.components.baseContainerComponent")
-local BaseContainerComponent = ____baseContainerComponent.BaseContainerComponent
+local ____interactiveContainerComponent = require("modules.ui.core.components.interactiveContainerComponent")
+local InteractiveContainerComponent = ____interactiveContainerComponent.InteractiveContainerComponent
 local ____renderHelpers = require("modules.ui.render.renderHelpers")
 local drawBox = ____renderHelpers.drawBox
 local DrawBoxOptions = ____renderHelpers.DrawBoxOptions
@@ -78,6 +89,8 @@ local getInnerRect = ____renderHelpers.getInnerRect
 local normalizeInsets = ____renderHelpers.normalizeInsets
 local ____surfaceAdapter = require("modules.ui.render.surfaceAdapter")
 local UIDrawSurface = ____surfaceAdapter.UIDrawSurface
+local ____tone = require("modules.ui.theme.tone")
+local makeColors = ____tone.makeColors
 local ____types = require("modules.ui.types.index")
 local ComponentDependencies = ____types.ComponentDependencies
 local ContainerProps = ____types.ContainerProps
@@ -92,7 +105,7 @@ local createOptions = ____helpers.createOptions
 ____exports.ContainerComponent = __TS__Class()
 local ContainerComponent = ____exports.ContainerComponent
 ContainerComponent.name = "ContainerComponent"
-__TS__ClassExtends(ContainerComponent, BaseContainerComponent)
+__TS__ClassExtends(ContainerComponent, InteractiveContainerComponent)
 function ContainerComponent.prototype.____constructor(self, props, dependencies, children)
     if dependencies == nil then
         dependencies = {}
@@ -100,7 +113,7 @@ function ContainerComponent.prototype.____constructor(self, props, dependencies,
     if children == nil then
         children = {}
     end
-    BaseContainerComponent.prototype.____constructor(
+    InteractiveContainerComponent.prototype.____constructor(
         self,
         "container",
         props,
@@ -134,7 +147,7 @@ function ContainerComponent.prototype.measure(self, constraints, context)
     )
 end
 function ContainerComponent.prototype.layout(self, rect, context)
-    BaseContainerComponent.prototype.layout(self, rect, context)
+    InteractiveContainerComponent.prototype.layout(self, rect, context)
     local style = self:getResolvedStyle(context)
     local innerRect = getInnerRect(nil, self.rect, style)
     local entries = __TS__ArrayMap(
@@ -158,12 +171,18 @@ function ContainerComponent.prototype.render(self, context)
         context.draw,
         createOptions(nil, {rect = self.rect, style = style}):with("borderCharacters", borderCharacters):with("clipRect", context.clipRect):done()
     )
-    self:renderChildren(context)
+    context.draw:withColors(
+        makeColors(nil, {foregroundColor = style.foregroundColor, backgroundColor = style.backgroundColor}),
+        function() return self:renderChildren(context) end
+    )
 end
 function ContainerComponent.prototype.getResolvedStyle(self, context)
     return self:getStyle(
         context,
-        function(____, themeStyle) return createOptions(nil, themeStyle):with("foregroundColor", self.props.foregroundColor or themeStyle.foregroundColor or context.theme.palette.text):with("backgroundColor", self.props.backgroundColor or themeStyle.backgroundColor or context.theme.palette.surface):with("padding", themeStyle.padding or 0):done() end
+        function(____, themeStyle) return createOptions(
+            nil,
+            __TS__ObjectAssign({}, themeStyle)
+        ):with("foregroundColor", self.props.foregroundColor or themeStyle.foregroundColor):with("backgroundColor", self.props.backgroundColor or themeStyle.backgroundColor):with("padding", self.props.padding or themeStyle.padding or 0):done() end
     )
 end
 function ContainerComponent.prototype.getInnerConstraints(self, constraints, style)

@@ -85,6 +85,7 @@ local ResolveTextLinesOptions = ____renderHelpers.ResolveTextLinesOptions
 local ____surfaceAdapter = require("modules.ui.render.surfaceAdapter")
 local UIDrawSurface = ____surfaceAdapter.UIDrawSurface
 local ____tone = require("modules.ui.theme.tone")
+local inheritTextColors = ____tone.inheritTextColors
 local makeToneColorOverride = ____tone.makeToneColorOverride
 local ____types = require("modules.ui.types.index")
 local BadgeProps = ____types.BadgeProps
@@ -105,6 +106,9 @@ function BadgeComponent.prototype.____constructor(self, props, dependencies)
         dependencies = {}
     end
     BaseComponent.prototype.____constructor(self, "badge", props, dependencies)
+end
+function BadgeComponent.prototype.setLabel(self, label)
+    self:setProps({label = label})
 end
 function BadgeComponent.prototype.measure(self, constraints, context)
     local style = self:getResolvedStyle(context)
@@ -168,8 +172,8 @@ function BadgeComponent.prototype.getResolvedStyle(self, context)
                 self.props.backgroundColor
             )
             local ____themeStyle_20 = themeStyle
-            local ____temp_21 = themeStyle.padding or ({left = 1, right = 1})
-            local ____themeStyle_text_17 = themeStyle.text
+            local ____temp_21 = self.props.padding or themeStyle.padding or ({left = 1, right = 1})
+            local ____inheritTextColors_result_17 = inheritTextColors(nil, themeStyle.text, tone, self.props)
             local ____opt_10 = themeStyle.text
             local ____temp_18 = ____opt_10 and ____opt_10.alignment or "center"
             local ____opt_12 = themeStyle.text
@@ -185,7 +189,7 @@ function BadgeComponent.prototype.getResolvedStyle(self, context)
                 tone,
                 {
                     padding = ____temp_21,
-                    text = __TS__ObjectAssign({}, ____themeStyle_text_17, {alignment = ____temp_18, wrap = ____temp_19, ellipsis = ____temp_16})
+                    text = __TS__ObjectAssign({}, ____inheritTextColors_result_17, {alignment = ____temp_18, wrap = ____temp_19, ellipsis = ____temp_16})
                 }
             )
         end

@@ -3,7 +3,7 @@
   "type": "component",
   "id": "modules/ui",
   "name": "UI",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "files": [
     "modules/ui/components/container/BoxComponent.lua",
     "modules/ui/components/container/ContainerComponent.lua",
@@ -24,6 +24,7 @@
     "modules/ui/components/leaf/TableComponent.lua",
     "modules/ui/components/leaf/ToggleButtonComponent.lua",
     "modules/ui/components.lua",
+    "modules/ui/core/ccEvents.lua",
     "modules/ui/core/components/baseContainerComponent.lua",
     "modules/ui/core/components/coreComponent.lua",
     "modules/ui/core/components/focusableComponent.lua",

@@ -315,6 +315,8 @@ end
 local ____exports = {}
 local ____coreComponent = require("modules.ui.core.components.coreComponent")
 local BaseComponent = ____coreComponent.BaseComponent
+local ____renderHelpers = require("modules.ui.render.renderHelpers")
+local shrinkRect = ____renderHelpers.shrinkRect
 local ____types = require("modules.ui.types.index")
 local BaseProps = ____types.BaseProps
 local ComponentDependencies = ____types.ComponentDependencies
@@ -326,6 +328,7 @@ local RenderContext = ____types.RenderContext
 local UIComponent = ____types.UIComponent
 local UIContainerComponent = ____types.UIContainerComponent
 local UIContext = ____types.UIContext
+local UIInvalidator = ____types.UIInvalidator
 ____exports.BaseContainerComponent = __TS__Class()
 local BaseContainerComponent = ____exports.BaseContainerComponent
 BaseContainerComponent.name = "BaseContainerComponent"
@@ -347,7 +350,24 @@ function BaseContainerComponent.prototype.addChild(self, child)
     end
     local ____self_internalChildren_0 = self.internalChildren
     ____self_internalChildren_0[#____self_internalChildren_0 + 1] = child
-    self:invalidate({reason = "layout"})
+    if self.invalidator then
+        local ____this_2
+        ____this_2 = child
+        local ____opt_1 = ____this_2.attachInvalidator
+        if ____opt_1 ~= nil then
+            ____opt_1(____this_2, self.invalidator)
+        end
+    end
+    self:invalidate({reason = "layout", kind = "full"})
+end
+function BaseContainerComponent.prototype.attachInvalidator(self, invalidator)
+    BaseComponent.prototype.attachInvalidator(self, invalidator)
+    for ____, child in ipairs(self.internalChildren) do
+        local ____opt_3 = child.attachInvalidator
+        if ____opt_3 ~= nil then
+            ____opt_3(child, invalidator)
+        end
+    end
 end
 function BaseContainerComponent.prototype.removeChild(self, childId)
     local index = __TS__ArrayFindIndex(
@@ -357,7 +377,7 @@ function BaseContainerComponent.prototype.removeChild(self, childId)
     if index < 0 then
         return
     end
-    local removed = table.unpack(
+    local removed = unpack(
         __TS__ArraySplice(self.internalChildren, index, 1),
         1,
         1
@@ -365,7 +385,7 @@ function BaseContainerComponent.prototype.removeChild(self, childId)
     if removed ~= nil then
         removed:destroy()
     end
-    self:invalidate({reason = "layout"})
+    self:invalidate({reason = "layout", kind = "full"})
 end
 function BaseContainerComponent.prototype.destroy(self)
     for ____, child in ipairs(self.internalChildren) do
@@ -377,23 +397,49 @@ end
 function BaseContainerComponent.prototype.renderChildren(self, context)
     for ____, child in ipairs(self.internalChildren) do
         do
-            if not child.visible then
-                goto __continue12
+            local __continue16
+            repeat
+                if not child.visible then
+                    __continue16 = true
+                    break
+                end
+                child:render(context)
+                __continue16 = true
+            until true
+            if not __continue16 then
+                break
             end
-            child:render(context)
         end
-        ::__continue12::
     end
+end
+function BaseContainerComponent.prototype.measureChild(self, child, constraints, context)
+    local margin = child.margin
+    local horizontal = margin and margin.left + margin.right or 0
+    local vertical = margin and margin.top + margin.bottom or 0
+    local size = child:measure(
+        {
+            minWidth = math.max(0, constraints.minWidth - horizontal),
+            maxWidth = math.max(0, constraints.maxWidth - horizontal),
+            minHeight = math.max(0, constraints.minHeight - vertical),
+            maxHeight = math.max(0, constraints.maxHeight - vertical)
+        },
+        context
+    )
+    return {width = size.width + horizontal, height = size.height + vertical}
 end
 function BaseContainerComponent.prototype.measureChildren(self, constraints, context)
     return __TS__ArrayMap(
         self.internalChildren,
-        function(____, child) return child:measure(constraints, context) end
+        function(____, child) return self:measureChild(child, constraints, context) end
     )
 end
 function BaseContainerComponent.prototype.layoutChildren(self, entries, context)
     for ____, entry in ipairs(entries) do
-        entry.child:layout(entry.rect, context)
+        local margin = entry.child.margin
+        entry.child:layout(
+            margin and shrinkRect(nil, entry.rect, margin) or entry.rect,
+            context
+        )
     end
 end
 function BaseContainerComponent.prototype.getVisibleChildren(self)

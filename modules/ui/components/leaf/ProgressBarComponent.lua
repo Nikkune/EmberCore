@@ -32,6 +32,17 @@ local function __TS__ClassExtends(target, base)
     end
 end
 
+local function __TS__ObjectAssign(target, ...)
+    local sources = {...}
+    for i = 1, #sources do
+        local source = sources[i]
+        for key in pairs(source) do
+            target[key] = source[key]
+        end
+    end
+    return target
+end
+
 local function __TS__CloneDescriptor(____bindingPattern0)
     local value
     local writable
@@ -173,6 +184,7 @@ local drawText = ____renderHelpers.drawText
 local DrawTextOptions = ____renderHelpers.DrawTextOptions
 local fillRect = ____renderHelpers.fillRect
 local FillRectOptions = ____renderHelpers.FillRectOptions
+local intersectRects = ____renderHelpers.intersectRects
 local normalizeInsets = ____renderHelpers.normalizeInsets
 local ____surfaceAdapter = require("modules.ui.render.surfaceAdapter")
 local UIDrawSurface = ____surfaceAdapter.UIDrawSurface
@@ -182,6 +194,7 @@ local LayoutConstraints = ____types.LayoutConstraints
 local MeasuredSize = ____types.MeasuredSize
 local ProgressBarProps = ____types.ProgressBarProps
 local ProgressBarStyle = ____types.ProgressBarStyle
+local Rect = ____types.Rect
 local RenderContext = ____types.RenderContext
 local TextStyle = ____types.TextStyle
 local UIContext = ____types.UIContext
@@ -196,6 +209,9 @@ function ProgressBarComponent.prototype.____constructor(self, props, dependencie
         dependencies = {}
     end
     BaseComponent.prototype.____constructor(self, "progress_bar", props, dependencies)
+end
+function ProgressBarComponent.prototype.setValue(self, value)
+    self:setProps({value = value})
 end
 function ProgressBarComponent.prototype.measure(self, constraints, context)
     local style = self:getResolvedStyle(context)
@@ -247,48 +263,100 @@ function ProgressBarComponent.prototype.render(self, context)
     end
     local text = self:getDisplayText(style)
     if #text > 0 then
-        drawText(
-            nil,
-            context,
-            createOptions(nil, {rect = innerRect, text = text, fillBackground = false}):with("style", style.labelStyle):with("clipRect", context.clipRect):done()
-        )
+        local segments = {{x = innerRect.x, width = filledWidth, background = style.fillColor}, {x = innerRect.x + filledWidth, width = emptyWidth, background = style.emptyColor or style.backgroundColor}}
+        for ____, segment in ipairs(segments) do
+            do
+                local __continue12
+                repeat
+                    if segment.width <= 0 then
+                        __continue12 = true
+                        break
+                    end
+                    local segmentRect = {x = segment.x, y = innerRect.y, width = segment.width, height = innerRect.height}
+                    local ____context_clipRect_4
+                    if context.clipRect then
+                        ____context_clipRect_4 = intersectRects(nil, segmentRect, context.clipRect)
+                    else
+                        ____context_clipRect_4 = segmentRect
+                    end
+                    local clipRect = ____context_clipRect_4
+                    if not clipRect then
+                        __continue12 = true
+                        break
+                    end
+                    local ____drawText_12 = drawText
+                    local ____context_11 = context
+                    local ____self_9 = createOptions(nil, {rect = innerRect, text = text, fillBackground = false, clipRect = clipRect})
+                    local ____self_9_with_10 = ____self_9.with
+                    local ____self_7 = createOptions(
+                        nil,
+                        __TS__ObjectAssign({}, style.labelStyle or ({}))
+                    )
+                    local ____self_7_with_8 = ____self_7.with
+                    local ____opt_5 = style.labelStyle
+                    ____drawText_12(
+                        nil,
+                        ____context_11,
+                        ____self_9_with_10(
+                            ____self_9,
+                            "style",
+                            ____self_7_with_8(____self_7, "backgroundColor", ____opt_5 and ____opt_5.backgroundColor or segment.background):done()
+                        ):done()
+                    )
+                    __continue12 = true
+                until true
+                if not __continue12 then
+                    break
+                end
+            end
+        end
     end
 end
 function ProgressBarComponent.prototype.getResolvedStyle(self, context)
     return self:getStyle(
         context,
         function(____, themeStyle)
-            local ____self_27 = createOptions(nil, themeStyle):with("padding", themeStyle.padding or 0):with("fillColor", themeStyle.fillColor or context.theme.palette.primary):with("emptyColor", themeStyle.emptyColor or context.theme.palette.surface)
-            local ____self_27_with_28 = ____self_27.with
-            local ____themeStyle_showPercentage_26 = themeStyle.showPercentage
-            if ____themeStyle_showPercentage_26 == nil then
-                ____themeStyle_showPercentage_26 = true
+            local ____self_37 = createOptions(
+                nil,
+                __TS__ObjectAssign({}, themeStyle)
+            ):with("padding", self.props.padding or themeStyle.padding or 0):with("fillColor", themeStyle.fillColor or context.theme.palette.primary):with("emptyColor", themeStyle.emptyColor or context.theme.palette.surface)
+            local ____self_37_with_38 = ____self_37.with
+            local ____themeStyle_showPercentage_36 = themeStyle.showPercentage
+            if ____themeStyle_showPercentage_36 == nil then
+                ____themeStyle_showPercentage_36 = true
             end
-            local ____self_25 = ____self_27_with_28(____self_27, "showPercentage", ____themeStyle_showPercentage_26):with("characterFilled", themeStyle.characterFilled or " "):with("characterEmpty", themeStyle.characterEmpty or " ")
-            local ____self_25_with_29 = ____self_25.with
-            local ____self_19 = createOptions(nil, themeStyle.labelStyle or ({}))
-            local ____self_19_with_20 = ____self_19.with
-            local ____opt_17 = themeStyle.labelStyle
-            local ____self_16 = ____self_19_with_20(____self_19, "alignment", ____opt_17 and ____opt_17.alignment or "center")
-            local ____self_16_with_21 = ____self_16.with
-            local ____opt_14 = themeStyle.labelStyle
-            local ____self_13 = ____self_16_with_21(____self_16, "wrap", ____opt_14 and ____opt_14.wrap or "none")
-            local ____self_13_with_22 = ____self_13.with
-            local ____opt_10 = themeStyle.labelStyle
-            local ____temp_12 = ____opt_10 and ____opt_10.ellipsis
-            if ____temp_12 == nil then
-                ____temp_12 = true
+            local ____self_35 = ____self_37_with_38(____self_37, "showPercentage", ____themeStyle_showPercentage_36):with("characterFilled", themeStyle.characterFilled or " "):with("characterEmpty", themeStyle.characterEmpty or " ")
+            local ____self_35_with_39 = ____self_35.with
+            local ____self_29 = createOptions(
+                nil,
+                __TS__ObjectAssign({}, themeStyle.labelStyle or ({}))
+            )
+            local ____self_29_with_30 = ____self_29.with
+            local ____opt_27 = themeStyle.labelStyle
+            local ____self_26 = ____self_29_with_30(____self_29, "alignment", ____opt_27 and ____opt_27.alignment or "center")
+            local ____self_26_with_31 = ____self_26.with
+            local ____opt_24 = themeStyle.labelStyle
+            local ____self_23 = ____self_26_with_31(____self_26, "wrap", ____opt_24 and ____opt_24.wrap or "none")
+            local ____self_23_with_32 = ____self_23.with
+            local ____opt_20 = themeStyle.labelStyle
+            local ____temp_22 = ____opt_20 and ____opt_20.ellipsis
+            if ____temp_22 == nil then
+                ____temp_22 = true
             end
-            local ____self_9 = ____self_13_with_22(____self_13, "ellipsis", ____temp_12)
-            local ____self_9_with_23 = ____self_9.with
-            local ____opt_7 = themeStyle.labelStyle
-            local ____self_6 = ____self_9_with_23(____self_9, "foregroundColor", ____opt_7 and ____opt_7.foregroundColor or self.props.foregroundColor or context.theme.palette.text)
-            local ____self_6_with_24 = ____self_6.with
-            local ____opt_4 = themeStyle.labelStyle
-            return ____self_25_with_29(
-                ____self_25,
+            local ____self_19 = ____self_23_with_32(____self_23, "ellipsis", ____temp_22)
+            local ____self_19_with_33 = ____self_19.with
+            local ____self_props_foregroundColor_18 = self.props.foregroundColor
+            if ____self_props_foregroundColor_18 == nil then
+                local ____opt_16 = themeStyle.labelStyle
+                ____self_props_foregroundColor_18 = ____opt_16 and ____opt_16.foregroundColor
+            end
+            local ____self_15 = ____self_19_with_33(____self_19, "foregroundColor", ____self_props_foregroundColor_18 or context.theme.palette.text)
+            local ____self_15_with_34 = ____self_15.with
+            local ____opt_13 = themeStyle.labelStyle
+            return ____self_35_with_39(
+                ____self_35,
                 "labelStyle",
-                ____self_6_with_24(____self_6, "backgroundColor", ____opt_4 and ____opt_4.backgroundColor):done()
+                ____self_15_with_34(____self_15, "backgroundColor", ____opt_13 and ____opt_13.backgroundColor):done()
             ):done()
         end
     )

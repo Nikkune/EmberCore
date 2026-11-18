@@ -33,13 +33,20 @@ local function formatMeta(self, meta)
     local parts = {}
     for key in pairs(meta) do
         do
-            local value = meta[key]
-            if value == nil then
-                goto __continue7
+            local __continue7
+            repeat
+                local value = meta[key]
+                if value == nil then
+                    __continue7 = true
+                    break
+                end
+                parts[#parts + 1] = (key .. "=") .. tostring(value)
+                __continue7 = true
+            until true
+            if not __continue7 then
+                break
             end
-            parts[#parts + 1] = (key .. "=") .. tostring(value)
         end
-        ::__continue7::
     end
     return table.concat(parts, " ")
 end

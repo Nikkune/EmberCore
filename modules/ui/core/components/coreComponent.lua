@@ -150,13 +150,17 @@ do
 end
 -- End of Lua Library inline imports
 local ____exports = {}
+local ____renderHelpers = require("modules.ui.render.renderHelpers")
+local normalizeInsets = ____renderHelpers.normalizeInsets
 local ____types = require("modules.ui.types.index")
 local BaseProps = ____types.BaseProps
 local Color = ____types.Color
 local ComponentDependencies = ____types.ComponentDependencies
 local ComponentKind = ____types.ComponentKind
+local Insets = ____types.Insets
 local InvalidationRequest = ____types.InvalidationRequest
 local LayoutConstraints = ____types.LayoutConstraints
+local MarginProps = ____types.MarginProps
 local MeasuredSize = ____types.MeasuredSize
 local Point = ____types.Point
 local Rect = ____types.Rect
@@ -186,6 +190,16 @@ function BaseComponent.prototype.____constructor(self, kind, props, dependencies
 end
 function BaseComponent.prototype.layout(self, rect, _context)
     self.rect = rect
+end
+function BaseComponent.prototype.setProps(self, patch)
+    self.props = __TS__ObjectAssign({}, self.props, patch)
+    self:onPropsChanged(patch)
+    self:invalidate({reason = "layout", kind = "full"})
+end
+function BaseComponent.prototype.onPropsChanged(self, _patch)
+end
+function BaseComponent.prototype.attachInvalidator(self, invalidator)
+    self.invalidator = invalidator
 end
 function BaseComponent.prototype.invalidate(self, request)
     if request == nil then
@@ -270,6 +284,14 @@ __TS__SetDescriptor(
             ____self_props_disabled_3 = false
         end
         return ____self_props_disabled_3
+    end},
+    true
+)
+__TS__SetDescriptor(
+    BaseComponent.prototype,
+    "margin",
+    {get = function(self)
+        return normalizeInsets(nil, self.props.margin)
     end},
     true
 )

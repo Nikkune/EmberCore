@@ -53,7 +53,7 @@ function ____exports.isSide(self, value)
     return __TS__ArrayIncludes(SIDES, value)
 end
 function ____exports.getSides(self)
-    return {table.unpack(SIDES)}
+    return {unpack(SIDES)}
 end
 ____exports.Peripheral = __TS__Class()
 local Peripheral = ____exports.Peripheral
@@ -74,10 +74,16 @@ function Peripheral.getType(self, name)
     if value == nil or value == nil then
         return nil
     end
-    if type(nil, value) == "table" then
+    if type(value) == "table" then
         return value[1]
     end
     return value
+end
+function Peripheral.hasType(self, name, expectedType)
+    if type(peripheral.hasType) == "function" then
+        return peripheral.hasType(name, expectedType) == true
+    end
+    return self:getType(name) == expectedType
 end
 function Peripheral.wrap(self, name)
     local wrapped = peripheral.wrap(name)
@@ -101,8 +107,8 @@ function Peripheral.require(self, name)
     return wrapped
 end
 function Peripheral.wrapType(self, name, expectedType)
-    local actualType = self:getType(name)
-    if actualType ~= expectedType then
+    if not self:hasType(name, expectedType) then
+        local actualType = self:getType(name)
         log:debug("Peripheral type mismatch", {
             name = name,
             action = "wrapType",
@@ -115,8 +121,8 @@ function Peripheral.wrapType(self, name, expectedType)
     return self:wrap(name)
 end
 function Peripheral.requireType(self, name, expectedType)
-    local actualType = self:getType(name)
-    if actualType ~= expectedType then
+    if not self:hasType(name, expectedType) then
+        local actualType = self:getType(name)
         local message = ((((("Peripheral on side '" .. name) .. "' has type '") .. (actualType or "nil")) .. "', expected '") .. expectedType) .. "'"
         log:error(message, {
             name = name,
@@ -136,7 +142,7 @@ function Peripheral.requireType(self, name, expectedType)
     return wrapped
 end
 function Peripheral.findByType(self, expectedType)
-    local wrapped = {peripheral.find(expectedType)}
+    local wrapped = peripheral.find(expectedType)
     if wrapped == nil or wrapped == nil then
         log:debug("No peripheral found by type", {type = expectedType, action = "find_by_type", status = "missing"})
         return nil
@@ -158,8 +164,7 @@ function Peripheral.requireByType(self, expectedType)
 end
 function Peripheral.findNameByType(self, expectedType)
     for ____, side in ipairs(peripheral.getNames()) do
-        local ____type = self:getType(side)
-        if ____type == expectedType then
+        if self:hasType(side, expectedType) then
             return side
         end
     end

@@ -39,7 +39,7 @@ function Parallel.all(self, ...)
         )
     end
     log:debug("Running parallel all", {action = "parallel_all", taskCount = #tasks, status = "start"})
-    parallel.waitForAll(table.unpack(tasks))
+    parallel.waitForAll(unpack(tasks))
     log:debug("Parallel all completed", {action = "parallel_all", taskCount = #tasks, status = "done"})
 end
 function Parallel.any(self, ...)
@@ -51,7 +51,7 @@ function Parallel.any(self, ...)
         )
     end
     log:debug("Running parallel any", {action = "parallel_any", taskCount = #tasks, status = "start"})
-    local completedIndex = parallel.waitForAny(table.unpack(tasks))
+    local completedIndex = parallel.waitForAny(unpack(tasks))
     log:debug("Parallel any completed", {action = "parallel_any", taskCount = #tasks, completedIndex = completedIndex, status = "done"})
     return completedIndex
 end
@@ -61,12 +61,12 @@ end
 function Parallel.tryAll(self, ...)
     local tasks = {...}
     return Results:try(function()
-        self:all(table.unpack(tasks))
+        self:all(unpack(tasks))
     end)
 end
 function Parallel.tryAny(self, ...)
     local tasks = {...}
-    return Results:try(function() return self:any(table.unpack(tasks)) end)
+    return Results:try(function() return self:any(unpack(tasks)) end)
 end
 function Parallel.withHeartbeat(self, task, heartbeat)
     self:all(task, heartbeat)

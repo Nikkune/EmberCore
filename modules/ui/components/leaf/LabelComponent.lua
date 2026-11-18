@@ -89,6 +89,9 @@ function LabelComponent.prototype.____constructor(self, props, dependencies)
     end
     BaseComponent.prototype.____constructor(self, "label", props, dependencies)
 end
+function LabelComponent.prototype.setText(self, text)
+    self:setProps({text = text})
+end
 function LabelComponent.prototype.measure(self, constraints, context)
     local style = self:getResolvedStyle(context)
     local width = self.props.width or self.props.minWidth or constraints.maxWidth

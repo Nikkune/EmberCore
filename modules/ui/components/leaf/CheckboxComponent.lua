@@ -216,6 +216,7 @@ local ResolveTextLinesOptions = ____renderHelpers.ResolveTextLinesOptions
 local ____surfaceAdapter = require("modules.ui.render.surfaceAdapter")
 local UIDrawSurface = ____surfaceAdapter.UIDrawSurface
 local ____tone = require("modules.ui.theme.tone")
+local inheritTextColors = ____tone.inheritTextColors
 local makeToneColorOverride = ____tone.makeToneColorOverride
 local ____types = require("modules.ui.types.index")
 local CheckboxProps = ____types.CheckboxProps
@@ -238,6 +239,14 @@ function CheckboxComponent.prototype.____constructor(self, props, dependencies)
     end
     PressableComponent.prototype.____constructor(self, "checkbox", props, dependencies)
     self._checked = props.checked
+end
+function CheckboxComponent.prototype.onPropsChanged(self, patch)
+    if patch.checked ~= nil then
+        self._checked = patch.checked
+    end
+end
+function CheckboxComponent.prototype.setLabel(self, label)
+    self:setProps({label = label})
 end
 function CheckboxComponent.prototype.setChecked(self, value)
     if self._checked == value then
@@ -304,7 +313,7 @@ function CheckboxComponent.prototype.render(self, context)
     local ____self_9_with_14 = ____self_9.with
     local ____self_7 = createOptions(
         nil,
-        __TS__ObjectAssign({}, style.text)
+        __TS__ObjectAssign({}, style.text or ({}))
     )
     local ____self_7_with_8 = ____self_7.with
     local ____style_checkColor_6 = style.checkColor
@@ -359,8 +368,8 @@ function CheckboxComponent.prototype.getResolvedStyle(self, context)
                 self.props.backgroundColor or themeStyle.backgroundColor
             )
             local ____themeStyle_36 = themeStyle
-            local ____temp_37 = themeStyle.padding or ({left = 1, right = 1})
-            local ____themeStyle_text_33 = themeStyle.text
+            local ____temp_37 = self.props.padding or themeStyle.padding or ({left = 1, right = 1})
+            local ____inheritTextColors_result_33 = inheritTextColors(nil, themeStyle.text, tone, self.props)
             local ____opt_26 = themeStyle.text
             local ____temp_34 = ____opt_26 and ____opt_26.alignment or "left"
             local ____opt_28 = themeStyle.text
@@ -376,7 +385,7 @@ function CheckboxComponent.prototype.getResolvedStyle(self, context)
                 tone,
                 {
                     padding = ____temp_37,
-                    text = __TS__ObjectAssign({}, ____themeStyle_text_33, {alignment = ____temp_34, wrap = ____temp_35, ellipsis = ____temp_32})
+                    text = __TS__ObjectAssign({}, ____inheritTextColors_result_33, {alignment = ____temp_34, wrap = ____temp_35, ellipsis = ____temp_32})
                 }
             )
         end

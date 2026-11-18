@@ -60,6 +60,54 @@ local function __TS__ArrayReduce(self, callbackFn, ...)
     return accumulator
 end
 
+local function __TS__ObjectAssign(target, ...)
+    local sources = {...}
+    for i = 1, #sources do
+        local source = sources[i]
+        for key in pairs(source) do
+            target[key] = source[key]
+        end
+    end
+    return target
+end
+
+local __TS__StringSplit
+do
+    local sub = string.sub
+    local find = string.find
+    function __TS__StringSplit(source, separator, limit)
+        if limit == nil then
+            limit = 4294967295
+        end
+        if limit == 0 then
+            return {}
+        end
+        local result = {}
+        local resultIndex = 1
+        if separator == nil or separator == "" then
+            for i = 1, #source do
+                result[resultIndex] = sub(source, i, i)
+                resultIndex = resultIndex + 1
+            end
+        else
+            local currentPos = 1
+            while resultIndex <= limit do
+                local startPos, endPos = find(source, separator, currentPos, true)
+                if not startPos then
+                    break
+                end
+                result[resultIndex] = sub(source, currentPos, startPos - 1)
+                resultIndex = resultIndex + 1
+                currentPos = endPos + 1
+            end
+            if resultIndex <= limit then
+                result[resultIndex] = sub(source, currentPos)
+            end
+        end
+        return result
+    end
+end
+
 local function __TS__CloneDescriptor(____bindingPattern0)
     local value
     local writable
@@ -199,6 +247,7 @@ local drawBox = ____renderHelpers.drawBox
 local DrawBoxOptions = ____renderHelpers.DrawBoxOptions
 local drawText = ____renderHelpers.drawText
 local DrawTextOptions = ____renderHelpers.DrawTextOptions
+local getInnerRect = ____renderHelpers.getInnerRect
 local normalizeInsets = ____renderHelpers.normalizeInsets
 local resolveTextLines = ____renderHelpers.resolveTextLines
 local ResolveTextLinesOptions = ____renderHelpers.ResolveTextLinesOptions
@@ -225,6 +274,20 @@ function PaginationComponent.prototype.____constructor(self, props, dependencies
         dependencies = {}
     end
     PressableComponent.prototype.____constructor(self, "pagination", props, dependencies)
+    self.currentPage = props.page
+end
+function PaginationComponent.prototype.onPropsChanged(self, patch)
+    if patch.page ~= nil then
+        self.currentPage = patch.page
+    end
+end
+function PaginationComponent.prototype.setPage(self, page)
+    local nextPage = self:clamp(page, 1, self.totalPages)
+    if nextPage == self.page then
+        return
+    end
+    self.currentPage = nextPage
+    self:invalidate(self:createStateInvalidation())
 end
 function PaginationComponent.prototype.measure(self, constraints, context)
     local style = self:getResolvedStyle(context)
@@ -279,15 +342,15 @@ function PaginationComponent.prototype.render(self, context)
 end
 function PaginationComponent.prototype.handleEvent(self, event, context)
     repeat
-        local ____switch9 = event.type
-        local ____cond9 = ____switch9 == "mouse_click" or ____switch9 == "monitor_touch"
-        if ____cond9 then
+        local ____switch13 = event.type
+        local ____cond13 = ____switch13 == "mouse_click" or ____switch13 == "monitor_touch"
+        if ____cond13 then
             do
                 if not (event.x ~= nil) then
                     return nil
                 end
                 self:focus()
-                local targetPage = self:resolveTargetPageFromX(event.x)
+                local targetPage = self:resolveTargetPageFromX(event.x, context)
                 if targetPage == self.page then
                     return nil
                 end
@@ -310,44 +373,58 @@ function PaginationComponent.prototype.getResolvedStyle(self, context)
     return self:getStyle(
         context,
         function(____, themeStyle)
-            local ____self_35 = createOptions(nil, themeStyle):with("padding", themeStyle.padding or 0)
-            local ____self_35_with_36 = ____self_35.with
-            local ____self_29 = createOptions(nil, themeStyle.text or ({}))
-            local ____self_29_with_30 = ____self_29.with
-            local ____opt_27 = themeStyle.text
-            local ____self_26 = ____self_29_with_30(____self_29, "alignment", ____opt_27 and ____opt_27.alignment or "center")
-            local ____self_26_with_31 = ____self_26.with
-            local ____opt_24 = themeStyle.text
-            local ____self_23 = ____self_26_with_31(____self_26, "wrap", ____opt_24 and ____opt_24.wrap or "none")
-            local ____self_23_with_32 = ____self_23.with
-            local ____opt_20 = themeStyle.text
-            local ____temp_22 = ____opt_20 and ____opt_20.ellipsis
-            if ____temp_22 == nil then
-                ____temp_22 = true
-            end
-            local ____self_19 = ____self_23_with_32(____self_23, "ellipsis", ____temp_22)
-            local ____self_19_with_33 = ____self_19.with
-            local ____opt_17 = themeStyle.text
-            local ____self_16 = ____self_19_with_33(____self_19, "foregroundColor", ____opt_17 and ____opt_17.foregroundColor or self.props.foregroundColor or context.theme.palette.text)
-            local ____self_16_with_34 = ____self_16.with
-            local ____opt_14 = themeStyle.text
-            local ____self_13 = ____self_35_with_36(
-                ____self_35,
-                "text",
-                ____self_16_with_34(____self_16, "backgroundColor", ____opt_14 and ____opt_14.backgroundColor or self.props.backgroundColor or themeStyle.backgroundColor):done()
+            local ____self_37 = createOptions(
+                nil,
+                __TS__ObjectAssign({}, themeStyle)
+            ):with("padding", self.props.padding or themeStyle.padding or 0)
+            local ____self_37_with_38 = ____self_37.with
+            local ____self_31 = createOptions(
+                nil,
+                __TS__ObjectAssign({}, themeStyle.text or ({}))
             )
-            local ____self_13_with_37 = ____self_13.with
+            local ____self_31_with_32 = ____self_31.with
+            local ____opt_29 = themeStyle.text
+            local ____self_28 = ____self_31_with_32(____self_31, "alignment", ____opt_29 and ____opt_29.alignment or "center")
+            local ____self_28_with_33 = ____self_28.with
+            local ____opt_26 = themeStyle.text
+            local ____self_25 = ____self_28_with_33(____self_28, "wrap", ____opt_26 and ____opt_26.wrap or "none")
+            local ____self_25_with_34 = ____self_25.with
+            local ____opt_22 = themeStyle.text
+            local ____temp_24 = ____opt_22 and ____opt_22.ellipsis
+            if ____temp_24 == nil then
+                ____temp_24 = true
+            end
+            local ____self_21 = ____self_25_with_34(____self_25, "ellipsis", ____temp_24)
+            local ____self_21_with_35 = ____self_21.with
+            local ____self_props_foregroundColor_20 = self.props.foregroundColor
+            if ____self_props_foregroundColor_20 == nil then
+                local ____opt_18 = themeStyle.text
+                ____self_props_foregroundColor_20 = ____opt_18 and ____opt_18.foregroundColor
+            end
+            local ____self_17 = ____self_21_with_35(____self_21, "foregroundColor", ____self_props_foregroundColor_20 or context.theme.palette.text)
+            local ____self_17_with_36 = ____self_17.with
+            local ____self_props_backgroundColor_16 = self.props.backgroundColor
+            if ____self_props_backgroundColor_16 == nil then
+                local ____opt_14 = themeStyle.text
+                ____self_props_backgroundColor_16 = ____opt_14 and ____opt_14.backgroundColor
+            end
+            local ____self_13 = ____self_37_with_38(
+                ____self_37,
+                "text",
+                ____self_17_with_36(____self_17, "backgroundColor", ____self_props_backgroundColor_16 or themeStyle.backgroundColor):done()
+            )
+            local ____self_13_with_39 = ____self_13.with
             local ____themeStyle_showFirstLast_12 = themeStyle.showFirstLast
             if ____themeStyle_showFirstLast_12 == nil then
                 ____themeStyle_showFirstLast_12 = true
             end
-            local ____self_11 = ____self_13_with_37(____self_13, "showFirstLast", ____themeStyle_showFirstLast_12)
-            local ____self_11_with_38 = ____self_11.with
+            local ____self_11 = ____self_13_with_39(____self_13, "showFirstLast", ____themeStyle_showFirstLast_12)
+            local ____self_11_with_40 = ____self_11.with
             local ____themeStyle_showPrevNext_10 = themeStyle.showPrevNext
             if ____themeStyle_showPrevNext_10 == nil then
                 ____themeStyle_showPrevNext_10 = true
             end
-            return ____self_11_with_38(____self_11, "showPrevNext", ____themeStyle_showPrevNext_10):done()
+            return ____self_11_with_40(____self_11, "showPrevNext", ____themeStyle_showPrevNext_10):done()
         end
     )
 end
@@ -356,11 +433,12 @@ function PaginationComponent.prototype.changePage(self, page, _context)
     if nextPage == self.page then
         return false
     end
-    local ____this_40
-    ____this_40 = self.props
-    local ____opt_39 = ____this_40.onPageChange
-    if ____opt_39 ~= nil then
-        ____opt_39(____this_40, nextPage)
+    self.currentPage = nextPage
+    local ____this_42
+    ____this_42 = self.props
+    local ____opt_41 = ____this_42.onPageChange
+    if ____opt_41 ~= nil then
+        ____opt_41(____this_42, nextPage)
     end
     return true
 end
@@ -381,14 +459,42 @@ function PaginationComponent.prototype.getDisplayText(self, style)
     end
     return table.concat(parts, " ")
 end
-function PaginationComponent.prototype.resolveTargetPageFromX(self, x)
-    local relativeX = x - self.rect.x
-    local width = math.max(1, self.rect.width)
-    if relativeX < math.floor(width * 0.25) then
-        return math.max(1, self.page - 1)
-    end
-    if relativeX >= math.ceil(width * 0.75) then
-        return math.min(self.totalPages, self.page + 1)
+function PaginationComponent.prototype.resolveTargetPageFromX(self, x, context)
+    local style = self:getResolvedStyle(context)
+    local innerRect = getInnerRect(nil, self.rect, style)
+    local text = self:getDisplayText(style)
+    local ____opt_43 = style.text
+    local alignment = ____opt_43 and ____opt_43.alignment or "center"
+    local free = math.max(0, innerRect.width - #text)
+    local offset = alignment == "right" and free or (alignment == "center" and math.floor(free / 2) or 0)
+    local index = x - innerRect.x - offset
+    local position = 0
+    for ____, token in ipairs(__TS__StringSplit(text, " ")) do
+        if index >= position and index < position + #token then
+            repeat
+                local ____switch31 = token
+                local ____cond31 = ____switch31 == "<<"
+                if ____cond31 then
+                    return 1
+                end
+                ____cond31 = ____cond31 or ____switch31 == "<"
+                if ____cond31 then
+                    return self.page - 1
+                end
+                ____cond31 = ____cond31 or ____switch31 == ">"
+                if ____cond31 then
+                    return self.page + 1
+                end
+                ____cond31 = ____cond31 or ____switch31 == ">>"
+                if ____cond31 then
+                    return self.totalPages
+                end
+                do
+                    return self.page
+                end
+            until true
+        end
+        position = position + (#token + 1)
     end
     return self.page
 end
@@ -410,7 +516,7 @@ __TS__SetDescriptor(
     PaginationComponent.prototype,
     "page",
     {get = function(self)
-        return self:clamp(self.props.page, 1, self.totalPages)
+        return self:clamp(self.currentPage, 1, self.totalPages)
     end},
     true
 )

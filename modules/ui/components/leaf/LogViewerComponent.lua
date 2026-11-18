@@ -32,6 +32,31 @@ local function __TS__ClassExtends(target, base)
     end
 end
 
+local function __TS__CountVarargs(...)
+    return select("#", ...)
+end
+
+local function __TS__SparseArrayNew(...)
+    local sparseArray = {...}
+    sparseArray.sparseLength = __TS__CountVarargs(...)
+    return sparseArray
+end
+
+local function __TS__SparseArrayPush(sparseArray, ...)
+    local args = {...}
+    local argsLen = __TS__CountVarargs(...)
+    local listLen = sparseArray.sparseLength
+    for i = 1, argsLen do
+        sparseArray[listLen + i] = args[i]
+    end
+    sparseArray.sparseLength = listLen + argsLen
+end
+
+local function __TS__SparseArraySpread(sparseArray)
+    local _unpack = unpack or table.unpack
+    return _unpack(sparseArray, 1, sparseArray.sparseLength)
+end
+
 local function __TS__ArraySlice(self, first, last)
     local len = #self
     first = first or 0
@@ -111,6 +136,15 @@ function LogViewerComponent.prototype.____constructor(self, props, dependencies)
     end
     BaseComponent.prototype.____constructor(self, "log_viewer", props, dependencies)
 end
+function LogViewerComponent.prototype.addEntry(self, entry, maxEntries)
+    local ____array_0 = __TS__SparseArrayNew(unpack(self.props.entries))
+    __TS__SparseArrayPush(____array_0, entry)
+    local entries = {__TS__SparseArraySpread(____array_0)}
+    self:setProps({entries = maxEntries ~= nil and __TS__ArraySlice(entries, -maxEntries) or entries})
+end
+function LogViewerComponent.prototype.clearEntries(self)
+    self:setProps({entries = {}})
+end
 function LogViewerComponent.prototype.measure(self, constraints, _context)
     local width = self.props.width or self.props.minWidth or constraints.maxWidth
     local height = self.props.height or self.props.minHeight or math.min(
@@ -127,8 +161,8 @@ function LogViewerComponent.prototype.render(self, context)
         return
     end
     local style = self:getResolvedStyle(context)
-    local ____opt_0 = style.border
-    local borderCharacters = ____opt_0 and ____opt_0.enabled and context.theme.borders[style.border.preset or "single"] or nil
+    local ____opt_1 = style.border
+    local borderCharacters = ____opt_1 and ____opt_1.enabled and context.theme.borders[style.border.preset or "single"] or nil
     local innerRect = drawBox(
         nil,
         context.draw,
@@ -163,44 +197,58 @@ function LogViewerComponent.prototype.getResolvedStyle(self, context)
     return self:getStyle(
         context,
         function(____, themeStyle)
-            local ____self_27 = createOptions(nil, themeStyle):with("padding", themeStyle.padding or 0)
-            local ____self_27_with_28 = ____self_27.with
-            local ____self_21 = createOptions(nil, themeStyle.lineStyle or ({}))
-            local ____self_21_with_22 = ____self_21.with
-            local ____opt_19 = themeStyle.lineStyle
-            local ____self_18 = ____self_21_with_22(____self_21, "alignment", ____opt_19 and ____opt_19.alignment or "left")
-            local ____self_18_with_23 = ____self_18.with
-            local ____opt_16 = themeStyle.lineStyle
-            local ____self_15 = ____self_18_with_23(____self_18, "wrap", ____opt_16 and ____opt_16.wrap or "none")
-            local ____self_15_with_24 = ____self_15.with
-            local ____opt_12 = themeStyle.lineStyle
-            local ____temp_14 = ____opt_12 and ____opt_12.ellipsis
-            if ____temp_14 == nil then
-                ____temp_14 = true
-            end
-            local ____self_11 = ____self_15_with_24(____self_15, "ellipsis", ____temp_14)
-            local ____self_11_with_25 = ____self_11.with
-            local ____opt_9 = themeStyle.lineStyle
-            local ____self_8 = ____self_11_with_25(____self_11, "foregroundColor", ____opt_9 and ____opt_9.foregroundColor or self.props.foregroundColor or context.theme.palette.text)
-            local ____self_8_with_26 = ____self_8.with
-            local ____opt_6 = themeStyle.lineStyle
-            local ____self_5 = ____self_27_with_28(
-                ____self_27,
-                "lineStyle",
-                ____self_8_with_26(____self_8, "backgroundColor", ____opt_6 and ____opt_6.backgroundColor or self.props.backgroundColor or themeStyle.backgroundColor):done()
+            local ____self_30 = createOptions(
+                nil,
+                __TS__ObjectAssign({}, themeStyle)
+            ):with("padding", self.props.padding or themeStyle.padding or 0)
+            local ____self_30_with_31 = ____self_30.with
+            local ____self_24 = createOptions(
+                nil,
+                __TS__ObjectAssign({}, themeStyle.lineStyle or ({}))
             )
-            local ____self_5_with_29 = ____self_5.with
-            local ____themeStyle_showTimestamp_4 = themeStyle.showTimestamp
-            if ____themeStyle_showTimestamp_4 == nil then
-                ____themeStyle_showTimestamp_4 = true
+            local ____self_24_with_25 = ____self_24.with
+            local ____opt_22 = themeStyle.lineStyle
+            local ____self_21 = ____self_24_with_25(____self_24, "alignment", ____opt_22 and ____opt_22.alignment or "left")
+            local ____self_21_with_26 = ____self_21.with
+            local ____opt_19 = themeStyle.lineStyle
+            local ____self_18 = ____self_21_with_26(____self_21, "wrap", ____opt_19 and ____opt_19.wrap or "none")
+            local ____self_18_with_27 = ____self_18.with
+            local ____opt_15 = themeStyle.lineStyle
+            local ____temp_17 = ____opt_15 and ____opt_15.ellipsis
+            if ____temp_17 == nil then
+                ____temp_17 = true
             end
-            local ____self_3 = ____self_5_with_29(____self_5, "showTimestamp", ____themeStyle_showTimestamp_4)
-            local ____self_3_with_30 = ____self_3.with
-            local ____themeStyle_autoScroll_2 = themeStyle.autoScroll
-            if ____themeStyle_autoScroll_2 == nil then
-                ____themeStyle_autoScroll_2 = true
+            local ____self_14 = ____self_18_with_27(____self_18, "ellipsis", ____temp_17)
+            local ____self_14_with_28 = ____self_14.with
+            local ____self_props_foregroundColor_13 = self.props.foregroundColor
+            if ____self_props_foregroundColor_13 == nil then
+                local ____opt_11 = themeStyle.lineStyle
+                ____self_props_foregroundColor_13 = ____opt_11 and ____opt_11.foregroundColor
             end
-            return ____self_3_with_30(____self_3, "autoScroll", ____themeStyle_autoScroll_2):done()
+            local ____self_10 = ____self_14_with_28(____self_14, "foregroundColor", ____self_props_foregroundColor_13 or context.theme.palette.text)
+            local ____self_10_with_29 = ____self_10.with
+            local ____self_props_backgroundColor_9 = self.props.backgroundColor
+            if ____self_props_backgroundColor_9 == nil then
+                local ____opt_7 = themeStyle.lineStyle
+                ____self_props_backgroundColor_9 = ____opt_7 and ____opt_7.backgroundColor
+            end
+            local ____self_6 = ____self_30_with_31(
+                ____self_30,
+                "lineStyle",
+                ____self_10_with_29(____self_10, "backgroundColor", ____self_props_backgroundColor_9 or themeStyle.backgroundColor):done()
+            )
+            local ____self_6_with_32 = ____self_6.with
+            local ____themeStyle_showTimestamp_5 = themeStyle.showTimestamp
+            if ____themeStyle_showTimestamp_5 == nil then
+                ____themeStyle_showTimestamp_5 = true
+            end
+            local ____self_4 = ____self_6_with_32(____self_6, "showTimestamp", ____themeStyle_showTimestamp_5)
+            local ____self_4_with_33 = ____self_4.with
+            local ____themeStyle_autoScroll_3 = themeStyle.autoScroll
+            if ____themeStyle_autoScroll_3 == nil then
+                ____themeStyle_autoScroll_3 = true
+            end
+            return ____self_4_with_33(____self_4, "autoScroll", ____themeStyle_autoScroll_3):done()
         end
     )
 end
@@ -231,14 +279,14 @@ function LogViewerComponent.prototype.formatEntry(self, entry, style)
     return table.concat(parts, " ")
 end
 function LogViewerComponent.prototype.getEntryTextStyle(self, style, entry, context)
-    local ____opt_31 = style.levelColors
-    local levelForeground = ____opt_31 and ____opt_31[entry.level]
-    local ____style_lineStyle_36 = style.lineStyle
-    local ____levelForeground_35 = levelForeground
-    if ____levelForeground_35 == nil then
-        local ____opt_33 = style.lineStyle
-        ____levelForeground_35 = ____opt_33 and ____opt_33.foregroundColor
+    local ____opt_34 = style.levelColors
+    local levelForeground = ____opt_34 and ____opt_34[entry.level]
+    local ____temp_39 = style.lineStyle or ({})
+    local ____levelForeground_38 = levelForeground
+    if ____levelForeground_38 == nil then
+        local ____opt_36 = style.lineStyle
+        ____levelForeground_38 = ____opt_36 and ____opt_36.foregroundColor
     end
-    return __TS__ObjectAssign({}, ____style_lineStyle_36, {foregroundColor = ____levelForeground_35 or context.theme.palette.text})
+    return __TS__ObjectAssign({}, ____temp_39, {foregroundColor = ____levelForeground_38 or context.theme.palette.text})
 end
 return ____exports

@@ -7,6 +7,212 @@ local function __TS__Class(self)
     return c
 end
 
+local __TS__Symbol, Symbol
+do
+    local symbolMetatable = {__tostring = function(self)
+        return ("Symbol(" .. (self.description or "")) .. ")"
+    end}
+    function __TS__Symbol(description)
+        return setmetatable({description = description}, symbolMetatable)
+    end
+    Symbol = {
+        asyncDispose = __TS__Symbol("Symbol.asyncDispose"),
+        dispose = __TS__Symbol("Symbol.dispose"),
+        iterator = __TS__Symbol("Symbol.iterator"),
+        hasInstance = __TS__Symbol("Symbol.hasInstance"),
+        species = __TS__Symbol("Symbol.species"),
+        toStringTag = __TS__Symbol("Symbol.toStringTag")
+    }
+end
+
+local __TS__Iterator
+do
+    local function iteratorGeneratorStep(self)
+        local co = self.____coroutine
+        local status, value = coroutine.resume(co)
+        if not status then
+            error(value, 0)
+        end
+        if coroutine.status(co) == "dead" then
+            return
+        end
+        return true, value
+    end
+    local function iteratorIteratorStep(self)
+        local result = self:next()
+        if result.done then
+            return
+        end
+        return true, result.value
+    end
+    local function iteratorStringStep(self, index)
+        index = index + 1
+        if index > #self then
+            return
+        end
+        return index, string.sub(self, index, index)
+    end
+    function __TS__Iterator(iterable)
+        if type(iterable) == "string" then
+            return iteratorStringStep, iterable, 0
+        elseif iterable.____coroutine ~= nil then
+            return iteratorGeneratorStep, iterable
+        elseif iterable[Symbol.iterator] then
+            local iterator = iterable[Symbol.iterator](iterable)
+            return iteratorIteratorStep, iterator
+        else
+            return ipairs(iterable)
+        end
+    end
+end
+
+local Map
+do
+    Map = __TS__Class()
+    Map.name = "Map"
+    function Map.prototype.____constructor(self, entries)
+        self[Symbol.toStringTag] = "Map"
+        self.items = {}
+        self.size = 0
+        self.nextKey = {}
+        self.previousKey = {}
+        if entries == nil then
+            return
+        end
+        local iterable = entries
+        if iterable[Symbol.iterator] then
+            local iterator = iterable[Symbol.iterator](iterable)
+            while true do
+                local result = iterator:next()
+                if result.done then
+                    break
+                end
+                local value = result.value
+                self:set(value[1], value[2])
+            end
+        else
+            local array = entries
+            for ____, kvp in ipairs(array) do
+                self:set(kvp[1], kvp[2])
+            end
+        end
+    end
+    function Map.prototype.clear(self)
+        self.items = {}
+        self.nextKey = {}
+        self.previousKey = {}
+        self.firstKey = nil
+        self.lastKey = nil
+        self.size = 0
+    end
+    function Map.prototype.delete(self, key)
+        local contains = self:has(key)
+        if contains then
+            self.size = self.size - 1
+            local next = self.nextKey[key]
+            local previous = self.previousKey[key]
+            if next ~= nil and previous ~= nil then
+                self.nextKey[previous] = next
+                self.previousKey[next] = previous
+            elseif next ~= nil then
+                self.firstKey = next
+                self.previousKey[next] = nil
+            elseif previous ~= nil then
+                self.lastKey = previous
+                self.nextKey[previous] = nil
+            else
+                self.firstKey = nil
+                self.lastKey = nil
+            end
+            self.nextKey[key] = nil
+            self.previousKey[key] = nil
+        end
+        self.items[key] = nil
+        return contains
+    end
+    function Map.prototype.forEach(self, callback)
+        for ____, key in __TS__Iterator(self:keys()) do
+            callback(nil, self.items[key], key, self)
+        end
+    end
+    function Map.prototype.get(self, key)
+        return self.items[key]
+    end
+    function Map.prototype.has(self, key)
+        return self.nextKey[key] ~= nil or self.lastKey == key
+    end
+    function Map.prototype.set(self, key, value)
+        local isNewValue = not self:has(key)
+        if isNewValue then
+            self.size = self.size + 1
+        end
+        self.items[key] = value
+        if self.firstKey == nil then
+            self.firstKey = key
+            self.lastKey = key
+        elseif isNewValue then
+            self.nextKey[self.lastKey] = key
+            self.previousKey[key] = self.lastKey
+            self.lastKey = key
+        end
+        return self
+    end
+    Map.prototype[Symbol.iterator] = function(self)
+        return self:entries()
+    end
+    function Map.prototype.entries(self)
+        local items = self.items
+        local nextKey = self.nextKey
+        local key = self.firstKey
+        return {
+            [Symbol.iterator] = function(self)
+                return self
+            end,
+            next = function(self)
+                local result = {done = not key, value = {key, items[key]}}
+                key = nextKey[key]
+                return result
+            end
+        }
+    end
+    function Map.prototype.keys(self)
+        local nextKey = self.nextKey
+        local key = self.firstKey
+        return {
+            [Symbol.iterator] = function(self)
+                return self
+            end,
+            next = function(self)
+                local result = {done = not key, value = key}
+                key = nextKey[key]
+                return result
+            end
+        }
+    end
+    function Map.prototype.values(self)
+        local items = self.items
+        local nextKey = self.nextKey
+        local key = self.firstKey
+        return {
+            [Symbol.iterator] = function(self)
+                return self
+            end,
+            next = function(self)
+                local result = {done = not key, value = items[key]}
+                key = nextKey[key]
+                return result
+            end
+        }
+    end
+    Map[Symbol.species] = Map
+end
+
+local function __TS__New(target, ...)
+    local instance = setmetatable({}, target.prototype)
+    instance:____constructor(...)
+    return instance
+end
+
 local function __TS__ObjectAssign(target, ...)
     local sources = {...}
     for i = 1, #sources do
@@ -140,20 +346,27 @@ end
 -- End of Lua Library inline imports
 local ____exports = {}
 local ____types = require("modules.ui.types.index")
+local ContainerLike = ____types.ContainerLike
 local DirtyRegion = ____types.DirtyRegion
 local InvalidationRequest = ____types.InvalidationRequest
 local LayoutConstraints = ____types.LayoutConstraints
+local Point = ____types.Point
 local Rect = ____types.Rect
 local RenderContext = ____types.RenderContext
 local RuntimeSurface = ____types.RuntimeSurface
 local SurfaceKind = ____types.SurfaceKind
 local Theme = ____types.Theme
+local UIComponent = ____types.UIComponent
 local UIContext = ____types.UIContext
 local UIEvent = ____types.UIEvent
 local UIEventBus = ____types.UIEventBus
+local UIFocusableComponent = ____types.UIFocusableComponent
 local UIInteractiveComponent = ____types.UIInteractiveComponent
 local UIInvalidator = ____types.UIInvalidator
 local UIRenderResult = ____types.UIRenderResult
+local ____ccEvents = require("modules.ui.core.ccEvents")
+local toUIEvent = ____ccEvents.toUIEvent
+local UIRunOptions = ____ccEvents.UIRunOptions
 local ____helpers = require("utils.helpers")
 local createOptions = ____helpers.createOptions
 ____exports.UIRuntime = __TS__Class()
@@ -164,6 +377,8 @@ function UIRuntime.prototype.____constructor(self, options)
     self.dirty = true
     self.fullRedraw = true
     self.dirtyRegions = {}
+    self.running = false
+    self.scheduled = __TS__New(Map)
     self.root = options.root
     self.eventBus = options.eventBus
     self.theme = options.theme
@@ -171,6 +386,12 @@ function UIRuntime.prototype.____constructor(self, options)
     self.surfaceKind = options.surfaceKind
     self.maxDirtyRegionsBeforeFullRedraw = options.maxDirtyRegionsBeforeFullRedraw or 8
     self.fullRedrawCoverageThreshold = options.fullRedrawCoverageThreshold or 0.6
+    local ____this_1
+    ____this_1 = self.root
+    local ____opt_0 = ____this_1.attachInvalidator
+    if ____opt_0 ~= nil then
+        ____opt_0(____this_1, self)
+    end
 end
 function UIRuntime.prototype.invalidate(self, request)
     if request == nil then
@@ -183,17 +404,87 @@ function UIRuntime.prototype.invalidate(self, request)
         self.dirtyRegions = {}
         return
     end
-    local ____self_dirtyRegions_0 = self.dirtyRegions
-    ____self_dirtyRegions_0[#____self_dirtyRegions_0 + 1] = self:clampRegionToSurface(request.rect)
+    local ____self_dirtyRegions_2 = self.dirtyRegions
+    ____self_dirtyRegions_2[#____self_dirtyRegions_2 + 1] = self:clampRegionToSurface(request.rect)
 end
 function UIRuntime.prototype.dispatch(self, event)
-    local request = self:dispatchToRoot(event)
-    if not request then
-        return false
+    if event.type == "timer" then
+        local callback = self.scheduled:get(event.timerId)
+        if callback then
+            self.scheduled:delete(event.timerId)
+            callback(nil)
+            return true
+        end
     end
+    local blurred = self:blurOutsideClick(event)
+    local request = self:dispatchToRoot(event)
     self.eventBus:dispatch(event)
+    if not request then
+        return blurred
+    end
     self:invalidate(request)
     return true
+end
+function UIRuntime.prototype.run(self, options)
+    if options == nil then
+        options = {}
+    end
+    self.running = true
+    self:forceRender()
+    while self.running do
+        local raw = {os.pullEvent()}
+        local ____this_4
+        ____this_4 = options
+        local ____opt_3 = ____this_4.onEvent
+        if ____opt_3 ~= nil then
+            ____opt_3(____this_4, raw)
+        end
+        if not self.running then
+            break
+        end
+        local name = raw[1]
+        if name == "term_resize" or name == "monitor_resize" then
+            self:invalidate({reason = "layout", kind = "full"})
+        end
+        local event = toUIEvent(nil, raw, options)
+        if event then
+            self:dispatch(event)
+        end
+        self:render()
+    end
+end
+function UIRuntime.prototype.schedule(self, delaySeconds, callback)
+    self.scheduled:set(
+        os.startTimer(delaySeconds),
+        callback
+    )
+end
+function UIRuntime.prototype.stop(self)
+    self.running = false
+end
+function UIRuntime.prototype.blurOutsideClick(self, event)
+    if event.type ~= "mouse_click" and event.type ~= "monitor_touch" then
+        return false
+    end
+    local point = {x = event.x, y = event.y}
+    local blurred = false
+    local visit
+    visit = function(____, component)
+        local focusable = component
+        if focusable.focused == true and type(focusable.blur) == "function" and type(focusable.hitTest) == "function" and not focusable:hitTest(point) then
+            focusable:blur()
+            self:invalidate({reason = "state", kind = "region", rect = component.rect})
+            blurred = true
+        end
+        local children = component.children
+        if children then
+            for ____, child in ipairs(children) do
+                visit(nil, child)
+            end
+        end
+    end
+    visit(nil, self.root)
+    return blurred
 end
 function UIRuntime.prototype.render(self)
     if not self.dirty then
@@ -242,7 +533,7 @@ function UIRuntime.prototype.isFullRedrawPending(self)
     return self.fullRedraw
 end
 function UIRuntime.prototype.getDirtyRegions(self)
-    return {table.unpack(self.dirtyRegions)}
+    return {unpack(self.dirtyRegions)}
 end
 function UIRuntime.prototype.getActiveElement(self)
     return self.activeElement
@@ -257,15 +548,15 @@ function UIRuntime.prototype.createRenderContext(self)
     return {theme = self.theme, surface = self.surfaceKind, tick = self.tick, draw = self.surface}
 end
 function UIRuntime.prototype.createRootConstraints(self)
-    local ____temp_1 = self.surface:getSize()
-    local width = ____temp_1.width
-    local height = ____temp_1.height
+    local ____temp_5 = self.surface:getSize()
+    local width = ____temp_5.width
+    local height = ____temp_5.height
     return {minWidth = 0, minHeight = 0, maxWidth = width, maxHeight = height}
 end
 function UIRuntime.prototype.createRootRect(self)
-    local ____temp_2 = self.surface:getSize()
-    local width = ____temp_2.width
-    local height = ____temp_2.height
+    local ____temp_6 = self.surface:getSize()
+    local width = ____temp_6.width
+    local height = ____temp_6.height
     return {x = 1, y = 1, width = width, height = height}
 end
 function UIRuntime.prototype.clearSurface(self)
@@ -288,9 +579,9 @@ function UIRuntime.prototype.shouldFullRedraw(self, regions)
     if #regions >= self.maxDirtyRegionsBeforeFullRedraw then
         return true
     end
-    local ____temp_3 = self.surface:getSize()
-    local width = ____temp_3.width
-    local height = ____temp_3.height
+    local ____temp_7 = self.surface:getSize()
+    local width = ____temp_7.width
+    local height = ____temp_7.height
     local totalSurfaceArea = width * height
     local dirtyArea = self:computeRegionsArea(regions)
     if totalSurfaceArea <= 0 then
@@ -332,18 +623,25 @@ function UIRuntime.prototype.mergeRegionIntoList(self, regions, nextRegion)
         local index = 0
         while index < #regions do
             do
-                local existing = regions[index + 1]
-                if existing then
-                    if not self:regionsOverlapOrTouch(existing, current) then
-                        goto __continue46
+                local __continue62
+                repeat
+                    local existing = regions[index + 1]
+                    if existing then
+                        if not self:regionsOverlapOrTouch(existing, current) then
+                            __continue62 = true
+                            break
+                        end
+                        current = self:mergeRegions(existing, current)
+                        __TS__ArraySplice(regions, index, 1)
+                        index = index - 1
+                        mergedAny = true
                     end
-                    current = self:mergeRegions(existing, current)
-                    __TS__ArraySplice(regions, index, 1)
-                    index = index - 1
-                    mergedAny = true
+                    __continue62 = true
+                until true
+                if not __continue62 then
+                    break
                 end
             end
-            ::__continue46::
             index = index + 1
         end
     end
@@ -369,9 +667,9 @@ function UIRuntime.prototype.mergeRegions(self, a, b)
     return {x = left, y = top, width = right - left + 1, height = bottom - top + 1}
 end
 function UIRuntime.prototype.clampRegionToSurface(self, region)
-    local ____temp_4 = self.surface:getSize()
-    local surfaceWidth = ____temp_4.width
-    local surfaceHeight = ____temp_4.height
+    local ____temp_8 = self.surface:getSize()
+    local surfaceWidth = ____temp_8.width
+    local surfaceHeight = ____temp_8.height
     local left = math.max(1, region.x)
     local top = math.max(1, region.y)
     local right = math.min(surfaceWidth, region.x + region.width - 1)

@@ -60,6 +60,17 @@ local function __TS__ArrayReduce(self, callbackFn, ...)
     return accumulator
 end
 
+local function __TS__ObjectAssign(target, ...)
+    local sources = {...}
+    for i = 1, #sources do
+        local source = sources[i]
+        for key in pairs(source) do
+            target[key] = source[key]
+        end
+    end
+    return target
+end
+
 local function __TS__ArrayMap(self, callbackfn, thisArg)
     local result = {}
     for i = 1, #self do
@@ -69,8 +80,8 @@ local function __TS__ArrayMap(self, callbackfn, thisArg)
 end
 -- End of Lua Library inline imports
 local ____exports = {}
-local ____baseContainerComponent = require("modules.ui.core.components.baseContainerComponent")
-local BaseContainerComponent = ____baseContainerComponent.BaseContainerComponent
+local ____interactiveContainerComponent = require("modules.ui.core.components.interactiveContainerComponent")
+local InteractiveContainerComponent = ____interactiveContainerComponent.InteractiveContainerComponent
 local ____renderHelpers = require("modules.ui.render.renderHelpers")
 local drawBox = ____renderHelpers.drawBox
 local DrawBoxOptions = ____renderHelpers.DrawBoxOptions
@@ -78,6 +89,8 @@ local getInnerRect = ____renderHelpers.getInnerRect
 local normalizeInsets = ____renderHelpers.normalizeInsets
 local ____surfaceAdapter = require("modules.ui.render.surfaceAdapter")
 local UIDrawSurface = ____surfaceAdapter.UIDrawSurface
+local ____tone = require("modules.ui.theme.tone")
+local makeColors = ____tone.makeColors
 local ____types = require("modules.ui.types.index")
 local ComponentDependencies = ____types.ComponentDependencies
 local GridProps = ____types.GridProps
@@ -95,7 +108,7 @@ local createOptions = ____helpers.createOptions
 ____exports.GridComponent = __TS__Class()
 local GridComponent = ____exports.GridComponent
 GridComponent.name = "GridComponent"
-__TS__ClassExtends(GridComponent, BaseContainerComponent)
+__TS__ClassExtends(GridComponent, InteractiveContainerComponent)
 function GridComponent.prototype.____constructor(self, props, dependencies, children)
     if dependencies == nil then
         dependencies = {}
@@ -103,7 +116,7 @@ function GridComponent.prototype.____constructor(self, props, dependencies, chil
     if children == nil then
         children = {}
     end
-    BaseContainerComponent.prototype.____constructor(
+    InteractiveContainerComponent.prototype.____constructor(
         self,
         "grid",
         props,
@@ -160,7 +173,7 @@ function GridComponent.prototype.measure(self, constraints, context)
     )
 end
 function GridComponent.prototype.layout(self, rect, context)
-    BaseContainerComponent.prototype.layout(self, rect, context)
+    InteractiveContainerComponent.prototype.layout(self, rect, context)
     local style = self:getResolvedStyle(context)
     local innerRect = getInnerRect(nil, self.rect, style)
     local placements = self:createPlacements(innerRect, context)
@@ -181,12 +194,18 @@ function GridComponent.prototype.render(self, context)
         context.draw,
         createOptions(nil, {rect = self.rect, style = style}):with("borderCharacters", borderCharacters):with("clipRect", context.clipRect):done()
     )
-    self:renderChildren(context)
+    context.draw:withColors(
+        makeColors(nil, {foregroundColor = style.foregroundColor, backgroundColor = style.backgroundColor}),
+        function() return self:renderChildren(context) end
+    )
 end
 function GridComponent.prototype.getResolvedStyle(self, context)
     return self:getStyle(
         context,
-        function(____, themeStyle) return createOptions(nil, themeStyle):with("foregroundColor", self.props.foregroundColor or themeStyle.foregroundColor or context.theme.palette.text):with("backgroundColor", self.props.backgroundColor or themeStyle.backgroundColor or context.theme.palette.surface):with("padding", themeStyle.padding or 0):done() end
+        function(____, themeStyle) return createOptions(
+            nil,
+            __TS__ObjectAssign({}, themeStyle)
+        ):with("foregroundColor", self.props.foregroundColor or themeStyle.foregroundColor):with("backgroundColor", self.props.backgroundColor or themeStyle.backgroundColor):with("padding", self.props.padding or themeStyle.padding or 0):done() end
     )
 end
 function GridComponent.prototype.getColumns(self)
@@ -208,7 +227,7 @@ function GridComponent.prototype.getInnerConstraints(self, constraints, style)
     }
 end
 function GridComponent.prototype.createPlacements(self, innerRect, context)
-    local children = {table.unpack(self.children)}
+    local children = {unpack(self.children)}
     local columns = self:getColumns()
     local columnSpacing = self.props.columnSpacing or 0
     local rowSpacing = self.props.rowSpacing or 0
@@ -240,7 +259,7 @@ function GridComponent.prototype.createPlacements(self, innerRect, context)
             local column = index % columns
             local row = math.floor(index / columns)
             local columnWidth = columnWidths[column + 1] or 0
-            local measured = child:measure({minWidth = 0, maxWidth = columnWidth, minHeight = 0, maxHeight = innerRect.height}, context)
+            local measured = self:measureChild(child, {minWidth = 0, maxWidth = columnWidth, minHeight = 0, maxHeight = innerRect.height}, context)
             rowHeights[row + 1] = math.max(rowHeights[row + 1] or 0, measured.height)
             index = index + 1
         end

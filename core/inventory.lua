@@ -12,65 +12,6 @@ local function __TS__New(target, ...)
     instance:____constructor(...)
     return instance
 end
-
-local __TS__Symbol, Symbol
-do
-    local symbolMetatable = {__tostring = function(self)
-        return ("Symbol(" .. (self.description or "")) .. ")"
-    end}
-    function __TS__Symbol(description)
-        return setmetatable({description = description}, symbolMetatable)
-    end
-    Symbol = {
-        asyncDispose = __TS__Symbol("Symbol.asyncDispose"),
-        dispose = __TS__Symbol("Symbol.dispose"),
-        iterator = __TS__Symbol("Symbol.iterator"),
-        hasInstance = __TS__Symbol("Symbol.hasInstance"),
-        species = __TS__Symbol("Symbol.species"),
-        toStringTag = __TS__Symbol("Symbol.toStringTag")
-    }
-end
-
-local __TS__Iterator
-do
-    local function iteratorGeneratorStep(self)
-        local co = self.____coroutine
-        local status, value = coroutine.resume(co)
-        if not status then
-            error(value, 0)
-        end
-        if coroutine.status(co) == "dead" then
-            return
-        end
-        return true, value
-    end
-    local function iteratorIteratorStep(self)
-        local result = self:next()
-        if result.done then
-            return
-        end
-        return true, result.value
-    end
-    local function iteratorStringStep(self, index)
-        index = index + 1
-        if index > #self then
-            return
-        end
-        return index, string.sub(self, index, index)
-    end
-    function __TS__Iterator(iterable)
-        if type(iterable) == "string" then
-            return iteratorStringStep, iterable, 0
-        elseif iterable.____coroutine ~= nil then
-            return iteratorGeneratorStep, iterable
-        elseif iterable[Symbol.iterator] then
-            local iterator = iterable[Symbol.iterator](iterable)
-            return iteratorIteratorStep, iterator
-        else
-            return ipairs(iterable)
-        end
-    end
-end
 -- End of Lua Library inline imports
 local ____exports = {}
 local ____errors = require("core.errors")
@@ -114,16 +55,14 @@ function Inventory.prototype.getItem(self, slot)
 end
 function Inventory.prototype.isEmpty(self)
     local items = self:list()
-    return (next(nil, items)) == nil
+    return (next(items)) == nil
 end
 function Inventory.prototype.hasItem(self, itemName)
     return self:findFirstSlotByName(itemName) ~= nil
 end
 function Inventory.prototype.findFirstSlotByName(self, itemName)
     local items = self:list()
-    for ____, ____value in __TS__Iterator(pairs(nil, items)) do
-        local slot = ____value[1]
-        local item = ____value[2]
+    for slot, item in pairs(items) do
         if item.name == itemName then
             return slot
         end
@@ -133,8 +72,7 @@ end
 function Inventory.prototype.countItem(self, itemName)
     local total = 0
     local items = self:list()
-    for ____, ____value in __TS__Iterator(pairs(nil, items)) do
-        local item = ____value[2]
+    for ____, item in pairs(items) do
         if item.name == itemName then
             total = total + item.count
         end
@@ -144,8 +82,7 @@ end
 function Inventory.prototype.countAllItems(self)
     local total = 0
     local items = self:list()
-    for ____, ____value in __TS__Iterator(pairs(nil, items)) do
-        local item = ____value[2]
+    for ____, item in pairs(items) do
         total = total + item.count
     end
     return total
@@ -201,8 +138,7 @@ end
 function Inventory.prototype.getUsedSlots(self)
     local result = {}
     local items = self:list()
-    for ____, ____value in __TS__Iterator(pairs(nil, items)) do
-        local slot = ____value[1]
+    for slot in pairs(items) do
         result[#result + 1] = slot
     end
     return result

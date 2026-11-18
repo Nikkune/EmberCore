@@ -32,6 +32,17 @@ local function __TS__ClassExtends(target, base)
     end
 end
 
+local function __TS__ObjectAssign(target, ...)
+    local sources = {...}
+    for i = 1, #sources do
+        local source = sources[i]
+        for key in pairs(source) do
+            target[key] = source[key]
+        end
+    end
+    return target
+end
+
 local function __TS__CountVarargs(...)
     return select("#", ...)
 end
@@ -58,6 +69,42 @@ local function __TS__ArrayReduce(self, callbackFn, ...)
         )
     end
     return accumulator
+end
+
+local function __TS__ArrayMap(self, callbackfn, thisArg)
+    local result = {}
+    for i = 1, #self do
+        result[i] = callbackfn(thisArg, self[i], i - 1, self)
+    end
+    return result
+end
+
+local function __TS__ArrayIsArray(value)
+    return type(value) == "table" and (value[1] ~= nil or next(value) == nil)
+end
+
+local function __TS__ArrayFlatMap(self, callback, thisArg)
+    local result = {}
+    local len = 0
+    for i = 1, #self do
+        local value = callback(thisArg, self[i], i - 1, self)
+        if __TS__ArrayIsArray(value) then
+            for j = 1, #value do
+                len = len + 1
+                result[len] = value[j]
+            end
+        else
+            len = len + 1
+            result[len] = value
+        end
+    end
+    return result
+end
+
+local function __TS__ArrayForEach(self, callbackFn, thisArg)
+    for i = 1, #self do
+        callbackFn(thisArg, self[i], i - 1, self)
+    end
 end
 
 local function __TS__ArrayFilter(self, callbackfn, thisArg)
@@ -102,10 +149,13 @@ function StatusBarComponent.prototype.____constructor(self, props, dependencies)
     end
     BaseComponent.prototype.____constructor(self, "status_bar", props, dependencies)
 end
+function StatusBarComponent.prototype.setSegments(self, segments)
+    self:setProps({segments = segments})
+end
 function StatusBarComponent.prototype.measure(self, constraints, context)
     local style = self:getResolvedStyle(context)
     local contentWidth = self:getContentWidth(style)
-    local width = self.props.width or self.props.minWidth or contentWidth
+    local width = self.props.width or self.props.minWidth or math.max(contentWidth, constraints.maxWidth)
     local height = self.props.height or self.props.minHeight or 1
     return self:createMeasuredSize(width, height, constraints)
 end
@@ -139,31 +189,45 @@ function StatusBarComponent.prototype.getResolvedStyle(self, context)
     return self:getStyle(
         context,
         function(____, themeStyle)
-            local ____self_21 = createOptions(nil, themeStyle):with("foregroundColor", self.props.foregroundColor or themeStyle.foregroundColor or context.theme.palette.text):with("backgroundColor", self.props.backgroundColor or themeStyle.backgroundColor or context.theme.palette.surface)
-            local ____self_21_with_22 = ____self_21.with
-            local ____self_15 = createOptions(nil, themeStyle.text or ({}))
-            local ____self_15_with_16 = ____self_15.with
-            local ____opt_13 = themeStyle.text
-            local ____self_12 = ____self_15_with_16(____self_15, "alignment", ____opt_13 and ____opt_13.alignment or "left")
-            local ____self_12_with_17 = ____self_12.with
-            local ____opt_10 = themeStyle.text
-            local ____self_9 = ____self_12_with_17(____self_12, "wrap", ____opt_10 and ____opt_10.wrap or "none")
-            local ____self_9_with_18 = ____self_9.with
-            local ____opt_6 = themeStyle.text
-            local ____temp_8 = ____opt_6 and ____opt_6.ellipsis
-            if ____temp_8 == nil then
-                ____temp_8 = true
+            local ____self_23 = createOptions(
+                nil,
+                __TS__ObjectAssign({}, themeStyle)
+            ):with("foregroundColor", self.props.foregroundColor or themeStyle.foregroundColor or context.theme.palette.text):with("backgroundColor", self.props.backgroundColor or themeStyle.backgroundColor or context.theme.palette.surface)
+            local ____self_23_with_24 = ____self_23.with
+            local ____self_17 = createOptions(
+                nil,
+                __TS__ObjectAssign({}, themeStyle.text or ({}))
+            )
+            local ____self_17_with_18 = ____self_17.with
+            local ____opt_15 = themeStyle.text
+            local ____self_14 = ____self_17_with_18(____self_17, "alignment", ____opt_15 and ____opt_15.alignment or "left")
+            local ____self_14_with_19 = ____self_14.with
+            local ____opt_12 = themeStyle.text
+            local ____self_11 = ____self_14_with_19(____self_14, "wrap", ____opt_12 and ____opt_12.wrap or "none")
+            local ____self_11_with_20 = ____self_11.with
+            local ____opt_8 = themeStyle.text
+            local ____temp_10 = ____opt_8 and ____opt_8.ellipsis
+            if ____temp_10 == nil then
+                ____temp_10 = true
             end
-            local ____self_5 = ____self_9_with_18(____self_9, "ellipsis", ____temp_8)
-            local ____self_5_with_19 = ____self_5.with
-            local ____opt_3 = themeStyle.text
-            local ____self_2 = ____self_5_with_19(____self_5, "foregroundColor", ____opt_3 and ____opt_3.foregroundColor or self.props.foregroundColor or themeStyle.foregroundColor or context.theme.palette.text)
-            local ____self_2_with_20 = ____self_2.with
-            local ____opt_0 = themeStyle.text
-            return ____self_21_with_22(
-                ____self_21,
+            local ____self_7 = ____self_11_with_20(____self_11, "ellipsis", ____temp_10)
+            local ____self_7_with_21 = ____self_7.with
+            local ____self_props_foregroundColor_6 = self.props.foregroundColor
+            if ____self_props_foregroundColor_6 == nil then
+                local ____opt_4 = themeStyle.text
+                ____self_props_foregroundColor_6 = ____opt_4 and ____opt_4.foregroundColor
+            end
+            local ____self_3 = ____self_7_with_21(____self_7, "foregroundColor", ____self_props_foregroundColor_6 or themeStyle.foregroundColor or context.theme.palette.text)
+            local ____self_3_with_22 = ____self_3.with
+            local ____self_props_backgroundColor_2 = self.props.backgroundColor
+            if ____self_props_backgroundColor_2 == nil then
+                local ____opt_0 = themeStyle.text
+                ____self_props_backgroundColor_2 = ____opt_0 and ____opt_0.backgroundColor
+            end
+            return ____self_23_with_24(
+                ____self_23,
                 "text",
-                ____self_2_with_20(____self_2, "backgroundColor", ____opt_0 and ____opt_0.backgroundColor or self.props.backgroundColor or themeStyle.backgroundColor or context.theme.palette.surface):done()
+                ____self_3_with_22(____self_3, "backgroundColor", ____self_props_backgroundColor_2 or themeStyle.backgroundColor or context.theme.palette.surface):done()
             ):done()
         end
     )
@@ -189,26 +253,44 @@ function StatusBarComponent.prototype.resolveSegments(self, style, context)
         function(____, sum, segment) return sum + (segment.width or 0) end,
         0
     )
-    local flexibleSegments = __TS__ArrayFilter(
+    local widths = __TS__ArrayMap(
         segments,
-        function(____, segment) return segment.width == nil end
+        function(____, segment) return segment.width or #segment.text end
     )
-    local remainingWidth = math.max(0, self.width - fixedWidth)
-    local baseFlexibleWidth = #flexibleSegments > 0 and math.floor(remainingWidth / #flexibleSegments) or 0
-    local extraWidth = #flexibleSegments > 0 and remainingWidth % #flexibleSegments or 0
+    local flexible = __TS__ArrayFlatMap(
+        segments,
+        function(____, segment, index) return segment.width == nil and ({index}) or ({}) end
+    )
+    local remaining = math.max(0, self.width - fixedWidth) - __TS__ArrayReduce(
+        flexible,
+        function(____, sum, index) return sum + (widths[index + 1] or 0) end,
+        0
+    )
+    if remaining > 0 and #flexible > 0 then
+        local last = flexible[#flexible]
+        widths[last + 1] = (widths[last + 1] or 0) + remaining
+    end
+    do
+        local i = #flexible - 1
+        while i >= 0 and remaining < 0 do
+            local index = flexible[i + 1]
+            local shrink = math.min(widths[index + 1] or 0, -remaining)
+            widths[index + 1] = (widths[index + 1] or 0) - shrink
+            remaining = remaining + shrink
+            i = i - 1
+        end
+    end
     local currentX = self.x
     local resolved = {}
-    for ____, segment in ipairs(segments) do
-        local width = segment.width or baseFlexibleWidth
-        if segment.width == nil and extraWidth > 0 then
-            width = width + 1
-            extraWidth = extraWidth - 1
+    __TS__ArrayForEach(
+        segments,
+        function(____, segment, index)
+            local width = math.max(0, widths[index + 1] or 0)
+            local segmentStyle = self:getSegmentStyle(segment, style, context)
+            resolved[#resolved + 1] = {text = segment.text, x = currentX, width = width, style = segmentStyle}
+            currentX = currentX + width
         end
-        width = math.max(0, width)
-        local segmentStyle = self:getSegmentStyle(segment, style, context)
-        resolved[#resolved + 1] = {text = segment.text, x = currentX, width = width, style = segmentStyle}
-        currentX = currentX + width
-    end
+    )
     return __TS__ArrayFilter(
         resolved,
         function(____, segment) return segment.width > 0 end
@@ -216,20 +298,23 @@ function StatusBarComponent.prototype.resolveSegments(self, style, context)
 end
 function StatusBarComponent.prototype.getSegmentStyle(self, segment, style, context)
     local alignment = segment.alignment == "center" and "center" or (segment.alignment == "right" and "right" or "left")
-    local ____self_30 = createOptions(nil, style.text or ({})):with("alignment", alignment)
-    local ____self_30_with_31 = ____self_30.with
-    local ____segment_color_29 = segment.color
-    if ____segment_color_29 == nil then
-        local ____opt_27 = style.text
-        ____segment_color_29 = ____opt_27 and ____opt_27.foregroundColor
+    local ____self_32 = createOptions(
+        nil,
+        __TS__ObjectAssign({}, style.text or ({}))
+    ):with("alignment", alignment)
+    local ____self_32_with_33 = ____self_32.with
+    local ____segment_color_31 = segment.color
+    if ____segment_color_31 == nil then
+        local ____opt_29 = style.text
+        ____segment_color_31 = ____opt_29 and ____opt_29.foregroundColor
     end
-    local ____self_26 = ____self_30_with_31(____self_30, "foregroundColor", ____segment_color_29 or style.foregroundColor or context.theme.palette.text)
-    local ____self_26_with_32 = ____self_26.with
-    local ____segment_backgroundColor_25 = segment.backgroundColor
-    if ____segment_backgroundColor_25 == nil then
-        local ____opt_23 = style.text
-        ____segment_backgroundColor_25 = ____opt_23 and ____opt_23.backgroundColor
+    local ____self_28 = ____self_32_with_33(____self_32, "foregroundColor", ____segment_color_31 or style.foregroundColor or context.theme.palette.text)
+    local ____self_28_with_34 = ____self_28.with
+    local ____segment_backgroundColor_27 = segment.backgroundColor
+    if ____segment_backgroundColor_27 == nil then
+        local ____opt_25 = style.text
+        ____segment_backgroundColor_27 = ____opt_25 and ____opt_25.backgroundColor
     end
-    return ____self_26_with_32(____self_26, "backgroundColor", ____segment_backgroundColor_25 or style.backgroundColor or context.theme.palette.surface):done()
+    return ____self_28_with_34(____self_28, "backgroundColor", ____segment_backgroundColor_27 or style.backgroundColor or context.theme.palette.surface):done()
 end
 return ____exports
