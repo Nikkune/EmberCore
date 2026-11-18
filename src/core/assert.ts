@@ -37,6 +37,6 @@ export function assertTable(value: unknown, name: string): asserts value is Reco
 
 export function assertPeripheral(value: unknown, side: string): asserts value {
 	if (value === undefined || value === null) {
-		error(`No peripheral found on side '${side}'`, 2);
+		error(`No peripheral found for '${side}'`, 2);
 	}
 }

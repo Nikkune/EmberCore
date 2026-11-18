@@ -615,5 +615,98 @@ test('table: a column alignment does not leak into the other columns', function(
 	end
 end)
 
+-- ============================================================
+-- Core robustness
+-- ============================================================
+
+test('logger: logging works (os.date called without self)', function()
+	local Logger = require('core.logger').Logger
+	local log = new(Logger, 'Test', 'debug', false)
+	local lines = {}
+	local previous = print
+	print = function(line) lines[#lines + 1] = line end
+	local ok, err = pcall(function() log:info('hello', { a = 1 }) end)
+	print = previous
+	expect(ok, 'Logger.info crashed: ' .. tostring(err))
+	expect(lines[1] and lines[1]:find('INFO | Test | a=1 msg="hello"', 1, true), 'line: ' .. tostring(lines[1]))
+end)
+
+local function loopYields(run)
+	FAKE_CLOCK, QUEUED_EVENTS = 0, {}
+	local calls = 0
+	local ok, err = pcall(quiet, function()
+		run(function()
+			calls = calls + 1
+			FAKE_CLOCK = FAKE_CLOCK + 0.4 -- a busy task that never yields
+			if calls == 10 then error('stop', 0) end
+		end)
+	end)
+	expect(not ok and tostring(err):find('stop', 1, true), 'unexpected error: ' .. tostring(err))
+	return #QUEUED_EVENTS
+end
+
+test('loop: forever/until yield regularly when the task never does (no "Too long without yielding")', function()
+	local Loop = require('core.loop').Loop
+	local foreverYields = loopYields(function(task) Loop:forever(task) end)
+	expect(foreverYields >= 2, 'forever() yielded ' .. foreverYields .. ' time(s) in 4 s of busy work')
+	-- `until` is a Lua keyword: from Lua the method is called as Loop["until"](Loop, ...).
+	local untilYields = loopYields(function(task) Loop['until'](Loop, function() return false end, task) end)
+	expect(untilYields >= 2, 'until() yielded ' .. untilYields .. ' time(s) in 4 s of busy work')
+end)
+
+test('config: deep merge with defaults, wrong types ignored, unknown keys dropped', function()
+	local Config = require('core.config').Config
+	FILES = { ['app.cfg'] = textutils.serialise({ name = 42, nested = { x = 5 }, extra = true }) }
+	local cfg = quiet(function()
+		return Config:load('app.cfg', { name = 'smeltery', nested = { x = 1, y = 2 }, speed = 3 })
+	end)
+	expect(cfg.name == 'smeltery', 'wrong type should keep the default, got ' .. tostring(cfg.name))
+	expect(cfg.nested.x == 5 and cfg.nested.y == 2, ('nested merge: x=%s y=%s'):format(tostring(cfg.nested.x), tostring(cfg.nested.y)))
+	expect(cfg.speed == 3, 'missing key should keep the default')
+	expect(cfg.extra == nil, 'unknown key should be dropped')
+end)
+
+test('config: save goes through a temp file, and load recovers an interrupted save', function()
+	local Config = require('core.config').Config
+	FILES = { ['app.cfg'] = textutils.serialise({ speed = 1 }) }
+	quiet(function() Config:save('app.cfg', { speed = 9 }) end)
+	expect(FILES['app.cfg.tmp'] == nil, 'temp file left behind')
+	expect(textutils.unserialise(FILES['app.cfg']).speed == 9, 'config not saved')
+
+	-- Crash after deleting the old file, before moving the new one in place.
+	FILES = { ['app.cfg.tmp'] = textutils.serialise({ speed = 7 }) }
+	local cfg = quiet(function() return Config:load('app.cfg', { speed = 1 }) end)
+	expect(cfg.speed == 7, 'interrupted save not recovered (speed = ' .. tostring(cfg.speed) .. ')')
+	expect(FILES['app.cfg'] ~= nil and FILES['app.cfg.tmp'] == nil, 'recovered file not put in place')
+end)
+
+test('inventory: moveAllOfItem lists the inventory once', function()
+	local Inventory = require('core.inventory').Inventory
+	local listCalls, sizeCalls, pushed = 0, 0, {}
+	local items = { [1] = { name = 'iron', count = 10 }, [3] = { name = 'coal', count = 4 }, [5] = { name = 'iron', count = 7 } }
+	local raw = {
+		size = function() sizeCalls = sizeCalls + 1; return 27 end,
+		list = function() listCalls = listCalls + 1; return items end,
+		pushItems = function(_, slot) pushed[#pushed + 1] = slot; return items[slot].count end,
+	}
+	local source = new(Inventory, 'chest_a', raw)
+	local target = new(Inventory, 'chest_b', {})
+	local moved = source:moveAllOfItem(target, 'iron')
+	table.sort(pushed)
+	expect(moved == 17, 'moved ' .. moved .. ', expected 17')
+	expect(table.concat(pushed, ',') == '1,5', 'pushed slots ' .. table.concat(pushed, ','))
+	expect(listCalls == 1, 'list() called ' .. listCalls .. ' times, expected 1')
+	expect(sizeCalls == 0, 'size() called ' .. sizeCalls .. ' times, expected 0')
+end)
+
+test('peripheral: errors name the peripheral, not a "side"', function()
+	installPeripherals({})
+	local P = require('core.peripheral').Peripheral
+	local ok, err = pcall(quiet, function() return P:require('minecraft:chest_9') end)
+	expect(not ok, 'no error raised')
+	local message = type(err) == 'table' and err.message or tostring(err)
+	expect(message:find("Peripheral 'minecraft:chest_9' not found", 1, true), 'message: ' .. message)
+end)
+
 realPrint(('\n%d passed, %d failed'):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)
