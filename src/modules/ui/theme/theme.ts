@@ -37,13 +37,22 @@ const SINGLE_BORDER: BorderCharacters = {
 	columnRule:  ccChar(1 + 4 + 16),
 };
 
+// Thick frame (CC cells are 2x3 pixels, so a real double line is impossible): top and bottom lines
+// are 2 pixels high, sides and corners are full cells (the empty character with inverted colors).
+const FULL_CELL = ccChar(0);
+
 const DOUBLE_BORDER: BorderCharacters = {
-	topLeft:     '#',
-	topRight:    '#',
-	bottomLeft:  '#',
-	bottomRight: '#',
-	horizontal:  '=',
-	vertical:    'H',
+	topLeft:     FULL_CELL,
+	topRight:    FULL_CELL,
+	bottomLeft:  FULL_CELL,
+	bottomRight: FULL_CELL,
+	horizontal:  ccChar(1 + 2 + 4 + 8),
+	vertical:    FULL_CELL,
+	top:         ccChar(1 + 2 + 4 + 8),
+	bottom:      ccChar(1 + 2),
+	inverted:    ['topLeft', 'topRight', 'bottomLeft', 'bottomRight', 'left', 'right', 'bottom'],
+	rule:        ccChar(4 + 8),
+	columnRule:  FULL_CELL,
 };
 
 
