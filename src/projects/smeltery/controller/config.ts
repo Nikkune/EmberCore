@@ -34,7 +34,10 @@ export interface ControllerConfig {
 	reservoirs: string[];
 	/** Manual assignments, kept first: such a reservoir only ever takes its fluid. */
 	assignments: {reservoir: string; fluid: string}[];
-	/** Formats auto mode casts, first preferred; casters with another cast are left to the other modes. */
+	/**
+	 * Formats auto mode casts, biggest first; casters with another cast are left to the other modes.
+	 * Also set from the display (Overview, CASTING: AUTO / off).
+	 */
 	formatPriority: string[];
 	/** Seconds between two readings of the Smeltery. */
 	tickSeconds: number;
@@ -66,6 +69,11 @@ export function defaultControllerConfig(this: void): ControllerConfig {
 
 export function loadControllerConfig(this: void, path = CONFIG_PATH): ControllerConfig {
 	return Config.load(path, defaultControllerConfig());
+}
+
+/** Written back when the display changes a setting (the auto formats). */
+export function saveControllerConfig(this: void, config: ControllerConfig, path = CONFIG_PATH): void {
+	Config.save(path, config);
 }
 
 interface ModeFile {

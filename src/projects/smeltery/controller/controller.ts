@@ -12,9 +12,9 @@ import type {AlloyGuard, CastAmounts, CasterState, MaterialMap} from '@modules/t
 import {alloyGuardOf, castAmountsOf, loadCatalogue, materialMapOf, temperatureMap} from '../shared/catalogue';
 import type {Catalogue}                                 from '../shared/catalogue';
 import {CONTROLLER_HOSTNAME, Messages, MODES, PROTOCOL} from '../shared/protocol';
-import type {CasterView, CastRequest, FuelView, InputItemView, InsertRequest, InventoryView, Mode, SetModeRequest, SmelteryState, WaitingItem} from '../shared/protocol';
+import type {CasterView, CastRequest, FuelView, InputItemView, InsertRequest, InventoryView, Mode, SetFormatRequest, SetModeRequest, SmelteryState, WaitingItem} from '../shared/protocol';
 
-import {loadCapacities, loadControllerConfig, loadMode, saveCapacities, saveMode} from './config';
+import {CONFIG_PATH, loadCapacities, loadControllerConfig, loadMode, saveCapacities, saveControllerConfig, saveMode} from './config';
 import type {ControllerConfig}                          from './config';
 import {discoverNetwork}                                from './discovery';
 import type {Network}                                   from './discovery';
@@ -72,6 +72,8 @@ export class Controller {
 	private state: SmelteryState;
 	private needsDiscovery                       = true;
 	private logFile?: string | undefined;
+	/** Where settings changed from the display are saved; unset: they only last until a restart. */
+	private configPath?: string | undefined;
 	private lastAlerts                           = '';
 
 	public constructor(private readonly config: ControllerConfig, catalogue: Catalogue, private readonly modePath?: string) {
@@ -96,6 +98,37 @@ export class Controller {
 			fs.move(path, `${path}.old`);
 		}
 		this.logFile = path;
+	}
+
+	/** Settings changed from the display (the auto formats) are written back to this file. */
+	public setConfigPath(path: string): void {
+		this.configPath = path;
+	}
+
+	/**
+	 * Lets auto mode cast into `format`, or not. The list stays biggest first: a format comes back before
+	 * the first one smaller than it, the others keep their order.
+	 */
+	public setFormat(request: SetFormatRequest): void {
+		const format = request.format;
+		if (typeof format !== 'string' || format === '' || format === 'no cast') {
+			throw new EmberError(`unknown format ${tostring(format)}`, 'SMELTERY_ERROR');
+		}
+
+		const formats = this.config.formatPriority.filter((candidate) => candidate !== format);
+		if (request.auto) {
+			const size  = (name: string): number => this.amounts.get(name) ?? 0;
+			const index = formats.findIndex((candidate) => size(candidate) < size(format));
+			if (index < 0) formats.push(format);
+			else formats.splice(index, 0, format);
+		}
+
+		if (formats.join(',') === this.config.formatPriority.join(',')) return;
+
+		this.config.formatPriority = formats;
+		this.state.autoFormats     = formats;
+		if (this.configPath !== undefined) saveControllerConfig(this.config, this.configPath);
+		this.log(`auto formats: ${formats.length > 0 ? formats.join(', ') : 'none'}`);
 	}
 
 	public getState(): SmelteryState {
@@ -238,6 +271,12 @@ export class Controller {
 
 		channel.on(Messages.cast, (payload) => {
 			this.cast(payload as CastRequest);
+			this.tickWanted = true;
+			return this.state;
+		});
+
+		channel.on(Messages.setFormat, (payload) => {
+			this.setFormat(payload as SetFormatRequest);
 			this.tickWanted = true;
 			return this.state;
 		});
@@ -466,7 +505,8 @@ export class Controller {
 			}
 			case 'restore': {
 				const taken = this.pool?.take(smeltery.drain, action.fluid, action.amount) ?? 0;
-				if (taken > 0) this.log(`restored ${taken} mB ${Controller.shortName(action.fluid)} to complete a cast`);
+				const why   = action.why === 'stock' ? 'from the stock' : 'to complete a cast';
+				if (taken > 0) this.log(`restored ${taken} mB ${Controller.shortName(action.fluid)} ${why}`);
 				return 0;
 			}
 			default: {
@@ -707,6 +747,7 @@ export function runController(this: void): void {
 	const config     = loadControllerConfig();
 	const controller = new Controller(config, loadCatalogue());
 	controller.setLogFile('/smeltery/controller.log');
+	controller.setConfigPath(CONFIG_PATH);
 	const channel    = new Channel({protocol: PROTOCOL});
 
 	let online = false;

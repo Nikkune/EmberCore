@@ -1985,7 +1985,7 @@ local function smelteryState(fields)
 		mode = 'auto', time = 0, melting = {}, waiting = {}, alerts = {}, log = { '20:24:54 inserted 64 minecraft:raw_gold (seen: x)' },
 		fluids = { { name = IRON, amount = 1110 }, { name = GOLD, amount = 2700 } },
 		casters = { { name = 'tconstruct:basin_0', kind = 'basin', status = 'busy', format = 'block', amount = 810 } },
-		inputItems = {}, autoFormats = { 'block', 'ingot', 'nugget' },
+		inputItems = {}, autoFormats = { 'block', 'ingot', 'nugget' }, reservoirs = {},
 		fuel = { fluid = 'minecraft:lava', amount = 2600, temperature = 1000 }, heat = 1000,
 	}
 	for k, v in pairs(fields or {}) do state[k] = v end
@@ -1998,6 +1998,7 @@ local function screenFor(calls)
 		setMode = function(_, mode) calls[#calls + 1] = 'setMode ' .. mode end,
 		insert = function(_, r) calls[#calls + 1] = 'insert ' .. r.slot .. (r.force and ' force' or '') end,
 		cast = function(_, r) calls[#calls + 1] = 'cast ' .. r.fluid .. ' ' .. r.format end,
+		setFormat = function(_, r) calls[#calls + 1] = 'format ' .. r.format .. ' ' .. tostring(r.auto) end,
 	})
 	local runtime, terminal = runtimeFor(screen.root, 79, 38)
 	return screen, runtime, terminal
@@ -2074,6 +2075,117 @@ test('display: Force asks twice before a forced insert, and can be cancelled', f
 	runtime:invalidate({ reason = 'state', kind = 'full' })
 	runtime:render()
 	expect(not screenText(terminal):find('FORCE INSERT', 1, true) and #calls == 2, 'the second step must expire after 10 s')
+end)
+
+test('planner: auto empties the stock once the input is done, biggest stock first, one fluid at a time', function()
+	local s = snapshot({
+		fluids = { { name = IRON, amount = 40 } },
+		casters = { basinIdle, tableIdle },
+		stored = { { fluid = GOLD, amount = 500 }, { fluid = COPPER, amount = 2000 } },
+		storable = { IRON },
+	})
+	local plan = planner.planTick('auto', s, planContext())
+	expect(kinds(plan) == 'restore:/copper', 'auto: ' .. kinds(plan))
+	expect(plan.actions[1].amount == 2000 and plan.actions[1].why == 'stock', 'the whole stock must come back, as stock')
+	expect(kinds(planner.planTick('lock', s, planContext())) == '', 'lock must not take the stock')
+	expect(kinds(planner.planTick('manual', s, planContext())) == '', 'manual must not take the stock')
+end)
+
+test('planner: the stock waits for the input, for a fluid still to cast, and for items melting', function()
+	local stored = { { fluid = GOLD, amount = 500 } }
+	local withInput = snapshot({
+		casters = { basinIdle, tableIdle }, stored = stored,
+		input = { { slot = 1, name = 'minecraft:raw_iron', count = 4, fluid = IRON } },
+	})
+	expect(not kinds(planner.planTick('auto', withInput, planContext())):find('restore', 1, true), 'stock taken while the input has work')
+
+	local busyBasin = { name = 'basin_0', state = { status = 'busy', format = 'block', amount = 810 } }
+	local toCast = snapshot({ fluids = { { name = IRON, amount = 900 } }, casters = { busyBasin }, stored = stored })
+	expect(kinds(planner.planTick('auto', toCast, planContext())) == '', 'stock taken while iron still waits for a caster')
+
+	local melting = snapshot({ casters = { basinIdle }, meltingFluids = { IRON }, stored = stored })
+	expect(kinds(planner.planTick('auto', melting, planContext())) == '', 'stock taken while an item melts')
+
+	-- An input item too hot waits forever: it does not hold the stock back.
+	local hot = snapshot({
+		casters = { basinIdle, tableIdle }, stored = stored,
+		input = { { slot = 1, name = 'occultism:raw_iesnium', count = 4, fluid = IESNIUM } },
+	})
+	expect(kinds(planner.planTick('auto', hot, planContext())) == 'restore:/gold', 'a waiting hot item blocked the stock')
+end)
+
+test('planner: a stock that would alloy moves the leftover away first; a stock below a cast stays', function()
+	local s = snapshot({
+		fluids = { { name = TIN, amount = 40 } },
+		casters = { basinIdle, tableIdle },
+		stored = { { fluid = COPPER, amount = 2000 } },
+		storable = { TIN },
+	})
+	local plan = planner.planTick('auto', s, planContext())
+	expect(kinds(plan) == 'store:/tin', 'tin leftover must go first, copper must not come: ' .. kinds(plan))
+	expect(plan.actions[1].why == 'unblock', 'tin stored for the wrong reason')
+
+	local small = snapshot({ casters = { basinIdle, tableIdle }, stored = { { fluid = GOLD, amount = 50 } } })
+	plan = planner.planTick('auto', small, planContext())
+	expect(kinds(plan) == '' and plan.alerts[1] == 'stock of gold: 50 mB, below a cast', 'small stock: ' .. kinds(plan) .. ' ' .. tostring(plan.alerts[1]))
+
+	-- With the 40 mB already in the Smeltery, 50 mB of stock make an ingot.
+	local together = snapshot({ fluids = { { name = GOLD, amount = 40 } }, casters = { basinIdle, tableIdle }, stored = { { fluid = GOLD, amount = 50 } } })
+	expect(kinds(planner.planTick('auto', together, planContext())) == 'restore:/gold', 'stock plus leftover make an ingot')
+end)
+
+test('controller: auto formats are switched from the display, stay biggest first, and are saved', function()
+	local controllerModule = require('projects.smeltery.controller.controller')
+	local catalogue = require('projects.smeltery.shared.catalogue')
+	local configModule = require('projects.smeltery.controller.config')
+	local config = configModule.defaultControllerConfig()
+	local c = quiet(function() return new(controllerModule.Controller, config, catalogue.defaultCatalogue()) end)
+	c:setConfigPath('/test/smeltery-formats.db')
+
+	local function formats() return table.concat(c:getState().autoFormats, ',') end
+	quiet(function() c:setFormat({ format = 'block', auto = false }) end)
+	expect(formats() == 'ingot,nugget', 'block not removed: ' .. formats())
+	quiet(function() c:setFormat({ format = 'gear', auto = true }) end)
+	quiet(function() c:setFormat({ format = 'block', auto = true }) end)
+	expect(formats() == 'block,gear,ingot,nugget', 'not biggest first: ' .. formats())
+	expect(table.concat(configModule.loadControllerConfig('/test/smeltery-formats.db').formatPriority, ',') == formats(), 'formats not saved')
+
+	local ok = pcall(function() c:setFormat({ format = 'no cast', auto = true }) end)
+	expect(not ok, 'a caster without a cast cannot be a format')
+end)
+
+test('display: the stock tab shows reservoirs, totals and room; CASTING switches auto formats', function()
+	local calls = {}
+	local screen, runtime, terminal = screenFor(calls)
+	screen:setState(smelteryState({
+		fluids = { { name = GOLD, amount = 15300 } },
+		casters = {
+			{ name = 'tconstruct:basin_0', kind = 'basin', status = 'idle', format = 'block', amount = 0 },
+			{ name = 'tconstruct:table_0', kind = 'table', status = 'idle', format = 'gear', amount = 0 },
+		},
+		reservoirs = {
+			{ name = 'evilcraft:drum_1', fluid = IRON, amount = 3630 },
+			{ name = 'evilcraft:drum_2', fluid = COPPER, amount = 16000, capacity = 16000 },
+			{ name = 'evilcraft:drum_3', amount = 0, assigned = TIN },
+			{ name = 'evilcraft:drum_4', amount = 0 },
+		},
+		alerts = { 'stock of gold: 50 mB, below a cast' },
+	}))
+	runtime:invalidate({ reason = 'state', kind = 'full' })
+	runtime:render()
+
+	-- The molten total no longer runs into the fuel tank (column 37).
+	expect(terminal.line(26):sub(24, 36):find('15300 mB', 1, true) and terminal.line(27):sub(24, 36):find('molten', 1, true), 'molten total: ' .. terminal.line(26))
+
+	touch(runtime, 72, 7) -- block row: AUTO -> off
+	touch(runtime, 72, 10) -- gear row: off -> AUTO
+	expect(calls[1] == 'format block false' and calls[2] == 'format gear true', 'switches: ' .. tostring(calls[1]) .. ' / ' .. tostring(calls[2]))
+
+	touch(runtime, 55, 2) -- "Stock" tab
+	local text = screenText(terminal)
+	for _, wanted in ipairs({ 'RESERVOIRS', 'TOTALS', '3630 mB', 'FULL', 'for tin', 'drum 4', '177 ing', '1 free', 'capacity known for 1/4', 'stock of gold' }) do
+		expect(text:find(wanted, 1, true), 'stock tab misses "' .. wanted .. '"')
+	end
 end)
 
 -- ============================================================

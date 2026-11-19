@@ -1,7 +1,7 @@
 import {ButtonComponent, PaginationComponent} from '@modules/ui/components';
 import type {Rect}                           from '@modules/ui/types';
 
-import type {CastRequest, InputItemView, InsertRequest, Mode, SmelteryState} from '../shared/protocol';
+import type {CastRequest, InputItemView, InsertRequest, Mode, SetFormatRequest, SmelteryState} from '../shared/protocol';
 import {MODES}                               from '../shared/protocol';
 
 import {attentionLines, fluidColor, fluidLabel, formatLabel, Glyph, groupCasters, itemLabel, parseLogLine, textOn} from './model';
@@ -12,13 +12,14 @@ import type {Painter}                        from './widgets';
 export const SCREEN_WIDTH  = 79;
 export const SCREEN_HEIGHT = 38;
 
-type Tab = 'overview' | 'modes' | 'manual' | 'log';
+type Tab = 'overview' | 'modes' | 'manual' | 'stock' | 'log';
 
 /** What the screen asks the controller; the answers come back through setState(). */
 export interface ScreenActions {
 	setMode(mode: Mode): void;
 	insert(request: InsertRequest): void;
 	cast(request: CastRequest): void;
+	setFormat(request: SetFormatRequest): void;
 }
 
 interface Confirm {
@@ -28,7 +29,9 @@ interface Confirm {
 	deadline: number;
 }
 
-const TABS: [Tab, string][] = [['overview', 'Overview'], ['modes', 'Modes'], ['manual', 'Manual'], ['log', 'Log']];
+const TABS: [Tab, string][] = [['overview', 'Overview'], ['modes', 'Modes'], ['manual', 'Manual'], ['stock', 'Stock'], ['log', 'Log']];
+/** Column of the first tab: the last one ends before the mode badge (column 67). */
+const TABS_X = 23;
 
 /** Card texts fit the 17 columns of a card (16 with its margin). */
 const MODE_CARDS: Record<Mode, {color: number; lines: string[]}> = {
@@ -52,6 +55,9 @@ const LOG_COLORS: Record<LogKind, number> = {
 
 const CASTS_PER_PAGE  = 4;
 const ITEMS_PER_PAGE  = 6;
+const RESERVOIRS_PER_PAGE = 8;
+/** Level of a reservoir whose capacity is not known yet: the biggest known one, or this. */
+const DEFAULT_CAPACITY = 16000;
 const LOG_LINES       = 13;
 const CONFIRM_SECONDS = 10;
 const OFFLINE_SECONDS = 12;
@@ -75,6 +81,7 @@ export class SmelteryScreen {
 	private tab: Tab  = 'overview';
 	private castPage  = 1;
 	private itemPage  = 1;
+	private stockPage = 1;
 	private logOffset = 0;
 	private fluid?: string | undefined;
 	private format?: string | undefined;
@@ -87,6 +94,7 @@ export class SmelteryScreen {
 	private readonly itemButtons: ButtonComponent[] = [];
 	private readonly fluidButtons: ButtonComponent[] = [];
 	private readonly formatButtons: ButtonComponent[] = [];
+	private readonly autoButtons: ButtonComponent[] = [];
 	private readonly castButton: ButtonComponent;
 	private readonly logUp: ButtonComponent;
 	private readonly logDown: ButtonComponent;
@@ -94,11 +102,12 @@ export class SmelteryScreen {
 	private readonly confirmNo: ButtonComponent;
 	private readonly castPages: PaginationComponent;
 	private readonly itemPages: PaginationComponent;
+	private readonly stockPages: PaginationComponent;
 
 	public constructor(private readonly actions: ScreenActions) {
 		this.root.place(new PaintComponent({paint: (painter) => this.paint(painter)}), FULL_SCREEN);
 
-		let tabX = 27;
+		let tabX = TABS_X;
 		for (const [tab, label] of TABS) {
 			this.tabButtons.set(tab, this.button(label, {x: tabX, y: 2, width: label.length, height: 1}, () => this.showTab(tab)));
 			tabX += label.length + 4;
@@ -115,6 +124,18 @@ export class SmelteryScreen {
 				this.castPage = page;
 			},
 		}), {x: 59, y: 19, width: 11, height: 1});
+
+		for (let row = 0; row < CASTS_PER_PAGE; row++) {
+			const index = row;
+			this.autoButtons.push(this.button('', {x: 71, y: 7 + index * 3, width: 6, height: 1}, () => this.toggleAuto(index)));
+		}
+
+		this.stockPages = this.root.place(new PaginationComponent({
+			page: 1, pageSize: RESERVOIRS_PER_PAGE, totalItems: 0, foregroundColor: colors.lightGray, backgroundColor: colors.black,
+			onPageChange: (page) => {
+				this.stockPage = page;
+			},
+		}), {x: 3, y: 35, width: 11, height: 1});
 
 		// TSTL compiles `for (let ...)` to one shared Lua variable: closures must capture a per-iteration const.
 		for (let row = 0; row < ITEMS_PER_PAGE; row++) {
@@ -226,6 +247,12 @@ export class SmelteryScreen {
 		this.sync();
 	}
 
+	/** Overview, CASTING: the format of that row goes in or out of auto mode. */
+	private toggleAuto(row: number): void {
+		const group = this.castGroups()[(this.castPage - 1) * CASTS_PER_PAGE + row];
+		if (group !== undefined && group.format !== 'no cast') this.actions.setFormat({format: group.format, auto: !group.auto});
+	}
+
 	private pressCast(): void {
 		if (this.fluid !== undefined && this.format !== undefined) this.actions.cast({fluid: this.fluid, format: this.format});
 	}
@@ -268,6 +295,18 @@ export class SmelteryScreen {
 		const groups = this.castGroups();
 		this.castPages.setProps({visible: this.tab === 'overview' && groups.length > CASTS_PER_PAGE, totalItems: groups.length});
 		this.castPage = Math.min(this.castPage, Math.max(1, Math.ceil(groups.length / CASTS_PER_PAGE)));
+
+		const pageGroups = groups.slice((this.castPage - 1) * CASTS_PER_PAGE, this.castPage * CASTS_PER_PAGE);
+		this.autoButtons.forEach((button, row) => {
+			const group = pageGroups[row];
+			const shown = this.tab === 'overview' && group !== undefined && group.format !== 'no cast';
+			if (group?.auto === true) this.show(button, shown, ' AUTO ', colors.black, colors.lime);
+			else this.show(button, shown, ' off  ', colors.lightGray, colors.gray);
+		});
+
+		const reservoirCount = state?.reservoirs.length ?? 0;
+		this.stockPages.setProps({visible: this.tab === 'stock' && reservoirCount > RESERVOIRS_PER_PAGE, totalItems: reservoirCount});
+		this.stockPage = Math.min(this.stockPage, Math.max(1, Math.ceil(reservoirCount / RESERVOIRS_PER_PAGE)));
 
 		const manual = this.tab === 'manual';
 		const items  = this.pageItems();
@@ -313,6 +352,7 @@ export class SmelteryScreen {
 		}
 		this.castPages.setProps({disabled: modal});
 		this.itemPages.setProps({disabled: modal});
+		this.stockPages.setProps({disabled: modal});
 	}
 
 	// ------------------------------------------------------------------ drawing
@@ -331,6 +371,7 @@ export class SmelteryScreen {
 		if (this.tab === 'overview') this.paintOverview(p, state);
 		else if (this.tab === 'modes') this.paintModes(p, state);
 		else if (this.tab === 'manual') this.paintManual(p, state);
+		else if (this.tab === 'stock') this.paintStock(p, state);
 		else this.paintLog(p, state);
 
 		const message = this.message;
@@ -342,7 +383,7 @@ export class SmelteryScreen {
 		p.text(3, 2, Glyph.up, colors.orange);
 		p.text(5, 2, 'S M E L T E R Y', colors.white);
 
-		let x = 27;
+		let x = TABS_X;
 		for (const [tab, label] of TABS) {
 			if (tab === this.tab) p.text(x, 3, Glyph.underline.repeat(label.length), colors.orange);
 			x += label.length + 4;
@@ -390,8 +431,9 @@ export class SmelteryScreen {
 			p.text(26, legendY, `${fluid.amount} mB`.padStart(8), colors.white);
 			legendY += 2;
 		}
-		p.text(24, 26, `${total}`, colors.white);
-		p.text(24 + `${total}`.length + 1, 26, 'mB molten', colors.gray);
+		// Two lines: the column ends at 35, before the fuel tank (15300 mB molten would run into it).
+		p.text(24, 26, `${total} mB`, colors.white);
+		p.text(24, 27, 'molten', colors.gray);
 		const melting = state.melting.reduce((sum, item) => sum + item.count, 0);
 		p.text(24, 29, 'melting', colors.gray);
 		p.text(24, 30, `${melting} item${melting === 1 ? '' : 's'}`, colors.lightGray);
@@ -418,8 +460,8 @@ export class SmelteryScreen {
 		const start  = (this.castPage - 1) * CASTS_PER_PAGE;
 		groups.slice(start, start + CASTS_PER_PAGE).forEach((group, index) => {
 			const y = 7 + index * 3;
-			p.text(53, y, formatLabel(group.format), group.auto ? colors.white : colors.lightGray);
-			if (!group.auto) p.text(54 + formatLabel(group.format).length, y, `${Glyph.dot} manual`, colors.gray);
+			// The AUTO / off switch is a button at column 71.
+			p.text(53, y, formatLabel(group.format).substring(0, 17), group.auto ? colors.white : colors.lightGray);
 
 			let x = 53;
 			const blocks: [number, number][] = [
@@ -442,6 +484,8 @@ export class SmelteryScreen {
 		p.text(63, 21, 'casting', colors.gray);
 		p.fill(72, 21, 1, 1, colors.yellow);
 		p.text(74, 21, 'ready', colors.gray);
+		p.text(53, 23, 'Touch AUTO/off: auto casts', colors.gray);
+		p.text(53, 24, 'only into the AUTO ones.', colors.gray);
 
 		// Attention: only when something needs a look.
 		const lines = attentionLines(state);
@@ -497,6 +541,84 @@ export class SmelteryScreen {
 		this.castGroups().slice(0, 5).forEach((group, row) => {
 			p.text(53, 22 + row * 2, group.format === this.format ? Glyph.right : ' ', colors.white);
 		});
+	}
+
+	private paintStock(p: Painter, state: SmelteryState): void {
+		const reservoirs = state.reservoirs;
+
+		// Reservoirs: a small tank each, filled to its capacity once known (learnt when one fills up).
+		this.title(p, 3, 5, 'RESERVOIRS', 48);
+		let known = 0;
+		let scale = 0;
+		for (const reservoir of reservoirs) {
+			if (reservoir.capacity === undefined) continue;
+			known++;
+			scale = Math.max(scale, reservoir.capacity);
+		}
+		if (scale === 0) scale = DEFAULT_CAPACITY;
+
+		const start = (this.stockPage - 1) * RESERVOIRS_PER_PAGE;
+		reservoirs.slice(start, start + RESERVOIRS_PER_PAGE).forEach((reservoir, index) => {
+			const x = 3 + (index % 4) * 12, y = 7 + Math.floor(index / 4) * 14, height = 7;
+			this.frame(p, x, y, 6, height);
+
+			const fluid = reservoir.fluid;
+			if (fluid !== undefined) {
+				const rows = Math.min(height, Math.max(1, Math.round(height * reservoir.amount / (reservoir.capacity ?? scale))));
+				p.fill(x + 1, y + height + 1 - rows, 6, rows, fluidColor(fluid));
+			}
+			if (reservoir.capacity !== undefined && reservoir.amount >= reservoir.capacity) p.text(x + 1, y + 1, ' FULL ', colors.black, colors.white);
+
+			const label = fluid !== undefined ? fluidLabel(fluid) : reservoir.assigned !== undefined ? `for ${fluidLabel(reservoir.assigned)}` : 'free';
+			p.text(x, y + height + 3, label.substring(0, 11), fluid !== undefined ? colors.white : colors.gray);
+			if (fluid !== undefined) p.text(x, y + height + 4, `${reservoir.amount} mB`, colors.lightGray);
+			else if (reservoir.assigned !== undefined) p.text(x, y + height + 4, 'assigned', colors.gray);
+			p.text(x, y + height + 5, itemLabel(reservoir.name).split('_').join(' ').substring(0, 11), colors.gray);
+		});
+		if (reservoirs.length === 0) p.text(3, 7, 'No reservoir found.', colors.gray);
+
+		// Totals by fluid, biggest first.
+		this.title(p, 55, 5, 'TOTALS', 23);
+		const totals: {fluid: string; amount: number}[] = [];
+		for (const reservoir of reservoirs) {
+			if (reservoir.fluid === undefined) continue;
+			const entry = totals.find((candidate) => candidate.fluid === reservoir.fluid);
+			if (entry !== undefined) entry.amount += reservoir.amount;
+			else totals.push({fluid: reservoir.fluid, amount: reservoir.amount});
+		}
+		totals.sort((a, b) => b.amount - a.amount);
+		totals.slice(0, 5).forEach((total, index) => {
+			const y = 7 + index * 3;
+			p.fill(55, y, 2, 1, fluidColor(total.fluid));
+			p.text(58, y, fluidLabel(total.fluid).substring(0, 20), colors.white);
+			p.text(58, y + 1, `${`${total.amount} mB`.padEnd(10)}${Math.floor(total.amount / 90)} ing`, colors.gray);
+		});
+		if (totals.length > 5) p.text(58, 22, `+ ${totals.length - 5} more`, colors.gray);
+		if (totals.length === 0) p.text(55, 7, 'Nothing stored.', colors.gray);
+
+		// Room left: free reservoirs, and those kept for one fluid.
+		this.title(p, 55, 23, 'FREE', 23);
+		const empty    = reservoirs.filter((reservoir) => reservoir.fluid === undefined);
+		const free     = empty.filter((reservoir) => reservoir.assigned === undefined).length;
+		const assigned = empty.filter((reservoir) => reservoir.assigned !== undefined);
+		p.text(55, 25, `${free} free`, colors.white);
+		if (assigned.length === 1) p.text(56 + `${free} free`.length, 25, `+ 1 for ${fluidLabel(assigned[0]!.assigned!)}`.substring(0, 16), colors.gray);
+		else if (assigned.length > 1) p.text(56 + `${free} free`.length, 25, `+ ${assigned.length} assigned`, colors.gray);
+		p.text(55, 27, `capacity known for ${known}/${reservoirs.length}`, colors.gray);
+		p.text(55, 28, '(learnt when one fills)', colors.gray);
+
+		// What the stock is waiting for: no room for a fluid, or a stock too small to cast.
+		const alerts = state.alerts.filter((alert) => alert.startsWith('no reservoir') || alert.startsWith('stock of'));
+		if (alerts.length > 0) {
+			this.title(p, 55, 31, 'ATTENTION', 23);
+			const [line] = attentionLines({...state, alerts, waiting: []});
+			if (line !== undefined) {
+				p.text(55, 33, Glyph.up, colors.orange);
+				p.text(57, 33, line.title.substring(0, 21), colors.white);
+				p.text(57, 34, line.detail.substring(0, 21), colors.gray);
+			}
+			if (alerts.length > 1) p.text(57, 35, `+ ${alerts.length - 1} more`, colors.gray);
+		}
 	}
 
 	private paintLog(p: Painter, state: SmelteryState): void {

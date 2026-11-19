@@ -30,6 +30,8 @@ export const Messages = {
 	insert:   'insert',
 	/** Display → controller, request (manual mode): CastRequest. */
 	cast:     'cast',
+	/** Display → controller, request: SetFormatRequest. */
+	setFormat: 'setFormat',
 } as const;
 
 export interface CasterView {
@@ -110,6 +112,12 @@ export interface SmelteryState {
 
 export interface SetModeRequest {
 	mode: Mode;
+}
+
+/** Lets auto mode cast into a format, or not (the other modes cast into every format). */
+export interface SetFormatRequest {
+	format: string;
+	auto: boolean;
 }
 
 export interface InsertRequest {

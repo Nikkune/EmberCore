@@ -37,7 +37,7 @@ export type Action =
 	| {kind: 'insert'; slot: number; name: string; count: number; fluid: string; seen: string[]}
 	| {kind: 'reject'; slot: number; name: string; count: number; reason: 'heat' | 'unknown'; temperature?: number}
 	| {kind: 'store'; fluid: string; amount: number; why: 'drain' | 'purge' | 'unblock'}
-	| {kind: 'restore'; fluid: string; amount: number};
+	| {kind: 'restore'; fluid: string; amount: number; why: 'complete' | 'stock'};
 
 export interface Plan {
 	actions: Action[];
@@ -62,6 +62,11 @@ export interface PlanContext {
 	isAlloy?: (fluid: string) => boolean;
 }
 
+/** 'tconstruct:molten_iron' -> 'iron', for alerts (the display cuts them at the first ': '). */
+function shortFluid(this: void, fluid: string): string {
+	return fluid.substring(fluid.indexOf(':') + 1).replace('molten_', '');
+}
+
 /** Amount of the smallest cast auto mode can make of `fluid` with the casters there; undefined: none. */
 function smallestCast(this: void, fluid: string, snapshot: Snapshot, context: PlanContext): number | undefined {
 	let smallest: number | undefined;
@@ -84,7 +89,7 @@ function isLeftover(this: void, fluid: FluidStack, snapshot: Snapshot, context: 
 /** Sends a fluid to the reservoirs, or raises an alert when none can take it. */
 function store(this: void, fluid: FluidStack, why: 'drain' | 'purge' | 'unblock', snapshot: Snapshot, plan: Plan): boolean {
 	if (!snapshot.storable.includes(fluid.name)) {
-		plan.alerts.push(`no reservoir for ${fluid.name}: it stays in the Smeltery`);
+		plan.alerts.push(`no reservoir for ${shortFluid(fluid.name)}: it stays in the Smeltery`);
 		return false;
 	}
 
@@ -130,7 +135,7 @@ function restoreAll(this: void, snapshot: Snapshot, context: PlanContext, plan: 
 			if (fluid.amount >= amount) break;
 
 			if (fluid.amount + stock >= amount) {
-				plan.actions.push({kind: 'restore', fluid: fluid.name, amount: amount - fluid.amount});
+				plan.actions.push({kind: 'restore', fluid: fluid.name, amount: amount - fluid.amount, why: 'complete'});
 				completing.add(fluid.name);
 				break;
 			}
@@ -295,6 +300,52 @@ function unblock(
 }
 
 /**
+ * Empties the reservoirs once the input has nothing left to melt: one stored fluid at a time comes back
+ * whole (the biggest stock first) and is cast on the next ticks like any other. Only when nothing in the
+ * Smeltery can still be cast (what is there are leftovers) and nothing is melting. A fluid that would form
+ * an alloy with what is there does not come back: the leftovers it would alloy with go to the reservoirs
+ * first. A stock too small for any cast stays where it is (alert).
+ */
+function takeStock(this: void, snapshot: Snapshot, context: PlanContext, plan: Plan): void {
+	if (snapshot.meltingFluids.length > 0 || snapshot.stored.length === 0) return;
+	if (plan.actions.some((action) => action.kind !== 'collect' && action.kind !== 'reject')) return;
+	if (plan.waiting.some((item) => item.reason === 'alloy')) return;
+
+	for (const fluid of snapshot.fluids) {
+		const smallest = smallestCast(fluid.name, snapshot, context);
+		if (smallest !== undefined && fluid.amount >= smallest) return;
+	}
+
+	const present = snapshot.fluids.map((fluid) => fluid.name);
+	const stocks  = [...snapshot.stored].sort((a, b) => b.amount - a.amount);
+
+	for (const stock of stocks) {
+		const smallest = smallestCast(stock.fluid, snapshot, context);
+		if (smallest === undefined || stock.amount <= 0) continue;
+
+		const inside = snapshot.fluids.find((fluid) => fluid.name === stock.fluid)?.amount ?? 0;
+		if (stock.amount + inside < smallest) {
+			plan.alerts.push(`stock of ${shortFluid(stock.fluid)}: ${stock.amount} mB, below a cast`);
+			continue;
+		}
+
+		const alloy = context.guard.wouldForm(present, stock.fluid);
+		if (alloy === undefined) {
+			plan.actions.push({kind: 'restore', fluid: stock.fluid, amount: stock.amount, why: 'stock'});
+			return;
+		}
+
+		let unblocking = false;
+		for (const ingredient of alloy.ingredients) {
+			const fluid = snapshot.fluids.find((candidate) => candidate.name === ingredient);
+			if (ingredient === stock.fluid || fluid === undefined || !isLeftover(fluid, snapshot, context)) continue;
+			unblocking = store(fluid, 'unblock', snapshot, plan) || unblocking;
+		}
+		if (unblocking) return;
+	}
+}
+
+/**
  * What to do this tick. Collecting comes first (a blocked caster is freed), then casting, then the input:
  * idle:   nothing;
  * manual: collect only, the rest comes from the display;
@@ -302,7 +353,7 @@ function unblock(
  * drain:  collect, every fluid to the reservoirs;
  * purge:  collect, leftovers and alloys to the reservoirs;
  * auto:   collect, complete a cast from the stock, cast, and melt the input that is safe (a leftover that
- *         blocks an input goes to the reservoirs).
+ *         blocks an input goes to the reservoirs); once the input has nothing left to melt, the stock.
  */
 export function planTick(this: void, mode: Mode, snapshot: Snapshot, context: PlanContext): Plan {
 	const plan: Plan = {actions: [], waiting: [], alerts: []};
@@ -333,5 +384,6 @@ export function planTick(this: void, mode: Mode, snapshot: Snapshot, context: Pl
 	}
 
 	insertAll(snapshot, context, plan);
+	if (mode === 'auto') takeStock(snapshot, context, plan);
 	return plan;
 }
