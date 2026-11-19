@@ -895,10 +895,10 @@ local function fakeTinkers()
 		addDevice('tconstruct:chute_0', { 'tconstruct:chute', 'inventory' }, nil, itemStore(343))
 	end
 
-	function net.caster(name, capacity, castItem)
+	function net.caster(name, capacity, castItem, castTags)
 		local fluids = fluidStore({}, capacity)
 		fluids.single = true
-		local items = itemStore(2, castItem and { [1] = { name = castItem, count = 1 } } or {})
+		local items = itemStore(2, castItem and { [1] = { name = castItem, count = 1, tags = castTags } } or {})
 		fluids.accepts = function() return items.slots[2] == nil end
 		return addDevice(name, { name:match('^(.-)_%d+$'), 'inventory', 'fluid_storage' }, fluids, items)
 	end
@@ -922,6 +922,25 @@ test('tinkers: formatOfCast reads gold, sand and red sand casts', function()
 	expect(tinkers.formatOfCast('tconstruct:nugget_sand_cast') == 'nugget', 'nugget_sand_cast')
 	expect(tinkers.formatOfCast('tconstruct:gem_red_sand_cast') == 'gem', 'gem_red_sand_cast')
 	expect(tinkers.formatOfCast('minecraft:iron_ingot') == nil, 'an item that is not a cast')
+	expect(tinkers.formatOfCast('tinkers_reforged:large_round_plate_cast_gold') == 'large_round_plate', 'Reforged gold cast')
+	expect(tinkers.formatOfCast('tinkers_reforged:great_blade_cast_red_sand') == 'great_blade', 'Reforged red sand cast')
+	expect(tinkers.formatOfCast('tinkers_reforged:cast_ingot') == 'ingot', 'Reforged aluminum cast')
+end)
+
+test('tinkers: the cast format comes from its tags first, read once', function()
+	local net = fakeTinkers()
+	local device = net.caster('tconstruct:table_0', 540, 'mod:weird_thing', { ['tinkers_reforged:casts/multi_use/large_round_plate'] = true })
+	net.install()
+	local details = 0
+	local getItemDetail = device.object.getItemDetail
+	device.object.getItemDetail = function(slot) details = details + 1; return getItemDetail(slot) end
+
+	local t = tinkers.Caster:fromName('tconstruct:table_0')
+	expect(t:read().format == 'large_round_plate', 'format not read from the tags')
+	t:read()
+	expect(details == 1, 'tags read ' .. details .. ' times instead of once')
+	expect(tinkers.formatOfCastTags({ ['tconstruct:casts/single_use/ingot'] = true }) == 'ingot', 'single use tag')
+	expect(tinkers.formatOfCastTags({ ['forge:ingots/iron'] = true }) == nil, 'not a cast tag')
 end)
 
 test('tinkers: caster state (idle, busy, blocked) and format', function()

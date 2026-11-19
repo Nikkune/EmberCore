@@ -30,17 +30,41 @@ export interface CasterState {
 const CAST_SLOT   = 1;
 const OUTPUT_SLOT = 2;
 
-/** 'tconstruct:ingot_cast', 'tconstruct:ingot_sand_cast', 'tconstruct:ingot_red_sand_cast' → 'ingot'. */
+/**
+ * Format of a cast from its tags: every cast, whatever its mod, carries '<ns>:casts/multi_use/<format>'
+ * or '<ns>:casts/single_use/<format>', the tags casting recipes use. Undefined without such a tag.
+ */
+export function formatOfCastTags(this: void, tags: LuaMap<string, boolean> | undefined): CastFormat | undefined {
+	if (tags === undefined) return undefined;
+
+	for (const [tag, present] of tags) {
+		if (!present) continue;
+
+		for (const marker of [':casts/multi_use/', ':casts/single_use/']) {
+			const index = tag.indexOf(marker);
+			if (index >= 0) return tag.substring(index + marker.length);
+		}
+	}
+
+	return undefined;
+}
+
+/**
+ * Format of a cast from its name, when its tags are not available. Knows the TConstruct names
+ * (ingot_cast, ingot_sand_cast, ingot_red_sand_cast) and the Tinkers Reforged ones
+ * (great_blade_cast_gold, great_blade_cast_sand, great_blade_cast_red_sand, cast_ingot).
+ */
 export function formatOfCast(this: void, castName: string): CastFormat | undefined {
 	const colon = castName.indexOf(':');
 	const path  = colon >= 0 ? castName.substring(colon + 1) : castName;
 
-	for (const suffix of ['_red_sand_cast', '_sand_cast', '_cast']) {
+	for (const suffix of ['_red_sand_cast', '_sand_cast', '_cast', '_cast_gold', '_cast_red_sand', '_cast_sand']) {
 		if (path.endsWith(suffix)) {
 			return path.substring(0, path.length - suffix.length);
 		}
 	}
 
+	if (path.startsWith('cast_')) return path.substring('cast_'.length);
 	return undefined;
 }
 
@@ -54,6 +78,9 @@ export class Caster {
 		private readonly amounts: CastAmounts = new CastAmounts(),
 	) {
 	}
+
+	/** Format per cast item name: its tags are read once (one more peripheral call), then remembered. */
+	private readonly castFormats = new Map<string, CastFormat | false>();
 
 	/** Kind from the peripheral name ('tconstruct:table_0', 'tconstruct:basin_0'). */
 	public static fromName(name: string, amounts?: CastAmounts): Caster {
@@ -77,10 +104,22 @@ export class Caster {
 		if (output !== undefined) state.output = {name: output.name, count: output.count};
 		if (fluid !== undefined) state.fluid = fluid.name;
 
-		const format = cast !== undefined ? formatOfCast(cast.name) : this.kind === 'basin' ? 'block' : undefined;
+		const format = cast !== undefined ? this.formatOf(cast.name) : this.kind === 'basin' ? 'block' : undefined;
 		if (format !== undefined) state.format = format;
 
 		return state;
+	}
+
+	private formatOf(castName: string): CastFormat | undefined {
+		let format = this.castFormats.get(castName);
+
+		if (format === undefined) {
+			const detail = this.inventory.getItem(CAST_SLOT);
+			format       = (detail?.name === castName ? formatOfCastTags(detail.tags) : undefined) ?? formatOfCast(castName) ?? false;
+			this.castFormats.set(castName, format);
+		}
+
+		return format === false ? undefined : format;
 	}
 
 	/** Fluid one casting of `fluid` needs in this format, or undefined when it is unknown. */
