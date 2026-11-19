@@ -858,6 +858,15 @@ local function fakeTinkers()
 				for i, f in ipairs(fluids.fluids) do t[i] = { name = f.name, amount = f.amount } end
 				return t
 			end
+			object.pullFluid = function(from, limit, fluidName)
+				local source = devices[from]
+				if not source or not source.fluids then error("Source '" .. tostring(from) .. "' is not a tank", 2) end
+				local name, n = source.fluids.take(limit or math.huge, fluidName)
+				if n == 0 then return 0 end
+				local accepted = fluids.give(name, n)
+				if accepted < n then source.fluids.give(name, n - accepted) end
+				return accepted
+			end
 			object.pushFluid = function(to, limit, fluidName)
 				local target = devices[to]
 				if not target or not target.fluids then error("Target '" .. tostring(to) .. "' is not a tank", 2) end
@@ -901,6 +910,12 @@ local function fakeTinkers()
 		local items = itemStore(2, castItem and { [1] = { name = castItem, count = 1, tags = castTags } } or {})
 		fluids.accepts = function() return items.slots[2] == nil end
 		return addDevice(name, { name:match('^(.-)_%d+$'), 'inventory', 'fluid_storage' }, fluids, items)
+	end
+
+	function net.reservoir(name, capacity, fluids)
+		local store = fluidStore(fluids or {}, capacity)
+		store.single = true
+		return addDevice(name, { 'miniutilities:drum', 'fluid_storage' }, store)
 	end
 
 	function net.fuelTank(name, fluids)
@@ -1964,6 +1979,76 @@ test('display: Force asks twice before a forced insert, and can be cancelled', f
 	runtime:invalidate({ reason = 'state', kind = 'full' })
 	runtime:render()
 	expect(not screenText(terminal):find('FORCE INSERT', 1, true) and #calls == 2, 'the second step must expire after 10 s')
+end)
+
+-- ============================================================
+-- Fluids module: reservoir pool (dynamic, never mixing)
+-- ============================================================
+
+local fluids = require('modules.fluids.index')
+
+local function poolNet()
+	local fake = fakeTinkers()
+	fake.smeltery({ { name = IRON, amount = 3000 }, { name = GOLD, amount = 500 }, { name = COPPER, amount = 40 } })
+	local r = {
+		fake.reservoir('drum_0', 1000, { { name = GOLD, amount = 200 } }),
+		fake.reservoir('drum_1', 1000),
+		fake.reservoir('drum_2', 1000),
+	}
+	fake.install()
+	return fake, r
+end
+
+local function drainTank()
+	return require('core.tank').Tank:fromName('tconstruct:drain_0')
+end
+
+test('fluids: a fluid goes to the reservoir already holding it, then to empty ones', function()
+	local fake, r = poolNet()
+	local pool = new(fluids.ReservoirPool, { 'drum_0', 'drum_1', 'drum_2' })
+	pool:refresh()
+
+	expect(pool:store(drainTank(), GOLD, 300) == 300, 'gold not stored')
+	expect(r[1].fluids.fluids[1].amount == 500 and #r[2].fluids.fluids == 0, 'gold must join the drum already holding gold')
+
+	expect(pool:store(drainTank(), IRON, 1500) == 1500, 'iron not stored')
+	expect(r[2].fluids.fluids[1].name == IRON and r[2].fluids.fluids[1].amount == 1000, 'first empty drum not filled with iron')
+	expect(r[3].fluids.fluids[1].name == IRON and r[3].fluids.fluids[1].amount == 500, 'iron did not overflow into the next drum')
+	expect(pool:capacities().drum_1 == 1000, 'capacity not learnt when the drum refused more')
+	expect(pool:stored(IRON) == 1500 and pool:stored(GOLD) == 500, 'stored amounts')
+
+	-- Every drum is taken: copper has nowhere to go, and nothing is mixed.
+	expect(pool:store(drainTank(), COPPER, 40) == 0 and not pool:canStore(COPPER), 'copper stored next to another fluid')
+	for i = 1, 3 do expect(#r[i].fluids.fluids == 1, 'drum ' .. i .. ' holds two fluids') end
+end)
+
+test('fluids: a reservoir changed since the last reading is checked again before a transfer', function()
+	local fake, r = poolNet()
+	local pool = new(fluids.ReservoirPool, { 'drum_1', 'drum_2' })
+	pool:refresh()
+	r[2].fluids.fluids = { { name = COPPER, amount = 10 } } -- someone filled drum_1 meanwhile
+	expect(pool:store(drainTank(), IRON, 100) == 100, 'iron not stored')
+	expect(r[2].fluids.fluids[1].name == COPPER and r[3].fluids.fluids[1].name == IRON, 'iron poured onto the copper')
+end)
+
+test('fluids: assigned reservoirs only take their fluid; take() gives back, smallest stock first', function()
+	local fake, r = poolNet()
+	local pool = new(fluids.ReservoirPool, { 'drum_1', 'drum_2' }, { assignments = { drum_2 = GOLD } })
+	pool:refresh()
+	pool:store(drainTank(), IRON, 200)
+	expect(r[2].fluids.fluids[1].name == IRON and #r[3].fluids.fluids == 0, 'iron went into the drum assigned to gold')
+	pool:store(drainTank(), GOLD, 100)
+	expect(r[3].fluids.fluids[1].name == GOLD, 'gold not put in its assigned drum')
+
+	local smeltery = fake.devices['tconstruct:drain_0'].fluids
+	local before = 0
+	for _, f in ipairs(smeltery.fluids) do if f.name == IRON then before = f.amount end end
+	expect(pool:take(drainTank(), IRON, 150) == 150, 'iron not given back')
+	local after = 0
+	for _, f in ipairs(smeltery.fluids) do if f.name == IRON then after = f.amount end end
+	expect(after == before + 150 and pool:stored(IRON) == 50, 'smeltery or pool amounts wrong after take')
+	local views = pool:views()
+	expect(views[2].assigned == GOLD and views[2].fluid == GOLD and views[1].amount == 50, 'views')
 end)
 
 realPrint(('\n%d passed, %d failed'):format(passed, failed))
