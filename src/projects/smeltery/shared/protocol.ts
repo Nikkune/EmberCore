@@ -48,13 +48,14 @@ export interface InventoryView {
 /**
  * An input item auto mode leaves where it is, and why:
  * unknown: no known molten fluid for it; alloy: it would form `alloy` with what is already there;
- * full: the Smeltery took nothing more.
+ * heat: it melts at `temperature`, hotter than the fuel; full: the Smeltery took nothing more.
  */
 export interface WaitingItem {
 	name: string;
 	count: number;
-	reason: 'unknown' | 'alloy' | 'full';
+	reason: 'unknown' | 'alloy' | 'heat' | 'full';
 	alloy?: string;
+	temperature?: number;
 }
 
 export interface SmelteryState {

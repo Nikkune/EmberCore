@@ -1244,9 +1244,14 @@ end)
 -- Smeltery project: role of the computer, catalogue
 -- ============================================================
 
--- Runs projects/smeltery/main.lua with arguments; returns what it printed.
+-- Runs projects/smeltery/main.lua with arguments; returns what it printed. The controller and display
+-- loops never return: stand-ins that only print their role replace them.
 local function runSmelteryMain(...)
 	local printed = {}
+	local realController = package.loaded['projects.smeltery.controller.controller']
+	local realDisplay = package.loaded['projects.smeltery.display.display']
+	package.loaded['projects.smeltery.controller.controller'] = { runController = function() print('role: controller') end }
+	package.loaded['projects.smeltery.display.display'] = { runDisplay = function() print('role: display') end }
 	local chunk = assert(loadfile(luasDir .. '/projects/smeltery/main.lua'))
 	print = function(...)
 		local parts = {}
@@ -1255,6 +1260,8 @@ local function runSmelteryMain(...)
 	end
 	local ok, err = pcall(chunk, ...)
 	print = realPrint
+	package.loaded['projects.smeltery.controller.controller'] = realController
+	package.loaded['projects.smeltery.display.display'] = realDisplay
 	if not ok then error(err, 0) end
 	return table.concat(printed, '\n')
 end
@@ -1262,13 +1269,13 @@ end
 test('smeltery: the role comes from the argument, then the saved one, then the peripherals', function()
 	FILES = {}
 	installPeripherals({ ['tconstruct:drain_0'] = { types = { 'tconstruct:drain', 'fluid_storage' }, object = {} } })
-	expect(runSmelteryMain():find('controller', 1, true), 'a computer next to a drain must be the controller')
+	expect(runSmelteryMain():find('role: controller', 1, true), 'a computer next to a drain must be the controller')
 
 	installPeripherals({ top = { types = { 'monitor' }, object = {} } })
-	expect(runSmelteryMain():find('controller', 1, true), 'the saved role must win over the peripherals')
+	expect(runSmelteryMain():find('role: controller', 1, true), 'the saved role must win over the peripherals')
 
-	expect(runSmelteryMain('display'):find('display', 1, true), 'the argument must win')
-	expect(runSmelteryMain():find('display', 1, true), 'the role given as argument must be saved')
+	expect(runSmelteryMain('display'):find('role: display', 1, true), 'the argument must win')
+	expect(runSmelteryMain():find('role: display', 1, true), 'the role given as argument must be saved')
 
 	FILES = {}
 	installPeripherals({})
@@ -1333,6 +1340,409 @@ test('smeltery: the default catalogue is written once, then read from its file',
 	c = quiet(function() return catalogue.loadCatalogue() end)
 	expect(#c.overrides == 1 and catalogue.materialMapOf(c):fluidOf({ name = 'minecraft:obsidian' }) == 'tconstruct:molten_obsidian',
 		'local override lost')
+end)
+
+-- ============================================================
+-- Smeltery controller: planner (pure) and controller on fake peripherals
+-- ============================================================
+
+os.epoch = os.epoch or function() return 0 end
+
+local planner = require('projects.smeltery.controller.planner')
+
+local IRON, GOLD = 'tconstruct:molten_iron', 'tconstruct:molten_gold'
+local COPPER, TIN = 'tconstruct:molten_copper', 'tconstruct:molten_tin'
+
+local IESNIUM = 'materialis:molten_iesnium'
+local TEMPERATURES = { [IRON] = 800, [GOLD] = 700, [COPPER] = 500, [TIN] = 525, [IESNIUM] = 1090 }
+
+local function planContext()
+	return {
+		guard = new(tinkers.AlloyGuard, { { result = 'tconstruct:molten_bronze', ingredients = { COPPER, TIN } } }),
+		amounts = new(tinkers.CastAmounts),
+		formatPriority = { 'block', 'ingot', 'nugget' },
+		meltingTemperature = function(_, fluid) return TEMPERATURES[fluid] end,
+		fuelTemperature = 1000,
+	}
+end
+
+local function snapshot(fields)
+	local s = { fluids = {}, meltingFluids = {}, casters = {}, input = {}, outputFree = 10 }
+	for k, v in pairs(fields) do s[k] = v end
+	return s
+end
+
+local function kinds(plan)
+	local out = {}
+	for _, a in ipairs(plan.actions) do
+		out[#out + 1] = a.kind .. ':' .. (a.caster or a.name or '') .. (a.fluid and ('/' .. a.fluid:gsub('tconstruct:molten_', '')) or '')
+	end
+	return table.concat(out, ' ')
+end
+
+local basinIdle = { name = 'basin_0', state = { status = 'idle', format = 'block', amount = 0 } }
+local tableIdle = { name = 'table_0', state = { status = 'idle', format = 'ingot', amount = 0 } }
+local nuggetIdle = { name = 'table_1', state = { status = 'idle', format = 'nugget', amount = 0 } }
+local gearIdle = { name = 'table_2', state = { status = 'idle', format = 'gear', amount = 0 } }
+local basinBlocked = { name = 'basin_1', state = { status = 'blocked', format = 'block', amount = 0 } }
+
+test('planner: idle does nothing, manual only collects, lock collects and casts but inserts nothing', function()
+	local s = snapshot({
+		fluids = { { name = IRON, amount = 900 } },
+		casters = { basinIdle, basinBlocked },
+		input = { { slot = 1, name = 'minecraft:raw_gold', count = 4, fluid = GOLD } },
+	})
+	expect(#planner.planTick('idle', s, planContext()).actions == 0, 'idle planned something')
+	expect(kinds(planner.planTick('manual', s, planContext())) == 'collect:basin_1', 'manual: ' .. kinds(planner.planTick('manual', s, planContext())))
+	expect(kinds(planner.planTick('lock', s, planContext())) == 'collect:basin_1 pour:basin_0/iron', 'lock: ' .. kinds(planner.planTick('lock', s, planContext())))
+	local auto = kinds(planner.planTick('auto', s, planContext()))
+	expect(auto == 'collect:basin_1 pour:basin_0/iron insert:minecraft:raw_gold/gold', 'auto: ' .. auto)
+end)
+
+test('planner: only the biggest format a fluid fills, smaller ones once it is below', function()
+	local s = snapshot({
+		fluids = { { name = IRON, amount = 905 }, { name = GOLD, amount = 20 } },
+		casters = { gearIdle, nuggetIdle, tableIdle, basinIdle },
+	})
+	local plan = planner.planTick('lock', s, planContext())
+	-- 905 iron fills a block: only the basin, no ingot meanwhile. 20 gold fills only a nugget.
+	expect(kinds(plan) == 'pour:basin_0/iron pour:table_1/gold', 'got ' .. kinds(plan))
+
+	-- 1700 iron while the basin is cooling: wait for it, no ingots.
+	local basinBusy = { name = 'basin_0', state = { status = 'busy', format = 'block', amount = 810, fluid = IRON } }
+	s = snapshot({ fluids = { { name = IRON, amount = 1700 } }, casters = { basinBusy, tableIdle, nuggetIdle } })
+	expect(#planner.planTick('lock', s, planContext()).actions == 0, 'cast ingots while a block was possible: ' .. kinds(planner.planTick('lock', s, planContext())))
+
+	-- 95 iron left: an ingot; the nugget table waits for the next tick.
+	s = snapshot({ fluids = { { name = IRON, amount = 95 } }, casters = { basinIdle, tableIdle, nuggetIdle } })
+	expect(kinds(planner.planTick('lock', s, planContext())) == 'pour:table_0/iron', 'below a block: ' .. kinds(planner.planTick('lock', s, planContext())))
+
+	-- Two basins and 1700 iron: two blocks at once. A format without caster is skipped.
+	local basin2 = { name = 'basin_2', state = { status = 'idle', format = 'block', amount = 0 } }
+	s = snapshot({ fluids = { { name = IRON, amount = 1700 } }, casters = { basinIdle, basin2 } })
+	expect(kinds(planner.planTick('lock', s, planContext())) == 'pour:basin_0/iron pour:basin_2/iron', 'two basins: ' .. kinds(planner.planTick('lock', s, planContext())))
+	s = snapshot({ fluids = { { name = IRON, amount = 1700 } }, casters = { tableIdle } })
+	expect(kinds(planner.planTick('lock', s, planContext())) == 'pour:table_0/iron', 'no basin: ingots must be cast')
+end)
+
+test('planner: an item hotter than the fuel waits in the input', function()
+	local s = snapshot({ input = {
+		{ slot = 1, name = 'occultism:raw_iesnium', count = 64, fluid = IESNIUM },
+		{ slot = 2, name = 'minecraft:raw_iron', count = 3, fluid = IRON },
+	} })
+	local plan = planner.planTick('auto', s, planContext())
+	expect(kinds(plan) == 'insert:minecraft:raw_iron/iron', 'got ' .. kinds(plan))
+	expect(plan.waiting[1].reason == 'heat' and plan.waiting[1].temperature == 1090, 'iesnium must wait for heat')
+
+	local hot = planContext()
+	hot.fuelTemperature = 1500
+	expect(#planner.planTick('auto', s, hot).actions == 2, 'with blazing blood (1500) iesnium must go in')
+	hot.fuelTemperature = nil
+	expect(#planner.planTick('auto', s, hot).actions == 2, 'an unknown fuel checks nothing')
+end)
+
+test('planner: rejected items leave the input only when an inventory is set for them', function()
+	local s = snapshot({ input = {
+		{ slot = 1, name = 'occultism:raw_iesnium', count = 64, fluid = IESNIUM },
+		{ slot = 2, name = 'minecraft:dirt', count = 5 },
+	} })
+	local context = planContext()
+	context.reject = { heat = true, unknown = false }
+	local plan = planner.planTick('auto', s, context)
+	expect(kinds(plan) == 'reject:occultism:raw_iesnium' and plan.actions[1].reason == 'heat' and plan.actions[1].temperature == 1090,
+		'iesnium not rejected for heat: ' .. kinds(plan))
+	expect(plan.waiting[1].name == 'minecraft:dirt' and plan.waiting[1].reason == 'unknown', 'dirt must wait: no unknown output')
+	context.reject = { heat = false, unknown = true }
+	plan = planner.planTick('auto', s, context)
+	expect(kinds(plan) == 'reject:minecraft:dirt' and plan.actions[1].reason == 'unknown', 'dirt not rejected: ' .. kinds(plan))
+	expect(#planner.planTick('lock', s, context).actions == 0, 'lock must not touch the input')
+end)
+
+test('planner: nothing is cast while the output is full', function()
+	local s = snapshot({ fluids = { { name = IRON, amount = 900 } }, casters = { basinIdle }, outputFree = 0 })
+	local plan = planner.planTick('auto', s, planContext())
+	expect(#plan.actions == 0 and plan.alerts[1] and plan.alerts[1]:find('output full', 1, true), 'cast with a full output')
+end)
+
+test('planner: unknown items and alloys wait, the guard sees the Smeltery, melting items and this plan', function()
+	local s = snapshot({
+		fluids = { { name = COPPER, amount = 10 } },
+		input = {
+			{ slot = 1, name = 'minecraft:stick', count = 3 },
+			{ slot = 2, name = 'mod:tin_ingot', count = 2, fluid = TIN },
+			{ slot = 5, name = 'mod:tin_ingot', count = 1, fluid = TIN },
+			{ slot = 3, name = 'minecraft:raw_iron', count = 8, fluid = IRON },
+		},
+	})
+	local plan = planner.planTick('auto', s, planContext())
+	expect(kinds(plan) == 'insert:minecraft:raw_iron/iron', 'got ' .. kinds(plan))
+	local reasons = {}
+	for _, w in ipairs(plan.waiting) do reasons[w.name] = w end
+	expect(reasons['minecraft:stick'].reason == 'unknown' and reasons['minecraft:stick'].count == 3, 'stick must wait as unknown')
+	expect(reasons['mod:tin_ingot'].reason == 'alloy' and reasons['mod:tin_ingot'].alloy == 'tconstruct:molten_bronze'
+		and reasons['mod:tin_ingot'].count == 3, 'tin must wait (bronze), both stacks counted')
+
+	-- Copper still melting counts as copper.
+	s = snapshot({ meltingFluids = { COPPER }, input = { { slot = 1, name = 'mod:tin_ingot', count = 1, fluid = TIN } } })
+	expect(#planner.planTick('auto', s, planContext()).actions == 0, 'tin inserted while copper is melting')
+
+	-- Copper and tin both in the input of an empty Smeltery: the first goes in, the second waits.
+	s = snapshot({ input = {
+		{ slot = 1, name = 'minecraft:copper_ingot', count = 1, fluid = COPPER },
+		{ slot = 2, name = 'mod:tin_ingot', count = 1, fluid = TIN },
+	} })
+	plan = planner.planTick('auto', s, planContext())
+	expect(kinds(plan) == 'insert:minecraft:copper_ingot/copper' and plan.waiting[1].reason == 'alloy', 'got ' .. kinds(plan))
+end)
+
+test('controller: auto mode casts, melts the input, collects, and keeps its mode', function()
+	FILES = {}
+	local fake = fakeTinkers()
+	fake.smeltery({ { name = IRON, amount = 900 } })
+	local basin = fake.caster('tconstruct:basin_0', 810)
+	fake.caster('tconstruct:table_0', 90, 'tconstruct:ingot_cast')
+	local input = fake.chest('minecraft:chest_in', 27, {
+		[2] = { name = 'minecraft:raw_gold', count = 3, tags = { ['forge:raw_materials/gold'] = true } },
+		[4] = { name = 'minecraft:stick', count = 1, tags = { ['forge:rods/wooden'] = true } },
+	})
+	local output = fake.chest('minecraft:chest_out', 27)
+	fake.install()
+
+	local controllerModule = require('projects.smeltery.controller.controller')
+	local catalogue = require('projects.smeltery.shared.catalogue')
+	local config = require('projects.smeltery.controller.config').defaultControllerConfig()
+	config.input, config.output = 'minecraft:chest_in', 'minecraft:chest_out'
+
+	local c = quiet(function() return new(controllerModule.Controller, config, catalogue.defaultCatalogue()) end)
+	expect(c:getMode() == 'idle', 'the first start must be idle')
+	quiet(function() c:tick() end)
+	expect(basin.fluids.fluids[1] == nil, 'idle poured')
+
+	quiet(function() c:setMode('auto'); c:tick() end)
+	expect(basin.fluids.fluids[1] and basin.fluids.fluids[1].amount == 810, 'no block poured')
+	local chute = fake.devices['tconstruct:chute_0'].items.slots
+	expect(chute[1] and chute[1].name == 'minecraft:raw_gold' and chute[1].count == 3, 'raw gold not sent to the Smeltery')
+	expect(input.items.slots[4] and input.items.slots[4].count == 1, 'the stick must stay in the input')
+
+	local state = c:getState()
+	-- 900 mB of iron: a block first (810); the 90 left wait for the next tick to become an ingot.
+	expect(state.mode == 'auto' and #state.casters == 2 and state.fluids[1].amount == 90, 'state not built, or wrong iron left')
+	expect(fake.devices['tconstruct:table_0'].fluids.fluids[1] == nil, 'an ingot was cast while a block was possible')
+	quiet(function() c:tick() end)
+	expect(fake.devices['tconstruct:table_0'].fluids.fluids[1].amount == 90, 'the 90 mB left not cast as an ingot')
+	expect(state.waiting[1] and state.waiting[1].name == 'minecraft:stick' and state.waiting[1].reason == 'unknown', 'stick not reported')
+	expect(#state.alerts == 0, 'unexpected alert: ' .. tostring(state.alerts[1]))
+
+	fake.cool(basin)
+	quiet(function() c:tick() end)
+	expect(output.items.slots[1] and output.items.slots[1].name == 'tconstruct:iron_block', 'block not collected')
+
+	-- Mode saved: a new controller starts in auto.
+	local again = quiet(function() return new(controllerModule.Controller, config, catalogue.defaultCatalogue()) end)
+	expect(again:getMode() == 'auto', 'mode not restored')
+end)
+
+test('controller: copper is refused while gold is in the Smeltery (rose gold)', function()
+	FILES = {}
+	local fake = fakeTinkers()
+	fake.smeltery({ { name = IRON, amount = 400 }, { name = GOLD, amount = 7000 } })
+	fake.caster('tconstruct:basin_0', 810)
+	local input = fake.chest('minecraft:chest_in', 27, {
+		[1] = { name = 'minecraft:raw_copper', count = 64, tags = { ['forge:raw_materials/copper'] = true, ['forge:raw_materials'] = true } },
+	})
+	fake.chest('minecraft:chest_out', 27)
+	fake.install()
+
+	local controllerModule = require('projects.smeltery.controller.controller')
+	local catalogue = require('projects.smeltery.shared.catalogue')
+	local config = require('projects.smeltery.controller.config').defaultControllerConfig()
+	config.input, config.output = 'minecraft:chest_in', 'minecraft:chest_out'
+	local c = quiet(function() return new(controllerModule.Controller, config, catalogue.defaultCatalogue()) end)
+	quiet(function() c:setMode('auto'); c:tick() end)
+
+	expect(input.items.slots[1] and input.items.slots[1].count == 64, 'raw copper was sent next to gold')
+	local waiting = c:getState().waiting[1]
+	expect(waiting and waiting.reason == 'alloy' and waiting.alloy == 'tconstruct:molten_rose_gold', 'copper not reported as waiting for rose gold')
+end)
+
+test('controller: an item that finishes melting during the reading is still seen (no rose gold)', function()
+	-- In game the reading takes several ticks: copper read as items in the chute can be molten by the
+	-- time the fluids are read, or the other way round. It must be seen in one of them, never in none.
+	FILES = {}
+	local fake = fakeTinkers()
+	fake.smeltery({})
+	fake.caster('tconstruct:basin_0', 810)
+	local input = fake.chest('minecraft:chest_in', 27, {
+		[1] = { name = 'minecraft:raw_gold', count = 64, tags = { ['forge:raw_materials/gold'] = true } },
+	})
+	fake.chest('minecraft:chest_out', 27)
+	local chute = fake.devices['tconstruct:chute_0']
+	chute.items.slots[1] = { name = 'minecraft:raw_copper', count = 16, tags = { ['forge:raw_materials/copper'] = true } }
+	fake.install()
+
+	-- The copper finishes melting right after any peripheral call made once the controller is ticking.
+	local drain = fake.devices['tconstruct:drain_0']
+	local melted = false
+	local function melt()
+		if not melted and chute.items.slots[1] then
+			melted = true
+			chute.items.slots[1] = nil
+			drain.fluids.fluids[#drain.fluids.fluids + 1] = { name = COPPER, amount = 1920 }
+		end
+	end
+
+	local controllerModule = require('projects.smeltery.controller.controller')
+	local catalogue = require('projects.smeltery.shared.catalogue')
+	local config = require('projects.smeltery.controller.config').defaultControllerConfig()
+	config.input, config.output = 'minecraft:chest_in', 'minecraft:chest_out'
+
+	-- Whatever peripheral call comes first, the melting happens right after it.
+	for _, first in ipairs({ 'drain', 'chute' }) do
+		FILES = {}
+		melted = false
+		drain.fluids.fluids = {}
+		chute.items.slots[1] = { name = 'minecraft:raw_copper', count = 16, tags = { ['forge:raw_materials/copper'] = true } }
+		input.items.slots[1] = { name = 'minecraft:raw_gold', count = 64, tags = { ['forge:raw_materials/gold'] = true } }
+		local c = quiet(function() return new(controllerModule.Controller, config, catalogue.defaultCatalogue()) end)
+		quiet(function() c:setMode('auto'); c:tick() end) -- connect and warm the caches
+
+		local device = first == 'drain' and drain.object or chute.object
+		local method = first == 'drain' and 'tanks' or 'list'
+		local original = device[method]
+		device[method] = function(...)
+			local result = original(...)
+			melt()
+			return result
+		end
+		melted = false
+		drain.fluids.fluids = {}
+		chute.items.slots[1] = { name = 'minecraft:raw_copper', count = 16, tags = { ['forge:raw_materials/copper'] = true } }
+		input.items.slots[1] = { name = 'minecraft:raw_gold', count = 64, tags = { ['forge:raw_materials/gold'] = true } }
+		quiet(function() c:tick() end)
+		device[method] = original
+
+		expect(input.items.slots[1] and input.items.slots[1].count == 64,
+			'raw gold sent while copper was melting (melting right after the first ' .. method .. '() call)')
+	end
+end)
+
+test('controller: an unidentifiable melting item pauses the input and poisons no cache', function()
+	FILES = {}
+	local fake = fakeTinkers()
+	fake.smeltery({})
+	fake.caster('tconstruct:basin_0', 810)
+	local input = fake.chest('minecraft:chest_in', 27, {
+		[1] = { name = 'minecraft:raw_gold', count = 64, tags = { ['forge:raw_materials/gold'] = true } },
+	})
+	fake.chest('minecraft:chest_out', 27)
+	local chute = fake.devices['tconstruct:chute_0']
+	chute.items.slots[1] = { name = 'minecraft:raw_copper', count = 16, tags = { ['forge:raw_materials/copper'] = true } }
+	fake.install()
+	-- The copper melts before its detail can be read: list() still showed it, getItemDetail() finds nothing.
+	chute.object.getItemDetail = function() return nil end
+
+	local controllerModule = require('projects.smeltery.controller.controller')
+	local catalogue = require('projects.smeltery.shared.catalogue')
+	local config = require('projects.smeltery.controller.config').defaultControllerConfig()
+	config.input, config.output = 'minecraft:chest_in', 'minecraft:chest_out'
+	local c = quiet(function() return new(controllerModule.Controller, config, catalogue.defaultCatalogue()) end)
+	quiet(function() c:setMode('auto'); c:tick() end)
+
+	expect(input.items.slots[1].count == 64, 'raw gold sent next to an unidentified melting item')
+	expect(table.concat(c:getState().alerts, ' '):find('cannot be identified', 1, true), 'no alert for the paused input')
+
+	-- Next tick the copper is readable: it must be recognised (not cached as "melts into nothing").
+	chute.object.getItemDetail = function(slot) return chute.items.slots[slot] end
+	quiet(function() c:tick() end)
+	local waiting = c:getState().waiting[1]
+	expect(waiting and waiting.reason == 'alloy' and input.items.slots[1].count == 64, 'copper not recognised after a failed detail')
+end)
+
+test('controller: too hot and unknown items go to their own inventories', function()
+	FILES = {}
+	local fake = fakeTinkers()
+	fake.smeltery({})
+	fake.caster('tconstruct:basin_0', 810)
+	fake.chest('minecraft:chest_in', 27, {
+		[1] = { name = 'occultism:raw_iesnium', count = 64, tags = { ['forge:raw_materials/iesnium'] = true } },
+		[2] = { name = 'minecraft:dirt', count = 5, tags = {} },
+		[3] = { name = 'minecraft:raw_iron', count = 2, tags = { ['forge:raw_materials/iron'] = true } },
+	})
+	fake.chest('minecraft:chest_out', 27)
+	local heat = fake.chest('minecraft:chest_heat', 27)
+	local unknown = fake.chest('minecraft:chest_unknown', 27)
+	fake.install()
+
+	local controllerModule = require('projects.smeltery.controller.controller')
+	local catalogue = require('projects.smeltery.shared.catalogue')
+	local config = require('projects.smeltery.controller.config').defaultControllerConfig()
+	config.input, config.output = 'minecraft:chest_in', 'minecraft:chest_out'
+	config.heatOutput, config.unknownOutput = 'minecraft:chest_heat', 'minecraft:chest_unknown'
+
+	local c = quiet(function() return new(controllerModule.Controller, config, catalogue.defaultCatalogue()) end)
+	quiet(function() c:setMode('auto'); c:tick() end)
+	expect(heat.items.slots[1] and heat.items.slots[1].name == 'occultism:raw_iesnium' and heat.items.slots[1].count == 64, 'iesnium not moved')
+	expect(unknown.items.slots[1] and unknown.items.slots[1].name == 'minecraft:dirt', 'dirt not moved')
+	expect(fake.devices['tconstruct:chute_0'].items.slots[1].name == 'minecraft:raw_iron', 'iron not melted')
+	expect(#c:getState().waiting == 0 and #c:getState().alerts == 0, 'nothing should wait nor alert')
+end)
+
+test('controller: missing peripherals become alerts, manual commands need manual mode', function()
+	FILES = {}
+	installPeripherals({})
+	local controllerModule = require('projects.smeltery.controller.controller')
+	local catalogue = require('projects.smeltery.shared.catalogue')
+	local config = require('projects.smeltery.controller.config').defaultControllerConfig()
+
+	local c = quiet(function() return new(controllerModule.Controller, config, catalogue.defaultCatalogue()) end)
+	quiet(function() c:tick() end)
+	local alerts = table.concat(c:getState().alerts, ' | ')
+	expect(alerts:find('Smeltery drain', 1, true) and alerts:find('input inventory not set', 1, true), 'alerts: ' .. alerts)
+
+	local ok, err = pcall(function() c:cast({ caster = 'x', fluid = IRON }) end)
+	expect(not ok and tostring(err.message or err):find('manual mode', 1, true), 'a cast outside manual mode must fail: ' .. tostring(err))
+end)
+
+test('controller: Ctrl+T (Terminated) stops the program instead of becoming an alert', function()
+	FILES = {}
+	local fake = fakeTinkers()
+	fake.smeltery({ { name = IRON, amount = 900 } })
+	fake.caster('tconstruct:basin_0', 810)
+	fake.install()
+	local controllerModule = require('projects.smeltery.controller.controller')
+	local catalogue = require('projects.smeltery.shared.catalogue')
+	local config = require('projects.smeltery.controller.config').defaultControllerConfig()
+	local c = quiet(function() return new(controllerModule.Controller, config, catalogue.defaultCatalogue()) end)
+	quiet(function() c:tick() end)
+
+	fake.devices['tconstruct:drain_0'].object.tanks = function() error('Terminated', 0) end
+	local ok, err = pcall(function() quiet(function() c:tick() end) end)
+	expect(not ok and tostring(err):find('Terminated', 1, true), 'Terminated was swallowed: ' .. tostring(err))
+end)
+
+test('controller: the display changes the mode over rednet and gets the new state', function()
+	FILES = {}
+	SENT = {}
+	installPeripherals({})
+	local controllerModule = require('projects.smeltery.controller.controller')
+	local catalogue = require('projects.smeltery.shared.catalogue')
+	local config = require('projects.smeltery.controller.config').defaultControllerConfig()
+	local c = quiet(function() return new(controllerModule.Controller, config, catalogue.defaultCatalogue()) end)
+
+	local server, client = channel({ protocol = 'smeltery/v1' }), channel({ protocol = 'smeltery/v1' })
+	c:serve(server)
+
+	local result, refused
+	client:request(1, 'setMode', { mode = 'lock' }, function(_, r) result = r end)
+	client:request(1, 'setMode', { mode = 'turbo' }, function(_, r) refused = r end)
+	quiet(function()
+		server:handleEvent((deliver(2)))
+		server:handleEvent((deliver(2)))
+	end)
+	client:handleEvent((deliver(1)))
+	client:handleEvent((deliver(1)))
+	expect(result and result.ok and result.value.mode == 'lock' and c:getMode() == 'lock', 'mode not changed over rednet')
+	expect(refused and not refused.ok and tostring(refused.error):find('unknown mode', 1, true), 'an unknown mode must be refused')
 end)
 
 realPrint(('\n%d passed, %d failed'):format(passed, failed))

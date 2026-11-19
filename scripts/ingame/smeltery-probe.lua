@@ -13,6 +13,9 @@
 --   smeltery-probe candidates <drain> [mB]
 --                                  scan, then the extract test on every empty fluid storage that is not
 --                                  a drain, a table, a basin or a Mekanism basicFluidTank
+--   smeltery-probe watch <drain> <chute> [seconds]
+--                                  every second for [seconds] (default 30): the drain fluids and what the
+--                                  chute lists (items melting), to see what CC can tell while items melt
 --   smeltery-probe cast <drain> <caster> [fluid] [mB] [output]
 --                                  Q2: can we cast with pushFluid alone, without a faucet?
 --                                  pushes up to [mB] (default 810) of [fluid] (default: the first fluid
@@ -422,6 +425,41 @@ local ok, err = pcall(function()
 			end
 		end
 		header('Candidates tested: ' .. tested)
+	elseif mode == 'watch' then
+		local drainName, chuteName, seconds = args[2], args[3], tonumber(args[4]) or 30
+		header('Smeltery probe: watch (' .. os.date() .. ')')
+		local drain, chute = need(drainName or '?'), need(chuteName or '?')
+		if not drain or not chute then
+			log('usage: smeltery-probe watch <drain> <chute> [seconds]')
+			return
+		end
+		local okSize, size = call(chute, 'size')
+		log('chute size: ' .. tostring(okSize and size or size))
+		for second = 0, seconds do
+			local okList, items = call(chute, 'list')
+			local parts, slots = {}, 0
+			if okList then
+				local counts = {}
+				for _, item in pairs(items) do
+					slots = slots + 1
+					counts[item.name] = (counts[item.name] or 0) + item.count
+				end
+				for name, count in pairs(counts) do parts[#parts + 1] = count .. 'x ' .. name end
+			end
+			log(string.format('t=%2ds fluids: %s | chute: %s', second, describeTanks(readTanks(drain) or {}),
+				okList and (slots .. ' slot(s) ' .. table.concat(parts, ', ')) or ('list() error ' .. tostring(items))))
+			if second == 0 and okList then
+				local firstSlot = next(items)
+				if firstSlot then
+					local okDetail, detail = call(chute, 'getItemDetail', firstSlot)
+					detail = okDetail and detail or {}
+					local tags = {}
+					for tag in pairs(detail.tags or {}) do tags[#tags + 1] = tag end
+					log('  detail of slot ' .. firstSlot .. ': ' .. tostring(detail.name) .. ' tags: ' .. table.concat(tags, ' '))
+				end
+			end
+			if second < seconds then sleep(1) end
+		end
 	elseif mode == 'cast' then
 		cast(args[2], args[3], args[4], args[5], args[6])
 	else
