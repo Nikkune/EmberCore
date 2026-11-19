@@ -1,5 +1,5 @@
 import type {FluidStack}                          from '@core/tank';
-import type {AlloyGuard, CastAmounts, CasterState} from '@modules/tinkers/index';
+import type {AlloyGuard, AlloyRatio, CastAmounts, CasterState} from '@modules/tinkers/index';
 
 import type {InputItemView, Mode, WaitingItem}     from '../shared/protocol';
 
@@ -31,13 +31,24 @@ export interface Snapshot {
 	storable: string[];
 }
 
+export type StoreReason = 'drain' | 'purge' | 'unblock' | 'melt' | 'alloy';
+
+/** Alloy mode: the alloy being made, and how much of it is still wanted. */
+export interface AlloyJob {
+	result: string;
+	/** Every recipe of that alloy (some have several sets of ingredients). */
+	ratios: AlloyRatio[];
+	/** mB still to make; undefined: until the mode is changed. */
+	remaining?: number;
+}
+
 export type Action =
 	| {kind: 'collect'; caster: string}
 	| {kind: 'pour'; caster: string; fluid: string; amount: number}
 	| {kind: 'insert'; slot: number; name: string; count: number; fluid: string; seen: string[]}
 	| {kind: 'reject'; slot: number; name: string; count: number; reason: 'heat' | 'unknown'; temperature?: number}
-	| {kind: 'store'; fluid: string; amount: number; why: 'drain' | 'purge' | 'unblock'}
-	| {kind: 'restore'; fluid: string; amount: number; why: 'complete' | 'stock'};
+	| {kind: 'store'; fluid: string; amount: number; why: StoreReason}
+	| {kind: 'restore'; fluid: string; amount: number; why: 'complete' | 'stock' | 'alloy'};
 
 export interface Plan {
 	actions: Action[];
@@ -60,11 +71,13 @@ export interface PlanContext {
 	reject?: {heat: boolean; unknown: boolean};
 	/** Whether a fluid is an alloy of the catalogue (purge sends them to the reservoirs). */
 	isAlloy?: (fluid: string) => boolean;
+	/** Alloy mode: what to make. */
+	alloy?: AlloyJob;
 }
 
-/** 'tconstruct:molten_iron' -> 'iron', for alerts (the display cuts them at the first ': '). */
+/** 'tconstruct:molten_rose_gold' -> 'rose gold', for alerts (the display cuts them at the first ': '). */
 function shortFluid(this: void, fluid: string): string {
-	return fluid.substring(fluid.indexOf(':') + 1).replace('molten_', '');
+	return fluid.substring(fluid.indexOf(':') + 1).replace('molten_', '').split('_').join(' ');
 }
 
 /** Amount of the smallest cast auto mode can make of `fluid` with the casters there; undefined: none. */
@@ -87,7 +100,7 @@ function isLeftover(this: void, fluid: FluidStack, snapshot: Snapshot, context: 
 }
 
 /** Sends a fluid to the reservoirs, or raises an alert when none can take it. */
-function store(this: void, fluid: FluidStack, why: 'drain' | 'purge' | 'unblock', snapshot: Snapshot, plan: Plan): boolean {
+function store(this: void, fluid: FluidStack, why: StoreReason, snapshot: Snapshot, plan: Plan): boolean {
 	if (!snapshot.storable.includes(fluid.name)) {
 		plan.alerts.push(`no reservoir for ${shortFluid(fluid.name)}: it stays in the Smeltery`);
 		return false;
@@ -299,6 +312,121 @@ function unblock(
 	}
 }
 
+/** Melt: what is molten goes to the reservoirs; the input goes in as in auto, unless a fluid found no room. */
+function meltAll(this: void, snapshot: Snapshot, context: PlanContext, plan: Plan): void {
+	let full = false;
+	for (const fluid of snapshot.fluids) full = !store(fluid, 'melt', snapshot, plan) || full;
+
+	if (full || snapshot.pauseInput !== undefined) return;
+	if (snapshot.uncertain === true) {
+		plan.alerts.push('an item melting cannot be identified: input paused for this tick');
+		return;
+	}
+	insertAll(snapshot, context, plan);
+}
+
+/** Recipe batches dosed in at once (8 x 180 mB of rose gold: 16 ingots). */
+const ALLOY_BATCHES = 8;
+/** No more ingredients while this much of the alloy waits for the casters. */
+const ALLOY_BUFFER = 810;
+
+function amountIn(this: void, snapshot: Snapshot, fluid: string): number {
+	return snapshot.fluids.find((candidate) => candidate.name === fluid)?.amount ?? 0;
+}
+
+/** The recipe of the job whose every input can be found (Smeltery, stock or input); the first one otherwise. */
+function pickRatio(this: void, job: AlloyJob, snapshot: Snapshot): AlloyRatio | undefined {
+	const found = (fluid: string): boolean => amountIn(snapshot, fluid) > 0
+		|| snapshot.stored.some((entry) => entry.fluid === fluid && entry.amount > 0)
+		|| snapshot.input.some((item) => item.fluid === fluid);
+	return job.ratios.find((ratio) => ratio.inputs.every((input) => found(input.fluid))) ?? job.ratios[0];
+}
+
+/**
+ * Alloy: only the chosen alloy is cast. Its ingredients are dosed in batches of the recipe, the stock
+ * first (exact amounts), then input items of the ingredient that lacks most. Nothing that would form
+ * another alloy goes in (the fluids in its way go to the reservoirs). Once the wanted amount is made, the
+ * alloy and ingredients left go to the reservoirs, and the mode is finished.
+ */
+function alloyTick(this: void, snapshot: Snapshot, context: PlanContext, plan: Plan): void {
+	const job   = context.alloy;
+	const ratio = job !== undefined ? pickRatio(job, snapshot) : undefined;
+	if (job === undefined || ratio === undefined) {
+		plan.alerts.push('alloy mode: no alloy chosen');
+		return;
+	}
+	const ingredients = ratio.inputs.map((input) => input.fluid);
+
+	if (job.remaining !== undefined && job.remaining <= 0) {
+		let moving = false;
+		for (const fluid of snapshot.fluids) {
+			if (fluid.name === job.result || ingredients.includes(fluid.name)) moving = store(fluid, 'alloy', snapshot, plan) || moving;
+		}
+		if (!moving) plan.finished = true;
+		return;
+	}
+
+	// Never more than still wanted is cast (450 mB wanted: 5 ingots, not the 540 mB three batches gave).
+	const others  = new Set(snapshot.fluids.map((fluid) => fluid.name).filter((name) => name !== job.result));
+	const wanted  = job.remaining;
+	const capOf   = (fluid: FluidStack): FluidStack => (fluid.name === job.result && wanted !== undefined
+	                                                    ? {name: fluid.name, amount: Math.min(fluid.amount, wanted)}
+	                                                    : fluid);
+	const capped  = {...snapshot, fluids: snapshot.fluids.map(capOf)};
+	pourAll(capped, context, plan, others);
+
+	const made = amountIn(snapshot, job.result);
+	if (made >= ALLOY_BUFFER) return;
+
+	let batches = ALLOY_BATCHES;
+	if (job.remaining !== undefined) batches = Math.min(batches, Math.ceil((job.remaining - made) / ratio.amount));
+	if (batches <= 0) return;
+
+	// Batches of the recipe each ingredient is worth; the one that lacks most sets the goal.
+	const units = ratio.inputs.map((input) => amountIn(snapshot, input.fluid) / input.amount);
+	const goal  = Math.min(...units) + batches;
+
+	const present: string[] = [...snapshot.meltingFluids, ...snapshot.fluids.map((fluid) => fluid.name)];
+	const missing: string[] = [];
+	const inputOpen = snapshot.pauseInput === undefined && snapshot.uncertain !== true;
+
+	ratio.inputs.forEach((input, index) => {
+		const need = Math.ceil((goal - units[index]!) * input.amount);
+		if (need <= 0) return;
+
+		const blocking = context.guard.wouldForm(present, input.fluid, job.result);
+		if (blocking !== undefined) {
+			// Another alloy would form: the fluids in its way that are not ours go to the reservoirs first.
+			for (const name of blocking.ingredients) {
+				const fluid = snapshot.fluids.find((candidate) => candidate.name === name);
+				if (fluid !== undefined && name !== job.result && !ingredients.includes(name)) store(fluid, 'unblock', snapshot, plan);
+			}
+			return;
+		}
+
+		const stock = snapshot.stored.find((entry) => entry.fluid === input.fluid)?.amount ?? 0;
+		if (stock > 0) plan.actions.push({kind: 'restore', fluid: input.fluid, amount: Math.min(need, stock), why: 'alloy'});
+		if (stock >= need) return;
+
+		const item = snapshot.input.find((candidate) => candidate.fluid === input.fluid);
+		if (item === undefined) {
+			if (stock <= 0) missing.push(shortFluid(input.fluid));
+			return;
+		}
+		if (!inputOpen || snapshot.meltingFluids.includes(input.fluid)) return;
+
+		const temperature = context.meltingTemperature(input.fluid);
+		if (temperature !== undefined && context.fuelTemperature !== undefined && temperature > context.fuelTemperature) {
+			wait(plan, item, 'heat', {temperature});
+			return;
+		}
+		plan.actions.push({kind: 'insert', slot: item.slot, name: item.name, count: item.count, fluid: input.fluid, seen: [...present]});
+		present.push(input.fluid);
+	});
+
+	if (missing.length > 0) plan.alerts.push(`${shortFluid(job.result)}: missing ${missing.join(', ')}`);
+}
+
 /**
  * Empties the reservoirs once the input has nothing left to melt: one stored fluid at a time comes back
  * whole (the biggest stock first) and is cast on the next ticks like any other. Only when nothing in the
@@ -352,6 +480,8 @@ function takeStock(this: void, snapshot: Snapshot, context: PlanContext, plan: P
  * lock:   collect and cast, nothing new goes in;
  * drain:  collect, every fluid to the reservoirs;
  * purge:  collect, leftovers and alloys to the reservoirs;
+ * melt:   collect, every fluid to the reservoirs, and the input melted like in auto (nothing is cast);
+ * alloy:  collect, the chosen alloy only: its ingredients dosed in, from the stock first, and cast;
  * auto:   collect, complete a cast from the stock, cast, and melt the input that is safe (a leftover that
  *         blocks an input goes to the reservoirs); once the input has nothing left to melt, the stock.
  */
@@ -369,6 +499,14 @@ export function planTick(this: void, mode: Mode, snapshot: Snapshot, context: Pl
 	}
 	if (mode === 'purge') {
 		purgeAll(snapshot, context, plan);
+		return plan;
+	}
+	if (mode === 'melt') {
+		meltAll(snapshot, context, plan);
+		return plan;
+	}
+	if (mode === 'alloy') {
+		alloyTick(snapshot, context, plan);
 		return plan;
 	}
 

@@ -1,7 +1,7 @@
 import {ButtonComponent, PaginationComponent} from '@modules/ui/components';
 import type {Rect}                           from '@modules/ui/types';
 
-import type {CastRequest, InputItemView, InsertRequest, Mode, SetFormatRequest, SmelteryState} from '../shared/protocol';
+import type {AlloyOption, CastRequest, InputItemView, InsertRequest, Mode, SetAlloyRequest, SetFormatRequest, SmelteryState} from '../shared/protocol';
 import {MODES}                               from '../shared/protocol';
 
 import {attentionLines, fluidColor, fluidLabel, formatLabel, Glyph, groupCasters, itemLabel, parseLogLine, textOn} from './model';
@@ -20,6 +20,7 @@ export interface ScreenActions {
 	insert(request: InsertRequest): void;
 	cast(request: CastRequest): void;
 	setFormat(request: SetFormatRequest): void;
+	setAlloy(request: SetAlloyRequest): void;
 }
 
 interface Confirm {
@@ -41,6 +42,9 @@ const MODE_CARDS: Record<Mode, {color: number; lines: string[]}> = {
 	lock:   {color: colors.red, lines: ['Nothing new goes', 'in; the casts', 'under way finish.']},
 	drain:  {color: colors.lightBlue, lines: ['Every fluid to', 'the reservoirs,', 'then idle.']},
 	purge:  {color: colors.purple, lines: ['Leftovers and', 'alloys to the', 'reservoirs.']},
+	// The alloy card names the chosen alloy (alloyLines).
+	alloy:  {color: colors.magenta, lines: []},
+	melt:   {color: colors.cyan, lines: ['Melts the input', 'into the stock,', 'casts nothing.']},
 };
 
 const LOG_COLORS: Record<LogKind, number> = {
@@ -54,6 +58,9 @@ const LOG_COLORS: Record<LogKind, number> = {
 };
 
 const CASTS_PER_PAGE  = 4;
+const ALLOYS_PER_PAGE = 8;
+/** mB of an ingot: the amounts of alloy mode are chosen in ingots. */
+const INGOT = 90;
 const ITEMS_PER_PAGE  = 6;
 const RESERVOIRS_PER_PAGE = 8;
 /** Level of a reservoir whose capacity is not known yet: the biggest known one, or this. */
@@ -82,6 +89,12 @@ export class SmelteryScreen {
 	private castPage  = 1;
 	private itemPage  = 1;
 	private stockPage = 1;
+	/** Modes tab: the alloy picker is open instead of the cards. */
+	private picking   = false;
+	private alloyPage = 1;
+	private picked?: string | undefined;
+	private pickIngots = 16;
+	private nonstop    = false;
 	private logOffset = 0;
 	private fluid?: string | undefined;
 	private format?: string | undefined;
@@ -101,6 +114,14 @@ export class SmelteryScreen {
 	private readonly confirmYes: ButtonComponent;
 	private readonly confirmNo: ButtonComponent;
 	private readonly castPages: PaginationComponent;
+	private readonly changeAlloy: ButtonComponent;
+	private readonly alloyButtons: ButtonComponent[] = [];
+	private readonly alloyPages: PaginationComponent;
+	private readonly lessButton: ButtonComponent;
+	private readonly moreButton: ButtonComponent;
+	private readonly nonstopButton: ButtonComponent;
+	private readonly selectButton: ButtonComponent;
+	private readonly closePicker: ButtonComponent;
 	private readonly itemPages: PaginationComponent;
 	private readonly stockPages: PaginationComponent;
 
@@ -160,6 +181,25 @@ export class SmelteryScreen {
 		this.logUp      = this.button(` ${Glyph.up} `, {x: 70, y: 5, width: 3, height: 1}, () => this.scrollLog(1));
 		this.logDown    = this.button(` ${Glyph.down} `, {x: 74, y: 5, width: 3, height: 1}, () => this.scrollLog(-1));
 
+		// The alloy card and its picker (Modes tab).
+		const alloyCard  = cardPlace(MODES.indexOf('alloy'));
+		this.changeAlloy = this.button(' Change alloy ', {x: alloyCard.x + 1, y: alloyCard.y + 9, width: 14, height: 1}, () => this.openPicker());
+		for (let row = 0; row < ALLOYS_PER_PAGE; row++) {
+			const index = row;
+			this.alloyButtons.push(this.button('', {x: 8, y: 7 + index * 3, width: 24, height: 1}, () => this.pickAlloy(index)));
+		}
+		this.alloyPages = this.root.place(new PaginationComponent({
+			page: 1, pageSize: ALLOYS_PER_PAGE, totalItems: 0, foregroundColor: colors.lightGray, backgroundColor: colors.black,
+			onPageChange: (page) => {
+				this.alloyPage = page;
+			},
+		}), {x: 3, y: 32, width: 11, height: 1});
+		this.lessButton    = this.button(' - ', {x: 53, y: 22, width: 3, height: 1}, () => this.stepIngots(-1));
+		this.moreButton    = this.button(' + ', {x: 69, y: 22, width: 3, height: 1}, () => this.stepIngots(1));
+		this.nonstopButton = this.button(' Until stopped ', {x: 53, y: 24, width: 15, height: 1}, () => this.toggleNonstop());
+		this.selectButton  = this.button('', {x: 53, y: 30, width: 21, height: 1}, () => this.selectAlloy());
+		this.closePicker   = this.button(' Cancel ', {x: 53, y: 32, width: 8, height: 1}, () => this.cancelPicker());
+
 		// Added last: drawn and hit above everything else.
 		this.root.place(new PaintComponent({paint: (painter) => this.paintConfirm(painter)}), FULL_SCREEN);
 		this.confirmYes = this.button('', {x: 18, y: 22, width: 16, height: 1}, () => this.confirmStep());
@@ -191,7 +231,55 @@ export class SmelteryScreen {
 	// ------------------------------------------------------------------ actions
 
 	private showTab(tab: Tab): void {
-		this.tab = tab;
+		this.tab     = tab;
+		this.picking = false;
+		this.sync();
+	}
+
+	private alloyOptions(): AlloyOption[] {
+		return this.state?.alloyOptions ?? [];
+	}
+
+	private openPicker(): void {
+		const alloy  = this.state?.alloy;
+		this.picking = true;
+		this.picked  = alloy?.result ?? this.alloyOptions()[0]?.result;
+		this.nonstop = alloy !== undefined && alloy.target === undefined;
+		if (alloy?.target !== undefined) this.pickIngots = Math.max(1, Math.round(alloy.target / INGOT));
+		this.sync();
+	}
+
+	private cancelPicker(): void {
+		this.picking = false;
+		this.sync();
+	}
+
+	private pickAlloy(row: number): void {
+		const option = this.alloyOptions()[(this.alloyPage - 1) * ALLOYS_PER_PAGE + row];
+		if (option !== undefined) this.picked = option.result;
+		this.sync();
+	}
+
+	/** One ingot at a time up to 9, then a block (9 ingots) at a time. */
+	private stepIngots(direction: number): void {
+		const step      = direction > 0 ? (this.pickIngots >= 9 ? 9 : 1) : (this.pickIngots > 9 ? 9 : 1);
+		this.pickIngots = Math.max(1, this.pickIngots + direction * step);
+		this.nonstop    = false;
+		this.sync();
+	}
+
+	private toggleNonstop(): void {
+		this.nonstop = !this.nonstop;
+		this.sync();
+	}
+
+	private selectAlloy(): void {
+		const result = this.picked;
+		if (result === undefined) return;
+		const request: SetAlloyRequest = {result, activate: true};
+		if (!this.nonstop) request.target = this.pickIngots * INGOT;
+		this.actions.setAlloy(request);
+		this.picking = false;
 		this.sync();
 	}
 
@@ -288,9 +376,30 @@ export class SmelteryScreen {
 
 		for (const [tab, button] of this.tabButtons) this.show(button, true, undefined, tab === this.tab ? colors.white : colors.gray);
 
+		const cards  = this.tab === 'modes' && state !== undefined && !this.picking;
+		const picker = this.tab === 'modes' && state !== undefined && this.picking;
 		for (const [mode, button] of this.modeButtons) {
-			this.show(button, this.tab === 'modes' && state !== undefined && state.mode !== mode, ' Activate ', colors.black, MODE_CARDS[mode].color);
+			this.show(button, cards && state.mode !== mode, ' Activate ', colors.black, MODE_CARDS[mode].color);
 		}
+		this.show(this.changeAlloy, cards, ' Change alloy ', colors.white, colors.gray);
+
+		const options = this.alloyOptions();
+		this.alloyPages.setProps({visible: picker && options.length > ALLOYS_PER_PAGE, totalItems: options.length});
+		this.alloyPage = Math.min(this.alloyPage, Math.max(1, Math.ceil(options.length / ALLOYS_PER_PAGE)));
+		const pageOptions = options.slice((this.alloyPage - 1) * ALLOYS_PER_PAGE, this.alloyPage * ALLOYS_PER_PAGE);
+		// The name of each alloy is its button (the line under it is painted).
+		this.alloyButtons.forEach((button, row) => {
+			const option = pageOptions[row];
+			const label  = option !== undefined ? fluidLabel(option.result).substring(0, 24).padEnd(24) : '';
+			const color  = option?.result === this.picked ? colors.white : colors.lightGray;
+			this.show(button, picker && option !== undefined, label, color, colors.black);
+		});
+		this.show(this.lessButton, picker, ' - ', colors.white, colors.gray);
+		this.show(this.moreButton, picker, ' + ', colors.white, colors.gray);
+		this.show(this.nonstopButton, picker, ' Until stopped ', this.nonstop ? colors.black : colors.lightGray, this.nonstop ? colors.magenta : colors.gray);
+		const pickedLabel = this.picked !== undefined ? fluidLabel(this.picked) : '';
+		this.show(this.selectButton, picker && this.picked !== undefined, ` Select ${pickedLabel}`.substring(0, 21).padEnd(21), colors.black, colors.magenta);
+		this.show(this.closePicker, picker, ' Cancel ', colors.black, colors.lightGray);
 
 		const groups = this.castGroups();
 		this.castPages.setProps({visible: this.tab === 'overview' && groups.length > CASTS_PER_PAGE, totalItems: groups.length});
@@ -353,6 +462,7 @@ export class SmelteryScreen {
 		this.castPages.setProps({disabled: modal});
 		this.itemPages.setProps({disabled: modal});
 		this.stockPages.setProps({disabled: modal});
+		this.alloyPages.setProps({disabled: modal});
 	}
 
 	// ------------------------------------------------------------------ drawing
@@ -501,17 +611,103 @@ export class SmelteryScreen {
 		}
 	}
 
+	/** Text of the alloy card: the chosen alloy. */
+	private static alloyLines(state: SmelteryState): string[] {
+		if (state.alloy === undefined) return ['No alloy chosen:', 'pick one with', 'Change alloy.'];
+		const label = fluidLabel(state.alloy.result);
+		return [`Only ${label},`.length <= 16 ? `Only ${label},` : label, 'dosed from input', 'and stock.'];
+	}
+
 	private paintModes(p: Painter, state: SmelteryState): void {
+		if (this.picking) {
+			this.paintPicker(p, state);
+			return;
+		}
+
 		MODES.forEach((mode, index) => {
 			const card   = MODE_CARDS[mode];
 			const {x, y} = cardPlace(index);
 			const active = state.mode === mode;
+			const lines  = mode === 'alloy' ? SmelteryScreen.alloyLines(state) : card.lines;
 			p.fill(x, y, 17, 1, card.color);
 			p.text(x + 1, y, mode.toUpperCase(), colors.black, card.color);
-			card.lines.forEach((line, row) => p.text(x + 1, y + 2 + row, line.substring(0, 16), active ? colors.white : colors.lightGray));
-			if (active) p.text(x + 1, y + 6, `${Glyph.dot} active`, colors.lime);
+			lines.forEach((line, row) => p.text(x + 1, y + 2 + row, line.substring(0, 16), active ? colors.white : colors.lightGray));
+			if (!active) return;
+
+			const alloy = state.alloy;
+			if (mode !== 'alloy' || alloy === undefined) {
+				p.text(x + 1, y + 6, `${Glyph.dot} active`, colors.lime);
+			}
+			else if (alloy.target === undefined) {
+				p.text(x + 1, y + 6, `${Glyph.dot} ${Math.floor(alloy.made / INGOT)} ingots made`.substring(0, 16), colors.lime);
+			}
+			else {
+				const target = Math.max(1, Math.round(alloy.target / INGOT));
+				p.text(x + 1, y + 6, `${Glyph.dot} ${Math.floor(alloy.made / INGOT)}/${target} ingots`.substring(0, 16), colors.lime);
+				p.fill(x + 1, y + 7, 15, 1, colors.gray);
+				p.fill(x + 1, y + 7, Math.min(15, Math.floor(15 * alloy.made / alloy.target)), 1, card.color);
+			}
 		});
 		p.text(3, 34, 'Touch Activate to switch; the controller confirms live.', colors.gray);
+	}
+
+	/** Modes tab, Change alloy: the alloys (those the stock can make first), the recipe and the amount. */
+	private paintPicker(p: Painter, state: SmelteryState): void {
+		this.title(p, 3, 5, 'ALLOY', 44);
+		const options = this.alloyOptions();
+		const start   = (this.alloyPage - 1) * ALLOYS_PER_PAGE;
+
+		options.slice(start, start + ALLOYS_PER_PAGE).forEach((option, index) => {
+			const y      = 7 + index * 3;
+			const picked = option.result === this.picked;
+			if (picked) p.text(3, y, Glyph.right, colors.white);
+			p.fill(5, y, 2, 1, fluidColor(option.result));
+
+			if (option.temperature !== undefined) p.text(8, y + 1, `needs ${option.temperature} K`, colors.red);
+			else if (option.fromStock > 0) p.text(8, y + 1, `from stock: ${Math.floor(option.fromStock / INGOT)} ing`, colors.lime);
+			else p.text(8, y + 1, 'put in the input', colors.gray);
+		});
+		if (options.length === 0) p.text(3, 7, 'No alloy in the catalogue.', colors.gray);
+		if (options.length > ALLOYS_PER_PAGE) p.text(15, 32, 'ready first', colors.gray);
+
+		const option = options.find((candidate) => candidate.result === this.picked);
+		if (option === undefined) return;
+
+		const label = fluidLabel(option.result);
+		this.title(p, 53, 5, label.toUpperCase().substring(0, 20), 25);
+		p.text(53, 7, 'recipe', colors.gray);
+
+		const count = (amount: number): string => (amount % INGOT === 0 ? `${amount / INGOT} ` : '');
+		option.inputs.forEach((input, index) => {
+			const y = 9 + index;
+			p.fill(53, y, 2, 1, fluidColor(input.fluid));
+			p.text(56, y, `${count(input.amount)}${fluidLabel(input.fluid)}`.substring(0, 14), colors.white);
+			p.text(71, y, `${input.amount} mB`.padStart(6), colors.gray);
+		});
+		const resultY = 9 + option.inputs.length;
+		p.text(56, resultY, `${Glyph.right} ${count(option.amount)}${label}`.substring(0, 14), colors.pink);
+		p.text(71, resultY, `${option.amount} mB`.padStart(6), colors.gray);
+
+		const stockY = resultY + 2;
+		p.text(53, stockY, 'in stock', colors.gray);
+		option.inputs.forEach((input, index) => {
+			const stored = state.reservoirs
+				.filter((reservoir) => reservoir.fluid === input.fluid)
+				.reduce((sum, reservoir) => sum + reservoir.amount, 0);
+			p.text(53, stockY + 1 + index, fluidLabel(input.fluid).substring(0, 15), colors.white);
+			p.text(69, stockY + 1 + index, `${stored} mB`.padStart(8), colors.lightGray);
+		});
+		const ingots = Math.floor(option.fromStock / INGOT);
+		p.text(53, stockY + 1 + option.inputs.length, `= ${ingots} ingots now`, ingots > 0 ? colors.lime : colors.gray);
+
+		p.text(53, 20, 'amount', colors.gray);
+		p.text(58, 22, this.nonstop ? 'nonstop' : `${this.pickIngots} ingots`, this.nonstop ? colors.gray : colors.white);
+		const back = SmelteryScreen.endsOnItsOwn(state.mode) ? 'the previous mode' : state.mode.toUpperCase();
+		p.text(53, 25, this.nonstop ? 'runs until changed' : `then back to ${back}`.substring(0, 25), colors.gray);
+	}
+
+	private static endsOnItsOwn(mode: Mode): boolean {
+		return mode === 'drain' || mode === 'purge' || mode === 'alloy';
 	}
 
 	private paintManual(p: Painter, state: SmelteryState): void {

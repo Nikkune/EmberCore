@@ -7,14 +7,14 @@ import type {FluidStack}                                from '@core/tank';
 import {ReservoirPool}                                  from '@modules/fluids/index';
 import {Channel}                                        from '@modules/net/index';
 import {Caster, Smeltery}                               from '@modules/tinkers/index';
-import type {AlloyGuard, CastAmounts, CasterState, MaterialMap} from '@modules/tinkers/index';
+import type {AlloyGuard, AlloyRatio, CastAmounts, CasterState, MaterialMap} from '@modules/tinkers/index';
 
 import {alloyGuardOf, castAmountsOf, loadCatalogue, materialMapOf, temperatureMap} from '../shared/catalogue';
 import type {Catalogue}                                 from '../shared/catalogue';
 import {CONTROLLER_HOSTNAME, Messages, MODES, PROTOCOL} from '../shared/protocol';
-import type {CasterView, CastRequest, FuelView, InputItemView, InsertRequest, InventoryView, Mode, SetFormatRequest, SetModeRequest, SmelteryState, WaitingItem} from '../shared/protocol';
+import type {AlloyOption, AlloyView, CasterView, CastRequest, FuelView, InputItemView, InsertRequest, InventoryView, Mode, SetAlloyRequest, SetFormatRequest, SetModeRequest, SmelteryState, WaitingItem} from '../shared/protocol';
 
-import {CONFIG_PATH, loadCapacities, loadControllerConfig, loadMode, saveCapacities, saveControllerConfig, saveMode} from './config';
+import {CONFIG_PATH, loadAlloy, loadCapacities, loadControllerConfig, loadMode, saveAlloy, saveCapacities, saveControllerConfig, saveMode} from './config';
 import type {ControllerConfig}                          from './config';
 import {discoverNetwork}                                from './discovery';
 import type {Network}                                   from './discovery';
@@ -45,6 +45,9 @@ export class Controller {
 	/** Mode a purge goes back to. */
 	private previousMode: Mode;
 	private readonly alloyResults: Set<string>;
+	private readonly alloyRatios: AlloyRatio[];
+	/** The alloy of alloy mode, and how much of it was cast. */
+	private alloy?: AlloyView | undefined;
 	private smeltery?: Smeltery | undefined;
 	private casters: Caster[]                    = [];
 	private input?: Inventory | undefined;
@@ -75,6 +78,8 @@ export class Controller {
 	/** Where settings changed from the display are saved; unset: they only last until a restart. */
 	private configPath?: string | undefined;
 	private lastAlerts                           = '';
+	/** os.clock() of the last activity in auto, alloy or melt (see idleSeconds). */
+	private quietSince?: number | undefined;
 
 	public constructor(private readonly config: ControllerConfig, catalogue: Catalogue, private readonly modePath?: string) {
 		this.materials = materialMapOf(catalogue);
@@ -88,6 +93,8 @@ export class Controller {
 		this.mode         = saved.mode;
 		this.previousMode = saved.previous;
 		this.alloyResults = new Set(catalogue.alloys.map((alloy) => alloy.result));
+		this.alloyRatios  = catalogue.alloyRatios;
+		this.alloy        = loadAlloy();
 		this.state     = this.emptyState();
 	}
 
@@ -131,6 +138,22 @@ export class Controller {
 		this.log(`auto formats: ${formats.length > 0 ? formats.join(', ') : 'none'}`);
 	}
 
+	/** Chooses the alloy of alloy mode (an amount in mB, or none: until the mode changes). */
+	public setAlloy(request: SetAlloyRequest): void {
+		const result = request.result;
+		if (!this.alloyRatios.some((ratio) => ratio.result === result)) throw new EmberError(`unknown alloy ${tostring(result)}`, 'SMELTERY_ERROR');
+		if (request.target !== undefined && !(request.target > 0)) throw new EmberError('the amount must be positive', 'SMELTERY_ERROR');
+
+		const alloy: AlloyView = {result, made: 0};
+		if (request.target !== undefined) alloy.target = request.target;
+		this.alloy = alloy;
+		saveAlloy(alloy);
+		this.log(`alloy: ${Controller.shortName(result)}, ${alloy.target !== undefined ? `${alloy.target} mB` : 'until stopped'}`);
+		this.state.alloy = {...alloy};
+
+		if (request.activate === true) this.setMode('alloy');
+	}
+
 	public getState(): SmelteryState {
 		return this.state;
 	}
@@ -141,11 +164,19 @@ export class Controller {
 
 	public setMode(mode: Mode): void {
 		if (mode === this.mode) return;
+		if (mode === 'alloy' && this.alloy === undefined) throw new EmberError('choose an alloy first (Change alloy)', 'SMELTERY_ERROR');
 
-		// A purge goes back to the mode it interrupted (not to another drain or purge).
-		if (mode === 'purge' && this.mode !== 'drain') this.previousMode = this.mode;
+		// A purge or an alloy goes back to the mode it interrupted (never to a drain, purge or alloy).
+		if ((mode === 'purge' || mode === 'alloy') && !Controller.ends(this.mode)) this.previousMode = this.mode;
+
+		// Each run of alloy mode counts from zero.
+		if (mode === 'alloy' && this.alloy !== undefined) {
+			this.alloy.made = 0;
+			saveAlloy(this.alloy);
+		}
 
 		this.log(`mode ${this.mode} -> ${mode}`);
+		this.quietSince = undefined;
 		this.mode = mode;
 		saveMode(mode, this.previousMode, this.modePath);
 		this.state.mode = mode;
@@ -171,6 +202,7 @@ export class Controller {
 				this.execute(plan);
 				if (plan.actions.length > 0) this.refreshReading();
 				if (plan.finished === true) this.finish();
+				else this.checkIdle(plan, snapshot);
 			}
 		}
 		catch (error) {
@@ -271,6 +303,12 @@ export class Controller {
 
 		channel.on(Messages.cast, (payload) => {
 			this.cast(payload as CastRequest);
+			this.tickWanted = true;
+			return this.state;
+		});
+
+		channel.on(Messages.setAlloy, (payload) => {
+			this.setAlloy(payload as SetAlloyRequest);
 			this.tickWanted = true;
 			return this.state;
 		});
@@ -378,15 +416,48 @@ export class Controller {
 	 * After a tick that acted (poured, collected, inserted), reads again what the state shows, all at once:
 	 * the display sees this tick's result, not the reading taken before it.
 	 */
-	/** A drain or purge has nothing left it can move: drain stops, purge goes back to the previous mode. */
+	/**
+	 * Auto, alloy and melt drain the Smeltery and go idle once nothing happened for idleSeconds: nothing
+	 * done this tick, nothing melting, no caster at work.
+	 */
+	private checkIdle(plan: Plan, snapshot: Snapshot): void {
+		if (this.mode !== 'auto' && this.mode !== 'alloy' && this.mode !== 'melt') {
+			this.quietSince = undefined;
+			return;
+		}
+
+		const busy = plan.actions.length > 0
+			|| snapshot.meltingFluids.length > 0
+			|| snapshot.casters.some((caster) => caster.state.status === 'busy');
+		if (busy || this.quietSince === undefined) {
+			this.quietSince = os.clock();
+			return;
+		}
+
+		const seconds = this.config.idleSeconds;
+		if (seconds > 0 && os.clock() - this.quietSince >= seconds) {
+			this.log(`nothing to do for ${seconds} s: drain, then idle`);
+			this.setMode('drain');
+		}
+	}
+
+	/** Modes that end on their own: one of them never becomes the mode to go back to. */
+	private static ends(mode: Mode): boolean {
+		return mode === 'drain' || mode === 'purge' || mode === 'alloy';
+	}
+
+	/**
+	 * A drain or purge has nothing left it can move, or alloy mode made its amount: drain stops, purge and
+	 * alloy go back to the previous mode.
+	 */
 	private finish(): void {
 		if (this.mode === 'drain') {
 			this.log('drain finished');
 			this.setMode('idle');
 		}
-		else if (this.mode === 'purge') {
-			this.log('purge finished');
-			this.setMode(this.previousMode === 'purge' || this.previousMode === 'drain' ? 'idle' : this.previousMode);
+		else if (this.mode === 'purge' || this.mode === 'alloy') {
+			this.log(this.mode === 'purge' ? 'purge finished' : `alloy finished: ${this.alloy?.made ?? 0} mB cast`);
+			this.setMode(Controller.ends(this.previousMode) ? 'idle' : this.previousMode);
 		}
 	}
 
@@ -475,6 +546,12 @@ export class Controller {
 
 				const moved = caster.pour(smeltery, action.fluid);
 				if (moved > 0) this.log(`poured ${moved} mB ${Controller.shortName(action.fluid)} into ${caster.name}`);
+
+				const alloy = this.alloy;
+				if (moved > 0 && this.mode === 'alloy' && alloy !== undefined && alloy.result === action.fluid) {
+					alloy.made += moved;
+					saveAlloy(alloy);
+				}
 				return 0;
 			}
 			case 'reject': {
@@ -505,7 +582,9 @@ export class Controller {
 			}
 			case 'restore': {
 				const taken = this.pool?.take(smeltery.drain, action.fluid, action.amount) ?? 0;
-				const why   = action.why === 'stock' ? 'from the stock' : 'to complete a cast';
+				const why   = action.why === 'stock'
+				              ? 'from the stock'
+				              : action.why === 'alloy' ? `for ${Controller.shortName(this.alloy?.result ?? 'the alloy')}` : 'to complete a cast';
 				if (taken > 0) this.log(`restored ${taken} mB ${Controller.shortName(action.fluid)} ${why}`);
 				return 0;
 			}
@@ -555,6 +634,12 @@ export class Controller {
 			isAlloy:            (fluid) => this.alloyResults.has(fluid),
 		};
 		if (this.heat !== undefined) context.fuelTemperature = this.heat;
+
+		const alloy = this.alloy;
+		if (alloy !== undefined) {
+			context.alloy = {result: alloy.result, ratios: this.alloyRatios.filter((ratio) => ratio.result === alloy.result)};
+			if (alloy.target !== undefined) context.alloy.remaining = alloy.target - alloy.made;
+		}
 		return context;
 	}
 
@@ -632,10 +717,12 @@ export class Controller {
 			alerts,
 			log:     [...this.logLines],
 
-			inputItems:  this.inputItems,
-			autoFormats: this.config.formatPriority,
-			reservoirs:  this.pool?.views() ?? [],
+			inputItems:   this.inputItems,
+			autoFormats:  this.config.formatPriority,
+			reservoirs:   this.pool?.views() ?? [],
+			alloyOptions: this.alloyOptions(),
 		};
+		if (this.alloy !== undefined) state.alloy = {...this.alloy};
 		if (this.fuel !== undefined) state.fuel = this.fuel;
 		if (this.heat !== undefined) state.heat = this.heat;
 
@@ -652,6 +739,36 @@ export class Controller {
 		return state;
 	}
 
+	/**
+	 * Every alloy of the catalogue for the picker, with what the stock alone can make of it (the recipe
+	 * the stock suits best when there are several), those that can be made first.
+	 */
+	private alloyOptions(): AlloyOption[] {
+		const stored  = Controller.storedFluids(this.pool);
+		const stockOf = (fluid: string): number => stored.find((entry) => entry.fluid === fluid)?.amount ?? 0;
+		const options: AlloyOption[] = [];
+
+		for (const ratio of this.alloyRatios) {
+			const batches   = Math.min(...ratio.inputs.map((input) => Math.floor(stockOf(input.fluid) / input.amount)));
+			const fromStock = Math.max(0, batches) * ratio.amount;
+			const existing  = options.find((option) => option.result === ratio.result);
+			if (existing !== undefined && existing.fromStock >= fromStock) continue;
+
+			const option: AlloyOption = {result: ratio.result, amount: ratio.amount, inputs: ratio.inputs, fromStock};
+			const temperature = this.meltingTemperatures.get(ratio.result);
+			const heat        = this.heat ?? this.fallbackHeat;
+			if (temperature !== undefined && heat !== undefined && temperature > heat) option.temperature = temperature;
+
+			if (existing !== undefined) options[options.indexOf(existing)] = option;
+			else options.push(option);
+		}
+
+		return options.sort((a, b) => {
+			if (a.fromStock !== b.fromStock) return b.fromStock - a.fromStock;
+			return a.result < b.result ? -1 : a.result > b.result ? 1 : 0;
+		});
+	}
+
 	private emptyState(): SmelteryState {
 		return {
 			mode:        this.mode,
@@ -662,6 +779,8 @@ export class Controller {
 			inputItems:  [],
 			autoFormats: this.config.formatPriority,
 			reservoirs:  [],
+			// The picker has its list before the first tick.
+			alloyOptions: this.alloyOptions(),
 			waiting:     [],
 			alerts:      [],
 			log:         [],

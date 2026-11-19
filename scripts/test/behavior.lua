@@ -1889,6 +1889,34 @@ test('controller: drain empties the Smeltery into the reservoirs then idles; pur
 	expect(#c:getState().reservoirs == 3, 'reservoirs missing from the state')
 end)
 
+test('controller: auto, alloy and melt drain and go idle after idleSeconds with nothing happening', function()
+	FILES = {}
+	local fake = fakeTinkers()
+	fake.smeltery({ { name = IRON, amount = 40 } })
+	fake.caster('tconstruct:basin_0', 810)
+	local d0 = fake.reservoir('miniutilities:drum_0', 1000)
+	fake.chest('minecraft:chest_in', 27)
+	fake.chest('minecraft:chest_out', 27)
+	fake.install()
+
+	local c = controllerWith(fake)
+	quiet(function() c:setMode('auto'); c:tick() end)
+	FAKE_CLOCK = FAKE_CLOCK + 20
+	quiet(function() c:tick() end)
+	expect(c:getMode() == 'auto', 'drained after 20 s: ' .. c:getMode())
+	FAKE_CLOCK = FAKE_CLOCK + 11
+	quiet(function() c:tick() end)
+	expect(c:getMode() == 'drain', 'not draining after 31 s of nothing: ' .. c:getMode())
+	quiet(function() c:tick(); c:tick() end)
+	expect(c:getMode() == 'idle' and d0.fluids.fluids[1] and d0.fluids.fluids[1].amount == 40, 'not idle with the iron stored: ' .. c:getMode())
+
+	-- Manual is left alone.
+	quiet(function() c:setMode('manual'); c:tick() end)
+	FAKE_CLOCK = FAKE_CLOCK + 60
+	quiet(function() c:tick() end)
+	expect(c:getMode() == 'manual', 'manual must never drain on its own')
+end)
+
 test('controller: missing peripherals become alerts, manual commands need manual mode', function()
 	FILES = {}
 	installPeripherals({})
@@ -1999,6 +2027,7 @@ local function screenFor(calls)
 		insert = function(_, r) calls[#calls + 1] = 'insert ' .. r.slot .. (r.force and ' force' or '') end,
 		cast = function(_, r) calls[#calls + 1] = 'cast ' .. r.fluid .. ' ' .. r.format end,
 		setFormat = function(_, r) calls[#calls + 1] = 'format ' .. r.format .. ' ' .. tostring(r.auto) end,
+		setAlloy = function(_, r) calls[#calls + 1] = 'alloy ' .. r.result .. ' ' .. tostring(r.target) .. (r.activate and ' on' or '') end,
 	})
 	local runtime, terminal = runtimeFor(screen.root, 79, 38)
 	return screen, runtime, terminal
@@ -2186,6 +2215,163 @@ test('display: the stock tab shows reservoirs, totals and room; CASTING switches
 	for _, wanted in ipairs({ 'RESERVOIRS', 'TOTALS', '3630 mB', 'FULL', 'for tin', 'drum 4', '177 ing', '1 free', 'capacity known for 1/4', 'stock of gold' }) do
 		expect(text:find(wanted, 1, true), 'stock tab misses "' .. wanted .. '"')
 	end
+end)
+
+local ROSE = 'tconstruct:molten_rose_gold'
+
+local function alloyContext(remaining)
+	local context = planContext()
+	context.alloy = { result = ROSE, ratios = { { result = ROSE, amount = 180, inputs = { { fluid = COPPER, amount = 90 }, { fluid = GOLD, amount = 90 } } } } }
+	context.alloy.remaining = remaining
+	return context
+end
+
+local function amountOf(plan, kind, fluid)
+	for _, a in ipairs(plan.actions) do
+		if a.kind == kind and a.fluid == fluid then return a.amount end
+	end
+end
+
+test('planner: melt stores every fluid and melts the input, casts nothing; no room stops the input', function()
+	local s = snapshot({
+		fluids = { { name = IRON, amount = 900 } },
+		casters = { basinIdle },
+		input = { { slot = 1, name = 'minecraft:raw_gold', count = 4, fluid = GOLD } },
+		storable = { IRON },
+	})
+	expect(kinds(planner.planTick('melt', s, planContext())) == 'store:/iron insert:minecraft:raw_gold/gold', 'melt: ' .. kinds(planner.planTick('melt', s, planContext())))
+
+	s.storable = {}
+	local plan = planner.planTick('melt', s, planContext())
+	expect(kinds(plan) == '' and plan.alerts[1]:find('no reservoir for iron', 1, true), 'melt without room: ' .. kinds(plan))
+end)
+
+test('planner: alloy doses its ingredients from the stock, in batches of the recipe, to the one that lacks', function()
+	local s = snapshot({
+		casters = { basinIdle, tableIdle },
+		stored = { { fluid = COPPER, amount = 2000 }, { fluid = GOLD, amount = 2000 }, { fluid = IRON, amount = 900 } },
+	})
+	local plan = planner.planTick('alloy', s, alloyContext())
+	expect(kinds(plan) == 'restore:/copper restore:/gold', 'alloy from stock: ' .. kinds(plan))
+	expect(amountOf(plan, 'restore', COPPER) == 720 and amountOf(plan, 'restore', GOLD) == 720 and plan.actions[1].why == 'alloy', '8 batches of each')
+
+	-- 300 mB of copper already there: only what lacks comes.
+	s.fluids = { { name = COPPER, amount = 300 } }
+	plan = planner.planTick('alloy', s, alloyContext())
+	expect(amountOf(plan, 'restore', COPPER) == 420 and amountOf(plan, 'restore', GOLD) == 720, 'copper ' .. tostring(amountOf(plan, 'restore', COPPER)))
+
+	-- 360 mB still wanted: two batches only.
+	s.fluids = {}
+	plan = planner.planTick('alloy', s, alloyContext(360))
+	expect(amountOf(plan, 'restore', COPPER) == 180 and amountOf(plan, 'restore', GOLD) == 180, 'two batches')
+end)
+
+test('planner: alloy casts only the alloy, waits for the casters, takes its ingredients from the input', function()
+	local s = snapshot({
+		fluids = { { name = ROSE, amount = 900 }, { name = IRON, amount = 900 } },
+		casters = { basinIdle, tableIdle },
+		stored = { { fluid = COPPER, amount = 2000 }, { fluid = GOLD, amount = 2000 } },
+	})
+	expect(kinds(planner.planTick('alloy', s, alloyContext())) == 'pour:basin_0/rose_gold', 'alloy pours: ' .. kinds(planner.planTick('alloy', s, alloyContext())))
+
+	local fromInput = snapshot({
+		casters = { basinIdle, tableIdle },
+		input = {
+			{ slot = 1, name = 'minecraft:raw_iron', count = 4, fluid = IRON },
+			{ slot = 2, name = 'minecraft:raw_copper', count = 9, fluid = COPPER },
+			{ slot = 3, name = 'minecraft:raw_gold', count = 9, fluid = GOLD },
+		},
+	})
+	local plan = planner.planTick('alloy', fromInput, alloyContext())
+	expect(kinds(plan) == 'insert:minecraft:raw_copper/copper insert:minecraft:raw_gold/gold', 'alloy input: ' .. kinds(plan))
+
+	table.remove(fromInput.input, 3)
+	plan = planner.planTick('alloy', fromInput, alloyContext())
+	expect(plan.alerts[1] == 'rose gold: missing gold', 'missing alert: ' .. tostring(plan.alerts[1]))
+
+	-- 90 mB still wanted: one ingot, not a block, even with 900 mB there.
+	local last = snapshot({ fluids = { { name = ROSE, amount = 900 } }, casters = { basinIdle, tableIdle } })
+	expect(kinds(planner.planTick('alloy', last, alloyContext(90))) == 'pour:table_0/rose_gold', 'more than wanted: ' .. kinds(planner.planTick('alloy', last, alloyContext(90))))
+end)
+
+test('planner: alloy moves away a fluid that would form another alloy; once made, it stores what is left and ends', function()
+	local s = snapshot({
+		fluids = { { name = TIN, amount = 40 } },
+		casters = { basinIdle, tableIdle },
+		stored = { { fluid = COPPER, amount = 2000 }, { fluid = GOLD, amount = 2000 } },
+		storable = { TIN },
+	})
+	local plan = planner.planTick('alloy', s, alloyContext())
+	expect(kinds(plan) == 'store:/tin restore:/gold', 'tin must go, copper wait: ' .. kinds(plan))
+
+	local done = snapshot({
+		fluids = { { name = ROSE, amount = 100 }, { name = COPPER, amount = 50 }, { name = IRON, amount = 30 } },
+		casters = { basinIdle, tableIdle },
+		storable = { ROSE, COPPER, IRON },
+	})
+	plan = planner.planTick('alloy', done, alloyContext(0))
+	expect(kinds(plan) == 'store:/rose_gold store:/copper' and not plan.finished, 'leftovers of the alloy: ' .. kinds(plan))
+	done.fluids = { { name = IRON, amount = 30 } }
+	expect(planner.planTick('alloy', done, alloyContext(0)).finished, 'alloy must end once its fluids are stored')
+end)
+
+test('controller: an alloy is chosen, saved, activated; it goes back to the mode it interrupted', function()
+	local controllerModule = require('projects.smeltery.controller.controller')
+	local catalogue = require('projects.smeltery.shared.catalogue')
+	local configModule = require('projects.smeltery.controller.config')
+	if fs.exists('/smeltery/alloy.db') then fs.delete('/smeltery/alloy.db') end
+	local c = quiet(function() return new(controllerModule.Controller, configModule.defaultControllerConfig(), catalogue.defaultCatalogue()) end)
+
+	expect(not pcall(function() c:setMode('alloy') end), 'alloy mode without an alloy must be refused')
+	expect(not pcall(function() c:setAlloy({ result = 'mod:molten_nothing' }) end), 'an unknown alloy must be refused')
+
+	quiet(function() c:setMode('auto'); c:setAlloy({ result = ROSE, target = 1800, activate = true }) end)
+	expect(c:getMode() == 'alloy' and c:getState().alloy.target == 1800, 'not activated')
+	local saved = configModule.loadAlloy()
+	expect(saved.result == ROSE and saved.target == 1800 and saved.made == 0, 'alloy not saved')
+
+	local options = c:getState().alloyOptions
+	local rose
+	for _, option in ipairs(options) do if option.result == ROSE then rose = option end end
+	expect(rose and rose.amount == 180 and #rose.inputs == 2, 'rose gold missing from the options')
+
+	-- Its amount made (the planner says finished): back to auto.
+	quiet(function() c:finish() end)
+	expect(c:getMode() == 'auto', 'alloy must go back to the mode it interrupted, not ' .. c:getMode())
+end)
+
+test('display: alloy and melt cards; Change alloy picks an alloy and an amount', function()
+	local calls = {}
+	local screen, runtime, terminal = screenFor(calls)
+	screen:setState(smelteryState({
+		mode = 'alloy',
+		alloy = { result = ROSE, target = 1800, made = 540 },
+		reservoirs = { { name = 'evilcraft:drum_1', fluid = COPPER, amount = 1800 }, { name = 'evilcraft:drum_2', fluid = GOLD, amount = 900 } },
+		alloyOptions = {
+			{ result = ROSE, amount = 180, inputs = { { fluid = COPPER, amount = 90 }, { fluid = GOLD, amount = 90 } }, fromStock = 1800 },
+			{ result = 'tconstruct:molten_bronze', amount = 360, inputs = { { fluid = COPPER, amount = 270 }, { fluid = TIN, amount = 90 } }, fromStock = 0 },
+		},
+	}))
+	runtime:invalidate({ reason = 'state', kind = 'full' })
+	runtime:render()
+	touch(runtime, 39, 2) -- "Modes" tab
+	local text = screenText(terminal)
+	for _, wanted in ipairs({ 'ALLOY', 'MELT', 'Only rose gold,', '6/20 ingots', 'Change alloy', 'into the stock,' }) do
+		expect(text:find(wanted, 1, true), 'modes tab misses "' .. wanted .. '"')
+	end
+
+	touch(runtime, 43, 29) -- Change alloy
+	text = screenText(terminal)
+	for _, wanted in ipairs({ 'from stock: 20 ing', 'put in the input', 'recipe', '1 copper', '= 20 ingots now', '20 ingots', 'then back to' }) do
+		expect(text:find(wanted, 1, true), 'picker misses "' .. wanted .. '"')
+	end
+
+	touch(runtime, 10, 10) -- bronze
+	expect(screenText(terminal):find('3 copper', 1, true), 'bronze recipe not shown')
+	touch(runtime, 70, 22) -- + (20 ingots: a block more)
+	touch(runtime, 55, 30) -- Select
+	expect(calls[1] and calls[1]:find('alloy tconstruct:molten_bronze 2610', 1, true), 'select: ' .. tostring(calls[1]))
+	expect(screenText(terminal):find('Change alloy', 1, true), 'the picker must close after Select')
 end)
 
 -- ============================================================

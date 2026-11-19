@@ -1,7 +1,7 @@
 import {Config}        from '@core/config';
 
 import {MODES}         from '../shared/protocol';
-import type {Mode}     from '../shared/protocol';
+import type {AlloyView, Mode} from '../shared/protocol';
 
 export const CONFIG_PATH = '/smeltery/controller.db';
 export const MODE_PATH   = '/smeltery/mode.db';
@@ -39,6 +39,11 @@ export interface ControllerConfig {
 	 * Also set from the display (Overview, CASTING: AUTO / off).
 	 */
 	formatPriority: string[];
+	/**
+	 * Auto, alloy and melt: after this many seconds with nothing happening (nothing goes in, melts, is
+	 * cast or collected), the Smeltery is drained into the reservoirs and goes idle. 0: never.
+	 */
+	idleSeconds: number;
 	/** Seconds between two readings of the Smeltery. */
 	tickSeconds: number;
 	/** The state is broadcast on every change, and at least this often. */
@@ -61,6 +66,7 @@ export function defaultControllerConfig(this: void): ControllerConfig {
 		reservoirs:       [],
 		assignments:      [],
 		formatPriority:   ['block', 'ingot', 'nugget'],
+		idleSeconds:      30,
 		tickSeconds:      1,
 		heartbeatSeconds: 5,
 		logSize:          20,
@@ -97,6 +103,28 @@ export function loadMode(this: void, path = MODE_PATH): {mode: Mode; previous: M
 
 export function saveMode(this: void, mode: Mode, previous: Mode, path = MODE_PATH): void {
 	Config.save<ModeFile>(path, {mode, previous});
+}
+
+export const ALLOY_PATH = '/smeltery/alloy.db';
+
+interface AlloyFile {
+	result: string;
+	/** mB wanted; 0: until the mode is changed. */
+	target: number;
+	made: number;
+}
+
+/** The alloy chosen for alloy mode and its progress survive a restart; undefined when none was chosen. */
+export function loadAlloy(this: void, path = ALLOY_PATH): AlloyView | undefined {
+	const saved = Config.load<AlloyFile>(path, {result: '', target: 0, made: 0});
+	if (saved.result === '') return undefined;
+	const alloy: AlloyView = {result: saved.result, made: saved.made};
+	if (saved.target > 0) alloy.target = saved.target;
+	return alloy;
+}
+
+export function saveAlloy(this: void, alloy: AlloyView, path = ALLOY_PATH): void {
+	Config.save<AlloyFile>(path, {result: alloy.result, target: alloy.target ?? 0, made: alloy.made});
 }
 
 interface ReservoirsFile {

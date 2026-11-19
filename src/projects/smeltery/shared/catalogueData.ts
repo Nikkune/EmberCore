@@ -2,7 +2,7 @@
 // Materialis 2.8.6) and its KubeJS changes (crusteel removed): every tconstruct:alloy recipe, fluid
 // tags resolved, one entry per combination of ingredients. Do not edit by hand: the catalogue file on
 // the computer is the place for local changes.
-import type {AlloyRecipe} from '@modules/tinkers/index';
+import type {AlloyRatio, AlloyRecipe} from '@modules/tinkers/index';
 
 export const DEFAULT_ALLOYS: AlloyRecipe[] = [
 	{result: 'materialis:molten_fairy', ingredients: ['minecraft:milk', 'tconstruct:liquid_soul', 'tconstruct:molten_gold']},
@@ -46,6 +46,51 @@ export const DEFAULT_ALLOYS: AlloyRecipe[] = [
 	{result: 'tinkers_reforged:molten_proto_lava', ingredients: ['hexerei:quicksilver_fluid', 'tconstruct:molten_ender', 'tinkers_reforged:molten_chorus']},
 	{result: 'tinkers_reforged:molten_proto_lava', ingredients: ['minecraft:lava', 'tconstruct:molten_ender', 'tinkers_reforged:molten_chorus']},
 	{result: 'tinkers_reforged:molten_yokel', ingredients: ['tconstruct:molten_aluminum', 'tconstruct:molten_iron', 'tinkers_reforged:molten_kelp']},
+];
+
+/** The same recipes with their amounts (mB of each input for `amount` mB of the alloy): alloy mode doses with them. */
+export const DEFAULT_ALLOY_RATIOS: AlloyRatio[] = [
+	{result: 'materialis:molten_fairy', amount: 90, inputs: [{fluid: 'minecraft:milk', amount: 1000}, {fluid: 'tconstruct:liquid_soul', amount: 1000}, {fluid: 'tconstruct:molten_gold', amount: 90}]},
+	{result: 'materialis:molten_orichalcum', amount: 270, inputs: [{fluid: 'tconstruct:molten_copper', amount: 90}, {fluid: 'tconstruct:molten_electrum', amount: 180}]},
+	{result: 'materialis:molten_orichalcum', amount: 270, inputs: [{fluid: 'tconstruct:molten_copper', amount: 90}, {fluid: 'tconstruct:molten_gold', amount: 90}, {fluid: 'tconstruct:molten_silver', amount: 90}]},
+	{result: 'materialis:molten_orichalcum', amount: 270, inputs: [{fluid: 'tconstruct:molten_rose_gold', amount: 180}, {fluid: 'tconstruct:molten_silver', amount: 90}]},
+	{result: 'materialis:molten_pink_slime', amount: 90, inputs: [{fluid: 'industrialforegoing:pink_slime', amount: 1000}, {fluid: 'tconstruct:molten_gold', amount: 180}, {fluid: 'tconstruct:molten_iron', amount: 180}]},
+	{result: 'tconstruct:molten_amethyst_bronze', amount: 90, inputs: [{fluid: 'tconstruct:molten_amethyst', amount: 100}, {fluid: 'tconstruct:molten_copper', amount: 90}]},
+	{result: 'tconstruct:molten_brass', amount: 180, inputs: [{fluid: 'tconstruct:molten_copper', amount: 90}, {fluid: 'tconstruct:molten_zinc', amount: 90}]},
+	{result: 'tconstruct:molten_bronze', amount: 360, inputs: [{fluid: 'tconstruct:molten_copper', amount: 270}, {fluid: 'tconstruct:molten_tin', amount: 90}]},
+	{result: 'tconstruct:molten_constantan', amount: 180, inputs: [{fluid: 'tconstruct:molten_copper', amount: 90}, {fluid: 'tconstruct:molten_nickel', amount: 90}]},
+	{result: 'tconstruct:molten_electrum', amount: 180, inputs: [{fluid: 'tconstruct:molten_gold', amount: 90}, {fluid: 'tconstruct:molten_silver', amount: 90}]},
+	{result: 'tconstruct:molten_enderium', amount: 180, inputs: [{fluid: 'tconstruct:molten_diamond', amount: 100}, {fluid: 'tconstruct:molten_ender', amount: 500}, {fluid: 'tconstruct:molten_lead', amount: 270}]},
+	{result: 'tconstruct:molten_enderium', amount: 180, inputs: [{fluid: 'tconstruct:molten_diamond', amount: 100}, {fluid: 'tconstruct:molten_lead', amount: 270}, {fluid: 'thermal:ender', amount: 500}]},
+	{result: 'tconstruct:molten_hepatizon', amount: 180, inputs: [{fluid: 'tconstruct:molten_cobalt', amount: 90}, {fluid: 'tconstruct:molten_copper', amount: 180}, {fluid: 'tconstruct:molten_quartz', amount: 400}]},
+	{result: 'tconstruct:molten_invar', amount: 270, inputs: [{fluid: 'tconstruct:molten_iron', amount: 180}, {fluid: 'tconstruct:molten_nickel', amount: 90}]},
+	{result: 'tconstruct:molten_lumium', amount: 360, inputs: [{fluid: 'tconstruct:molten_silver', amount: 90}, {fluid: 'tconstruct:molten_tin', amount: 270}, {fluid: 'thermal:glowstone', amount: 500}]},
+	{result: 'tconstruct:molten_manyullyn', amount: 360, inputs: [{fluid: 'tconstruct:molten_cobalt', amount: 270}, {fluid: 'tconstruct:molten_debris', amount: 90}]},
+	{result: 'tconstruct:molten_netherite', amount: 10, inputs: [{fluid: 'tconstruct:molten_debris', amount: 40}, {fluid: 'tconstruct:molten_gold', amount: 20}]},
+	{result: 'tconstruct:molten_obsidian', amount: 100, inputs: [{fluid: 'minecraft:lava', amount: 100}, {fluid: 'minecraft:water', amount: 50}]},
+	{result: 'tconstruct:molten_obsidian', amount: 250, inputs: [{fluid: 'minecraft:lava', amount: 250}, {fluid: 'tconstruct:mushroom_stew', amount: 250}]},
+	{result: 'tconstruct:molten_pewter', amount: 180, inputs: [{fluid: 'tconstruct:molten_iron', amount: 90}, {fluid: 'tconstruct:molten_lead', amount: 90}]},
+	{result: 'tconstruct:molten_pewter', amount: 270, inputs: [{fluid: 'tconstruct:molten_lead', amount: 90}, {fluid: 'tconstruct:molten_tin', amount: 180}]},
+	{result: 'tconstruct:molten_pig_iron', amount: 180, inputs: [{fluid: 'create:honey', amount: 250}, {fluid: 'tconstruct:blood', amount: 500}, {fluid: 'tconstruct:molten_iron', amount: 90}]},
+	{result: 'tconstruct:molten_porcelain', amount: 1000, inputs: [{fluid: 'tconstruct:molten_clay', amount: 750}, {fluid: 'tconstruct:molten_quartz', amount: 100}]},
+	{result: 'tconstruct:molten_queens_slime', amount: 180, inputs: [{fluid: 'tconstruct:magma', amount: 250}, {fluid: 'tconstruct:molten_cobalt', amount: 90}, {fluid: 'tconstruct:molten_gold', amount: 90}]},
+	{result: 'tconstruct:molten_refined_obsidian', amount: 90, inputs: [{fluid: 'tconstruct:molten_diamond', amount: 100}, {fluid: 'tconstruct:molten_obsidian', amount: 250}, {fluid: 'tconstruct:molten_osmium', amount: 90}]},
+	{result: 'tconstruct:molten_rose_gold', amount: 180, inputs: [{fluid: 'tconstruct:molten_copper', amount: 90}, {fluid: 'tconstruct:molten_gold', amount: 90}]},
+	{result: 'tconstruct:molten_signalum', amount: 360, inputs: [{fluid: 'tconstruct:molten_copper', amount: 270}, {fluid: 'tconstruct:molten_silver', amount: 90}, {fluid: 'tinkers_reforged:molten_redstone', amount: 400}]},
+	{result: 'tconstruct:molten_slimesteel', amount: 180, inputs: [{fluid: 'tconstruct:molten_iron', amount: 90}, {fluid: 'tconstruct:seared_stone', amount: 250}, {fluid: 'tconstruct:sky_slime', amount: 250}]},
+	{result: 'tinkers_reforged:molten_baolian', amount: 180, inputs: [{fluid: 'tconstruct:molten_obsidian', amount: 1000}, {fluid: 'tinkers_reforged:molten_epidote', amount: 100}, {fluid: 'tinkers_reforged:molten_red_beryl', amount: 100}]},
+	{result: 'tinkers_reforged:molten_blazing_copper', amount: 810, inputs: [{fluid: 'tconstruct:blazing_blood', amount: 1000}, {fluid: 'tconstruct:molten_copper', amount: 810}]},
+	{result: 'tinkers_reforged:molten_cyber_steel', amount: 90, inputs: [{fluid: 'tconstruct:magma', amount: 250}, {fluid: 'tinkers_reforged:liquid_coal', amount: 250}, {fluid: 'tinkers_reforged:molten_chorus_metal', amount: 180}]},
+	{result: 'tinkers_reforged:molten_duralumin', amount: 450, inputs: [{fluid: 'tconstruct:molten_aluminum', amount: 810}, {fluid: 'tconstruct:molten_copper', amount: 90}]},
+	{result: 'tinkers_reforged:molten_durasteel', amount: 90, inputs: [{fluid: 'tconstruct:molten_aluminum', amount: 90}, {fluid: 'tconstruct:molten_debris', amount: 90}, {fluid: 'tconstruct:molten_ender', amount: 250}]},
+	{result: 'tinkers_reforged:molten_electrical_copper', amount: 180, inputs: [{fluid: 'tinkers_reforged:molten_blazing_copper', amount: 180}, {fluid: 'tinkers_reforged:molten_redstone', amount: 1000}]},
+	{result: 'tinkers_reforged:molten_felsteel', amount: 270, inputs: [{fluid: 'tconstruct:molten_debris', amount: 180}, {fluid: 'tinkers_reforged:molten_blazing_copper', amount: 180}, {fluid: 'tinkers_reforged:molten_duralumin', amount: 180}]},
+	{result: 'tinkers_reforged:molten_galu', amount: 180, inputs: [{fluid: 'tconstruct:molten_obsidian', amount: 1000}, {fluid: 'tinkers_reforged:molten_hureaulite', amount: 100}, {fluid: 'tinkers_reforged:molten_red_beryl', amount: 100}]},
+	{result: 'tinkers_reforged:molten_gausum', amount: 180, inputs: [{fluid: 'tconstruct:molten_debris', amount: 180}, {fluid: 'tinkers_reforged:molten_blazing_copper', amount: 180}, {fluid: 'tinkers_reforged:molten_lapis', amount: 810}]},
+	{result: 'tinkers_reforged:molten_magma_steel', amount: 90, inputs: [{fluid: 'tconstruct:magma', amount: 250}, {fluid: 'tconstruct:molten_iron', amount: 180}, {fluid: 'tinkers_reforged:liquid_coal', amount: 250}]},
+	{result: 'tinkers_reforged:molten_proto_lava', amount: 1000, inputs: [{fluid: 'hexerei:quicksilver_fluid', amount: 1000}, {fluid: 'tconstruct:molten_ender', amount: 250}, {fluid: 'tinkers_reforged:molten_chorus', amount: 90}]},
+	{result: 'tinkers_reforged:molten_proto_lava', amount: 1000, inputs: [{fluid: 'minecraft:lava', amount: 1000}, {fluid: 'tconstruct:molten_ender', amount: 250}, {fluid: 'tinkers_reforged:molten_chorus', amount: 90}]},
+	{result: 'tinkers_reforged:molten_yokel', amount: 180, inputs: [{fluid: 'tconstruct:molten_aluminum', amount: 90}, {fluid: 'tconstruct:molten_iron', amount: 90}, {fluid: 'tinkers_reforged:molten_kelp', amount: 250}]},
 ];
 
 /** Every molten fluid a melting recipe of the modpack produces. */

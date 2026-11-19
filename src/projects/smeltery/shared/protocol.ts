@@ -13,11 +13,14 @@ export const CONTROLLER_HOSTNAME = 'smeltery-controller';
  * manual: only what the display asks (insert, cast);
  * lock:   no new item goes in, the casts under way finish;
  * drain:  every fluid goes to the reservoirs, then idle;
- * purge:  leftovers and alloys go to the reservoirs, then back to the previous mode.
+ * purge:  leftovers and alloys go to the reservoirs, then back to the previous mode;
+ * alloy:  makes the chosen alloy only, dosing its ingredients (stock first); with an amount, then back
+ *         to the previous mode;
+ * melt:   melts the input into the reservoirs, casts nothing.
  */
-export type Mode = 'idle' | 'auto' | 'manual' | 'lock' | 'drain' | 'purge';
+export type Mode = 'idle' | 'auto' | 'manual' | 'lock' | 'drain' | 'purge' | 'alloy' | 'melt';
 
-export const MODES: Mode[] = ['idle', 'auto', 'manual', 'lock', 'drain', 'purge'];
+export const MODES: Mode[] = ['idle', 'auto', 'manual', 'lock', 'drain', 'purge', 'alloy', 'melt'];
 
 export const Messages = {
 	/** Controller → everyone, on every change and at least every few seconds: SmelteryState. */
@@ -30,6 +33,8 @@ export const Messages = {
 	insert:   'insert',
 	/** Display → controller, request (manual mode): CastRequest. */
 	cast:     'cast',
+	/** Display → controller, request: SetAlloyRequest. */
+	setAlloy: 'setAlloy',
 	/** Display → controller, request: SetFormatRequest. */
 	setFormat: 'setFormat',
 } as const;
@@ -84,6 +89,27 @@ export interface InputItemView {
 	temperature?: number;
 }
 
+/** An alloy alloy mode can make, as the picker shows it. */
+export interface AlloyOption {
+	result: string;
+	/** mB of `result` the recipe makes from `inputs`. */
+	amount: number;
+	inputs: {fluid: string; amount: number}[];
+	/** mB of the alloy the stock alone can make now. */
+	fromStock: number;
+	/** Set when the fuel is not hot enough to melt into it. */
+	temperature?: number;
+}
+
+/** The alloy chosen for alloy mode, and its progress. */
+export interface AlloyView {
+	result: string;
+	/** mB wanted; undefined: until the mode is changed. */
+	target?: number;
+	/** mB cast since it was chosen. */
+	made: number;
+}
+
 export interface SmelteryState {
 	mode: Mode;
 	/** os.epoch('utc') of the reading, in ms. */
@@ -103,6 +129,9 @@ export interface SmelteryState {
 	heat?: number;
 	/** External reservoirs, as last read. */
 	reservoirs: ReservoirView[];
+	alloy?: AlloyView;
+	/** Every alloy of the catalogue, those the stock can make first. */
+	alloyOptions: AlloyOption[];
 	waiting: WaitingItem[];
 	/** Problems the player must fix (missing peripheral, output full, ...). */
 	alerts: string[];
@@ -118,6 +147,14 @@ export interface SetModeRequest {
 export interface SetFormatRequest {
 	format: string;
 	auto: boolean;
+}
+
+/** Chooses the alloy of alloy mode (and switches to it with `activate`). */
+export interface SetAlloyRequest {
+	result: string;
+	/** mB to make; undefined: until the mode is changed. */
+	target?: number;
+	activate?: boolean;
 }
 
 export interface InsertRequest {
