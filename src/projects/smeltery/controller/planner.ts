@@ -25,18 +25,26 @@ export interface Snapshot {
 	uncertain?: boolean;
 	/** Why nothing may go in this tick (the alert is raised by the caller), e.g. an empty fuel tank. */
 	pauseInput?: string;
+	/** Fluids stored in the reservoirs. */
+	stored: {fluid: string; amount: number}[];
+	/** Fluids some reservoir can take now. */
+	storable: string[];
 }
 
 export type Action =
 	| {kind: 'collect'; caster: string}
 	| {kind: 'pour'; caster: string; fluid: string; amount: number}
 	| {kind: 'insert'; slot: number; name: string; count: number; fluid: string; seen: string[]}
-	| {kind: 'reject'; slot: number; name: string; count: number; reason: 'heat' | 'unknown'; temperature?: number};
+	| {kind: 'reject'; slot: number; name: string; count: number; reason: 'heat' | 'unknown'; temperature?: number}
+	| {kind: 'store'; fluid: string; amount: number; why: 'drain' | 'purge' | 'unblock'}
+	| {kind: 'restore'; fluid: string; amount: number};
 
 export interface Plan {
 	actions: Action[];
 	waiting: WaitingItem[];
 	alerts: string[];
+	/** A drain or purge has nothing left it can move: the controller ends it. */
+	finished?: boolean;
 }
 
 export interface PlanContext {
@@ -50,6 +58,86 @@ export interface PlanContext {
 	fuelTemperature?: number;
 	/** Rejected items (too hot, unknown) leave the input when an inventory is set for them. */
 	reject?: {heat: boolean; unknown: boolean};
+	/** Whether a fluid is an alloy of the catalogue (purge sends them to the reservoirs). */
+	isAlloy?: (fluid: string) => boolean;
+}
+
+/** Amount of the smallest cast auto mode can make of `fluid` with the casters there; undefined: none. */
+function smallestCast(this: void, fluid: string, snapshot: Snapshot, context: PlanContext): number | undefined {
+	let smallest: number | undefined;
+
+	for (const format of context.formatPriority) {
+		const amount = context.amounts.get(format, fluid);
+		if (amount === undefined || !snapshot.casters.some((caster) => caster.state.format === format)) continue;
+		if (smallest === undefined || amount < smallest) smallest = amount;
+	}
+
+	return smallest;
+}
+
+/** A fluid too small for any cast auto mode can make (a leftover). */
+function isLeftover(this: void, fluid: FluidStack, snapshot: Snapshot, context: PlanContext): boolean {
+	const smallest = smallestCast(fluid.name, snapshot, context);
+	return smallest !== undefined && fluid.amount < smallest;
+}
+
+/** Sends a fluid to the reservoirs, or raises an alert when none can take it. */
+function store(this: void, fluid: FluidStack, why: 'drain' | 'purge' | 'unblock', snapshot: Snapshot, plan: Plan): boolean {
+	if (!snapshot.storable.includes(fluid.name)) {
+		plan.alerts.push(`no reservoir for ${fluid.name}: it stays in the Smeltery`);
+		return false;
+	}
+
+	plan.actions.push({kind: 'store', fluid: fluid.name, amount: fluid.amount, why});
+	return true;
+}
+
+/** Drain: every fluid to the reservoirs; finished once nothing can move and nothing is melting. */
+function drainAll(this: void, snapshot: Snapshot, plan: Plan): void {
+	let moving = false;
+	for (const fluid of snapshot.fluids) moving = store(fluid, 'drain', snapshot, plan) || moving;
+	if (!moving && snapshot.meltingFluids.length === 0) plan.finished = true;
+}
+
+/** Purge: leftovers and alloys to the reservoirs; finished once none of them can move. */
+function purgeAll(this: void, snapshot: Snapshot, context: PlanContext, plan: Plan): void {
+	let moving = false;
+
+	for (const fluid of snapshot.fluids) {
+		if (isLeftover(fluid, snapshot, context) || context.isAlloy?.(fluid.name) === true) {
+			moving = store(fluid, 'purge', snapshot, plan) || moving;
+		}
+	}
+
+	if (!moving) plan.finished = true;
+}
+
+/**
+ * Gives a stored fluid back when it completes a cast: the same metal is in the Smeltery, below a format it
+ * would reach with the stock (a block instead of ingots). Only what is missing comes back. Returns the
+ * fluids being completed: they are not cast this tick, the bigger cast comes next.
+ */
+function restoreAll(this: void, snapshot: Snapshot, context: PlanContext, plan: Plan): Set<string> {
+	const completing = new Set<string>();
+
+	for (const fluid of snapshot.fluids) {
+		const stock = snapshot.stored.find((entry) => entry.fluid === fluid.name)?.amount ?? 0;
+		if (stock <= 0) continue;
+
+		for (const format of context.formatPriority) {
+			const amount = context.amounts.get(format, fluid.name);
+			if (amount === undefined || !snapshot.casters.some((caster) => caster.state.format === format)) continue;
+			if (fluid.amount >= amount) break;
+
+			if (fluid.amount + stock >= amount) {
+				plan.actions.push({kind: 'restore', fluid: fluid.name, amount: amount - fluid.amount});
+				completing.add(fluid.name);
+				break;
+			}
+		}
+	}
+
+	return completing;
 }
 
 function collectAll(this: void, snapshot: Snapshot, plan: Plan): void {
@@ -63,7 +151,7 @@ function collectAll(this: void, snapshot: Snapshot, plan: Plan): void {
  * are cast (waiting for a busy basin rather than making ingots); below a block, ingots; below an ingot,
  * nuggets. A format with no caster on the network is skipped. What is left below the smallest stays.
  */
-function pourAll(this: void, snapshot: Snapshot, context: PlanContext, plan: Plan): void {
+function pourAll(this: void, snapshot: Snapshot, context: PlanContext, plan: Plan, skip: Set<string> = new Set()): void {
 	if (snapshot.outputFree <= 0) {
 		plan.alerts.push('output full: casting paused');
 		return;
@@ -72,6 +160,7 @@ function pourAll(this: void, snapshot: Snapshot, context: PlanContext, plan: Pla
 	const used = new Set<string>();
 
 	for (const fluid of snapshot.fluids) {
+		if (skip.has(fluid.name)) continue;
 		let left = fluid.amount;
 
 		for (const format of context.formatPriority) {
@@ -112,6 +201,8 @@ function wait(this: void, plan: Plan, item: InputSlot, reason: WaitingItem['reas
 export interface Assessment {
 	status: InputItemView['status'];
 	alloy?: string;
+	/** Ingredients of that alloy. */
+	ingredients?: string[];
 	temperature?: number;
 }
 
@@ -125,7 +216,7 @@ export function assessItem(this: void, item: InputSlot, present: string[], conte
 	}
 
 	const alloy = context.guard.wouldForm(present, item.fluid);
-	if (alloy !== undefined) return {status: 'alloy', alloy: alloy.result};
+	if (alloy !== undefined) return {status: 'alloy', alloy: alloy.result, ingredients: alloy.ingredients};
 
 	return {status: 'ok'};
 }
@@ -153,6 +244,7 @@ export function assessInput(this: void, snapshot: Snapshot, context: PlanContext
 function insertAll(this: void, snapshot: Snapshot, context: PlanContext, plan: Plan): void {
 	const present: string[] = [...snapshot.meltingFluids];
 	for (const fluid of snapshot.fluids) present.push(fluid.name);
+	const unblocking = new Set<string>();
 
 	for (const item of snapshot.input) {
 		const assessment = assessItem(item, present, context);
@@ -174,6 +266,7 @@ function insertAll(this: void, snapshot: Snapshot, context: PlanContext, plan: P
 				break;
 			case 'alloy':
 				wait(plan, item, 'alloy', assessment.alloy !== undefined ? {alloy: assessment.alloy} : {});
+				unblock(item, assessment, snapshot, context, plan, unblocking);
 				break;
 			default:
 				plan.actions.push({kind: 'insert', slot: item.slot, name: item.name, count: item.count, fluid: item.fluid!, seen: [...present]});
@@ -183,11 +276,33 @@ function insertAll(this: void, snapshot: Snapshot, context: PlanContext, plan: P
 }
 
 /**
+ * An item waits for an alloy: the other ingredients that are only leftovers in the Smeltery (molten, below
+ * the smallest cast) go to the reservoirs, and the item goes in on a later tick. Bigger amounts stay: they
+ * will be cast anyway; ingredients still melting cannot be moved.
+ */
+function unblock(
+	this: void, item: InputSlot, assessment: Assessment, snapshot: Snapshot, context: PlanContext, plan: Plan, done: Set<string>,
+): void {
+	for (const ingredient of assessment.ingredients ?? []) {
+		if (ingredient === item.fluid || done.has(ingredient)) continue;
+
+		const fluid = snapshot.fluids.find((candidate) => candidate.name === ingredient);
+		if (fluid === undefined || !isLeftover(fluid, snapshot, context)) continue;
+
+		done.add(ingredient);
+		store(fluid, 'unblock', snapshot, plan);
+	}
+}
+
+/**
  * What to do this tick. Collecting comes first (a blocked caster is freed), then casting, then the input:
  * idle:   nothing;
  * manual: collect only, the rest comes from the display;
  * lock:   collect and cast, nothing new goes in;
- * auto:   collect, cast, and melt the input that is safe.
+ * drain:  collect, every fluid to the reservoirs;
+ * purge:  collect, leftovers and alloys to the reservoirs;
+ * auto:   collect, complete a cast from the stock, cast, and melt the input that is safe (a leftover that
+ *         blocks an input goes to the reservoirs).
  */
 export function planTick(this: void, mode: Mode, snapshot: Snapshot, context: PlanContext): Plan {
 	const plan: Plan = {actions: [], waiting: [], alerts: []};
@@ -197,7 +312,17 @@ export function planTick(this: void, mode: Mode, snapshot: Snapshot, context: Pl
 	collectAll(snapshot, plan);
 	if (mode === 'manual') return plan;
 
-	pourAll(snapshot, context, plan);
+	if (mode === 'drain') {
+		drainAll(snapshot, plan);
+		return plan;
+	}
+	if (mode === 'purge') {
+		purgeAll(snapshot, context, plan);
+		return plan;
+	}
+
+	const completing = mode === 'auto' ? restoreAll(snapshot, context, plan) : new Set<string>();
+	pourAll(snapshot, context, plan, completing);
 	if (mode === 'lock') return plan;
 
 	if (snapshot.pauseInput !== undefined) return plan;

@@ -5,6 +5,7 @@ import type {Mode}     from '../shared/protocol';
 
 export const CONFIG_PATH = '/smeltery/controller.db';
 export const MODE_PATH   = '/smeltery/mode.db';
+export const RESERVOIRS_PATH = '/smeltery/reservoirs.db';
 
 /**
  * Peripheral names are what the wired modems show ('sophisticatedstorage:barrel_1'). An empty name or
@@ -29,6 +30,10 @@ export interface ControllerConfig {
 	fuelTank: string;
 	/** Fuel assumed when no fuel tank is on the network: items too hot for it wait. */
 	fuel: string;
+	/** Fluid reservoirs (drums, tanks) for leftovers, drain and purge; empty: every other fluid storage found. */
+	reservoirs: string[];
+	/** Manual assignments, kept first: such a reservoir only ever takes its fluid. */
+	assignments: {reservoir: string; fluid: string}[];
 	/** Formats auto mode casts, first preferred; casters with another cast are left to the other modes. */
 	formatPriority: string[];
 	/** Seconds between two readings of the Smeltery. */
@@ -50,6 +55,8 @@ export function defaultControllerConfig(this: void): ControllerConfig {
 		casters:          [],
 		fuelTank:         '',
 		fuel:             'minecraft:lava',
+		reservoirs:       [],
+		assignments:      [],
 		formatPriority:   ['block', 'ingot', 'nugget'],
 		tickSeconds:      1,
 		heartbeatSeconds: 5,
@@ -63,19 +70,40 @@ export function loadControllerConfig(this: void, path = CONFIG_PATH): Controller
 
 interface ModeFile {
 	mode: string;
+	/** Mode a purge goes back to. */
+	previous: string;
 }
 
-/** The mode survives a restart; 'idle' when none was saved. */
-export function loadMode(this: void, path = MODE_PATH): Mode {
-	const saved = Config.load<ModeFile>(path, {mode: 'idle'}).mode;
-
+function toMode(this: void, value: string, fallback: Mode): Mode {
 	for (const mode of MODES) {
-		if (mode === saved) return mode;
+		if (mode === value) return mode;
 	}
-
-	return 'idle';
+	return fallback;
 }
 
-export function saveMode(this: void, mode: Mode, path = MODE_PATH): void {
-	Config.save<ModeFile>(path, {mode});
+/** The mode (and the one a purge goes back to) survive a restart; 'idle' when none was saved. */
+export function loadMode(this: void, path = MODE_PATH): {mode: Mode; previous: Mode} {
+	const saved = Config.load<ModeFile>(path, {mode: 'idle', previous: 'idle'});
+	return {mode: toMode(saved.mode, 'idle'), previous: toMode(saved.previous, 'idle')};
+}
+
+export function saveMode(this: void, mode: Mode, previous: Mode, path = MODE_PATH): void {
+	Config.save<ModeFile>(path, {mode, previous});
+}
+
+interface ReservoirsFile {
+	capacities: {reservoir: string; capacity: number}[];
+}
+
+/** Reservoir capacities learnt during earlier runs. */
+export function loadCapacities(this: void, path = RESERVOIRS_PATH): Record<string, number> {
+	const result: Record<string, number> = {};
+	for (const entry of Config.load<ReservoirsFile>(path, {capacities: []}).capacities) result[entry.reservoir] = entry.capacity;
+	return result;
+}
+
+export function saveCapacities(this: void, capacities: Record<string, number>, path = RESERVOIRS_PATH): void {
+	const entries: {reservoir: string; capacity: number}[] = [];
+	for (const reservoir in capacities) entries.push({reservoir, capacity: capacities[reservoir]!});
+	Config.save<ReservoirsFile>(path, {capacities: entries});
 }

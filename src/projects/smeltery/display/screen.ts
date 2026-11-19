@@ -36,6 +36,8 @@ const MODE_CARDS: Record<Mode, {color: number; lines: string[]}> = {
 	auto:   {color: colors.lime, lines: ['Melts the input', 'and casts pure', 'metals.']},
 	manual: {color: colors.orange, lines: ['You insert and', 'cast from the', 'Manual tab.']},
 	lock:   {color: colors.red, lines: ['Nothing new goes', 'in; the casts', 'under way finish.']},
+	drain:  {color: colors.lightBlue, lines: ['Every fluid to', 'the reservoirs,', 'then idle.']},
+	purge:  {color: colors.purple, lines: ['Leftovers and', 'alloys to the', 'reservoirs.']},
 };
 
 const LOG_COLORS: Record<LogKind, number> = {
@@ -53,6 +55,11 @@ const ITEMS_PER_PAGE  = 6;
 const LOG_LINES       = 13;
 const CONFIRM_SECONDS = 10;
 const OFFLINE_SECONDS = 12;
+
+/** Mode cards, four per row: the top-left corner of the `index`-th one. */
+function cardPlace(this: void, index: number): {x: number; y: number} {
+	return {x: 3 + (index % 4) * 19, y: 8 + Math.floor(index / 4) * 12};
+}
 
 const FULL_SCREEN: Rect = {x: 1, y: 1, width: SCREEN_WIDTH, height: SCREEN_HEIGHT};
 
@@ -98,7 +105,8 @@ export class SmelteryScreen {
 		}
 
 		MODES.forEach((mode, index) => {
-			this.modeButtons.set(mode, this.button(' Activate ', {x: 4 + index * 19, y: 15, width: 10, height: 1}, () => this.actions.setMode(mode)));
+			const card = cardPlace(index);
+			this.modeButtons.set(mode, this.button(' Activate ', {x: card.x + 1, y: card.y + 6, width: 10, height: 1}, () => this.actions.setMode(mode)));
 		});
 
 		this.castPages = this.root.place(new PaginationComponent({
@@ -452,14 +460,14 @@ export class SmelteryScreen {
 	private paintModes(p: Painter, state: SmelteryState): void {
 		MODES.forEach((mode, index) => {
 			const card   = MODE_CARDS[mode];
-			const x      = 3 + index * 19;
+			const {x, y} = cardPlace(index);
 			const active = state.mode === mode;
-			p.fill(x, 9, 17, 1, card.color);
-			p.text(x + 1, 9, mode.toUpperCase(), colors.black, card.color);
-			card.lines.forEach((line, row) => p.text(x + 1, 11 + row, line.substring(0, 16), active ? colors.white : colors.lightGray));
-			if (active) p.text(x + 1, 15, `${Glyph.dot} active`, colors.lime);
+			p.fill(x, y, 17, 1, card.color);
+			p.text(x + 1, y, mode.toUpperCase(), colors.black, card.color);
+			card.lines.forEach((line, row) => p.text(x + 1, y + 2 + row, line.substring(0, 16), active ? colors.white : colors.lightGray));
+			if (active) p.text(x + 1, y + 6, `${Glyph.dot} active`, colors.lime);
 		});
-		p.text(3, 21, 'Touch Activate to switch; the controller confirms live.', colors.gray);
+		p.text(3, 34, 'Touch Activate to switch; the controller confirms live.', colors.gray);
 	}
 
 	private paintManual(p: Painter, state: SmelteryState): void {

@@ -1391,7 +1391,7 @@ local function planContext()
 end
 
 local function snapshot(fields)
-	local s = { fluids = {}, meltingFluids = {}, casters = {}, input = {}, outputFree = 10 }
+	local s = { fluids = {}, meltingFluids = {}, casters = {}, input = {}, outputFree = 10, stored = {}, storable = {} }
 	for k, v in pairs(fields) do s[k] = v end
 	return s
 end
@@ -1480,6 +1480,71 @@ test('planner: rejected items leave the input only when an inventory is set for 
 	plan = planner.planTick('auto', s, context)
 	expect(kinds(plan) == 'reject:minecraft:dirt' and plan.actions[1].reason == 'unknown', 'dirt not rejected: ' .. kinds(plan))
 	expect(#planner.planTick('lock', s, context).actions == 0, 'lock must not touch the input')
+end)
+
+test('planner: drain sends every fluid to the reservoirs, then finishes', function()
+	local s = snapshot({
+		fluids = { { name = IRON, amount = 900 }, { name = GOLD, amount = 40 } },
+		casters = { basinIdle, basinBlocked }, storable = { IRON, GOLD },
+	})
+	local plan = planner.planTick('drain', s, planContext())
+	expect(kinds(plan) == 'collect:basin_1 store:/iron store:/gold' and not plan.finished, 'drain: ' .. kinds(plan))
+
+	s = snapshot({ fluids = { { name = COPPER, amount = 50 } }, storable = {} })
+	plan = planner.planTick('drain', s, planContext())
+	expect(#plan.actions == 0 and plan.finished and plan.alerts[1]:find('no reservoir', 1, true), 'copper without room must alert and finish')
+
+	s = snapshot({ meltingFluids = { IRON } })
+	expect(not planner.planTick('drain', s, planContext()).finished, 'drain must wait for what is still melting')
+end)
+
+test('planner: purge sends leftovers and alloys only, then finishes', function()
+	local context = planContext()
+	context.isAlloy = function(_, fluid) return fluid == 'tconstruct:molten_bronze' end
+	local s = snapshot({
+		fluids = { { name = IRON, amount = 900 }, { name = GOLD, amount = 5 }, { name = 'tconstruct:molten_bronze', amount = 300 } },
+		casters = { basinIdle, tableIdle, nuggetIdle }, storable = { IRON, GOLD, 'tconstruct:molten_bronze' },
+	})
+	local plan = planner.planTick('purge', s, context)
+	expect(kinds(plan) == 'store:/gold store:/bronze' and not plan.finished, 'purge: ' .. kinds(plan))
+
+	s = snapshot({ fluids = { { name = IRON, amount = 900 } }, casters = { basinIdle, nuggetIdle }, storable = { IRON } })
+	plan = planner.planTick('purge', s, context)
+	expect(#plan.actions == 0 and plan.finished, 'nothing to purge must finish')
+end)
+
+test('planner: auto purges a leftover only when it blocks an input', function()
+	local s = snapshot({
+		fluids = { { name = COPPER, amount = 5 } }, casters = { basinIdle, nuggetIdle }, storable = { COPPER },
+		input = { { slot = 1, name = 'mod:tin_ingot', count = 4, fluid = TIN } },
+	})
+	local plan = planner.planTick('auto', s, planContext())
+	expect(kinds(plan) == 'store:/copper' and plan.actions[1].why == 'unblock' and plan.waiting[1].reason == 'alloy',
+		'5 mB of copper blocking tin must be stored: ' .. kinds(plan))
+
+	s.fluids = { { name = COPPER, amount = 900 } }
+	plan = planner.planTick('auto', s, planContext())
+	expect(not kinds(plan):find('store', 1, true), 'a castable amount of copper must not be stored: ' .. kinds(plan))
+
+	s = snapshot({ fluids = { { name = COPPER, amount = 5 } }, casters = { basinIdle, nuggetIdle }, storable = { COPPER } })
+	expect(#planner.planTick('auto', s, planContext()).actions == 0, 'a leftover that blocks nothing must stay')
+end)
+
+test('planner: auto completes a cast from the stock, never pours smaller meanwhile', function()
+	local s = snapshot({
+		fluids = { { name = IRON, amount = 700 } }, casters = { basinIdle, tableIdle },
+		stored = { { fluid = IRON, amount = 300 } },
+	})
+	local plan = planner.planTick('auto', s, planContext())
+	expect(kinds(plan) == 'restore:/iron' and plan.actions[1].amount == 110, '700 + 110 from the stock = a block: ' .. kinds(plan))
+
+	s.stored = { { fluid = IRON, amount = 50 } }
+	plan = planner.planTick('auto', s, planContext())
+	expect(kinds(plan) == 'pour:table_0/iron', 'not enough stock for a block: ingots as usual: ' .. kinds(plan))
+
+	s.stored = { { fluid = GOLD, amount = 900 } }
+	plan = planner.planTick('auto', s, planContext())
+	expect(not kinds(plan):find('restore', 1, true), 'gold must not come back while only iron is there')
 end)
 
 test('planner: nothing is cast while the output is full', function()
@@ -1794,6 +1859,36 @@ test('controller: manual cast picks an idle caster of the asked format', functio
 	expect(not ok, 'no idle basin left and only 90 mB: the cast must be refused')
 end)
 
+test('controller: drain empties the Smeltery into the reservoirs then idles; purge goes back to auto', function()
+	FILES = {}
+	local fake = fakeTinkers()
+	fake.smeltery({ { name = IRON, amount = 1500 }, { name = GOLD, amount = 5 } })
+	fake.caster('tconstruct:basin_0', 810)
+	fake.caster('tconstruct:table_9', 10, 'tconstruct:nugget_cast')
+	local d0 = fake.reservoir('miniutilities:drum_0', 1000)
+	local d1 = fake.reservoir('miniutilities:drum_1', 1000)
+	local d2 = fake.reservoir('miniutilities:drum_2', 1000)
+	fake.chest('minecraft:chest_in', 27)
+	fake.chest('minecraft:chest_out', 27)
+	fake.install()
+
+	local c = controllerWith(fake)
+	quiet(function() c:setMode('auto'); c:setMode('purge'); c:tick() end)
+	expect(d0.fluids.fluids[1] and d0.fluids.fluids[1].name == GOLD and d0.fluids.fluids[1].amount == 5, 'the 5 mB gold leftover not purged')
+	quiet(function() c:tick() end)
+	expect(c:getMode() == 'auto', 'purge did not go back to auto: ' .. c:getMode())
+
+	quiet(function() c:setMode('drain'); c:tick() end)
+	local iron = 0
+	for _, d in ipairs({ d1, d2 }) do if d.fluids.fluids[1] and d.fluids.fluids[1].name == IRON then iron = iron + d.fluids.fluids[1].amount end end
+	expect(iron == 1500, 'iron not drained into two drums: ' .. iron)
+	expect(#fake.devices['tconstruct:drain_0'].fluids.fluids == 0, 'the Smeltery is not empty')
+	expect(FILES['/smeltery/reservoirs.db'] and FILES['/smeltery/reservoirs.db']:find('1000', 1, true), 'learnt capacity not saved')
+	quiet(function() c:tick() end)
+	expect(c:getMode() == 'idle', 'drain did not end in idle: ' .. c:getMode())
+	expect(#c:getState().reservoirs == 3, 'reservoirs missing from the state')
+end)
+
 test('controller: missing peripherals become alerts, manual commands need manual mode', function()
 	FILES = {}
 	installPeripherals({})
@@ -1936,7 +2031,7 @@ test('display: overview draws the tank, the fuel and the casting; tabs switch sc
 	touch(runtime, 39, 2) -- "Modes" tab
 	text = screenText(terminal)
 	expect(text:find('Full stop.', 1, true) and text:find('active', 1, true), 'modes tab not shown')
-	touch(runtime, 4, 15) -- Activate under IDLE
+	touch(runtime, 4, 14) -- Activate under IDLE
 	expect(calls[1] == 'setMode idle', 'Activate did not ask for idle: ' .. tostring(calls[1]))
 end)
 

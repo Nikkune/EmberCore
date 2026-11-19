@@ -1,5 +1,6 @@
 import type {ItemSummary}                from '@core/inventory';
 import type {FluidStack}                 from '@core/tank';
+import type {ReservoirView}              from '@modules/fluids/index';
 import type {CasterKind, CasterStatus}   from '@modules/tinkers/index';
 
 /** What the controller and the display say to each other over rednet. */
@@ -10,11 +11,13 @@ export const CONTROLLER_HOSTNAME = 'smeltery-controller';
  * idle:   nothing automatic, the state is kept;
  * auto:   melts the input and casts pure metals, never lets an alloy form;
  * manual: only what the display asks (insert, cast);
- * lock:   no new item goes in, the casts under way finish.
+ * lock:   no new item goes in, the casts under way finish;
+ * drain:  every fluid goes to the reservoirs, then idle;
+ * purge:  leftovers and alloys go to the reservoirs, then back to the previous mode.
  */
-export type Mode = 'idle' | 'auto' | 'manual' | 'lock';
+export type Mode = 'idle' | 'auto' | 'manual' | 'lock' | 'drain' | 'purge';
 
-export const MODES: Mode[] = ['idle', 'auto', 'manual', 'lock'];
+export const MODES: Mode[] = ['idle', 'auto', 'manual', 'lock', 'drain', 'purge'];
 
 export const Messages = {
 	/** Controller → everyone, on every change and at least every few seconds: SmelteryState. */
@@ -96,6 +99,8 @@ export interface SmelteryState {
 	fuel?: FuelView;
 	/** Heat used for the checks: the fuel's, otherwise the configured fallback. */
 	heat?: number;
+	/** External reservoirs, as last read. */
+	reservoirs: ReservoirView[];
 	waiting: WaitingItem[];
 	/** Problems the player must fix (missing peripheral, output full, ...). */
 	alerts: string[];
