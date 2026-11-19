@@ -11,6 +11,8 @@ export interface ItemDetail extends ItemSummary {
 	maxCount?: number;
 	damage?: number;
 	nbt?: string;
+	/** Item tags as a set: tags.get('forge:ingots/iron') === true. */
+	tags?: LuaMap<string, boolean>;
 }
 
 /** Generic CC inventory peripheral: methods are called with "." (@noSelf), as CC expects. */
