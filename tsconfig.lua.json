@@ -29,7 +29,12 @@
 	},
 	"tstl":            {
 		"luaTarget":    "5.1",
-		"luaLibImport": "inline"
+		"luaLibImport": "inline",
+		"luaPlugins":   [
+			{
+				"name": "./scripts/build/projectEntryPlugin.ts"
+			}
+		]
 	},
 	"include":         [
 		"src/**/*.ts",

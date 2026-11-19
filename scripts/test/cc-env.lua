@@ -151,6 +151,17 @@ os.pullEvent = function(filter)
 	return filter
 end
 
+-- parallel: tasks run one after the other (enough for code that only waits on peripherals).
+parallel = {
+	waitForAll = function(...)
+		for _, task in ipairs({ ... }) do task() end
+	end,
+	waitForAny = function(first)
+		first()
+		return 1
+	end,
+}
+
 -- In-memory file system (FILES[path] = content).
 fs = fs or {}
 FILES = {}
