@@ -1837,5 +1837,134 @@ test('controller: the display changes the mode over rednet and gets the new stat
 	expect(refused and not refused.ok and tostring(refused.error):find('unknown mode', 1, true), 'an unknown mode must be refused')
 end)
 
+-- ============================================================
+-- Smeltery display: model helpers and the screen on a fake 79x38 monitor
+-- ============================================================
+
+local displayModel = require('projects.smeltery.display.model')
+
+test('display: casters grouped by cast, auto formats first', function()
+	local casters = {
+		{ name = 'b0', kind = 'basin', status = 'busy', format = 'block', amount = 810 },
+		{ name = 'b1', kind = 'basin', status = 'idle', format = 'block', amount = 0 },
+		{ name = 't0', kind = 'table', status = 'blocked', format = 'ingot', amount = 0 },
+		{ name = 't1', kind = 'table', status = 'idle', format = 'gear', amount = 0 },
+		{ name = 't2', kind = 'table', status = 'idle', amount = 0 },
+	}
+	local groups = displayModel.groupCasters(casters, { 'block', 'ingot', 'nugget' })
+	local names = {}
+	for i, g in ipairs(groups) do names[i] = g.format end
+	expect(table.concat(names, ',') == 'block,ingot,gear,no cast', 'order: ' .. table.concat(names, ','))
+	expect(groups[1].free == 1 and groups[1].casting == 1 and groups[1].auto, 'block counts')
+	expect(groups[2].ready == 1 and not groups[3].auto, 'ingot ready, gear not auto')
+end)
+
+test('display: log lines are shortened by kind', function()
+	local line = displayModel.parseLogLine('20:24:54 inserted 64 minecraft:raw_gold (seen: molten_iron)')
+	expect(line.time == '20:24:54' and line.kind == 'in' and line.text == 'raw_gold 64', 'insert: ' .. line.text)
+	line = displayModel.parseLogLine('20:25:16 poured 810 mB molten_gold into tconstruct:basin_0')
+	expect(line.kind == 'cast' and line.text == 'gold 810 > basin_0', 'cast: ' .. line.text)
+	line = displayModel.parseLogLine('20:26:02 moved 64 occultism:raw_iesnium to sophisticatedstorage:barrel_3 (needs 1090 K)')
+	expect(line.kind == 'reject' and line.text == 'raw_iesnium 64 > needs 1090 K', 'reject: ' .. line.text)
+	expect(displayModel.parseLogLine('20:31:40 FORCED insert 12 mod:raw_tin (bronze)').kind == 'forced', 'forced')
+	expect(displayModel.fluidLabel('tconstruct:molten_rose_gold') == 'rose gold', 'fluid label')
+end)
+
+local function smelteryState(fields)
+	local state = {
+		mode = 'auto', time = 0, melting = {}, waiting = {}, alerts = {}, log = { '20:24:54 inserted 64 minecraft:raw_gold (seen: x)' },
+		fluids = { { name = IRON, amount = 1110 }, { name = GOLD, amount = 2700 } },
+		casters = { { name = 'tconstruct:basin_0', kind = 'basin', status = 'busy', format = 'block', amount = 810 } },
+		inputItems = {}, autoFormats = { 'block', 'ingot', 'nugget' },
+		fuel = { fluid = 'minecraft:lava', amount = 2600, temperature = 1000 }, heat = 1000,
+	}
+	for k, v in pairs(fields or {}) do state[k] = v end
+	return state
+end
+
+local function screenFor(calls)
+	local screenModule = require('projects.smeltery.display.screen')
+	local screen = new(screenModule.SmelteryScreen, {
+		setMode = function(_, mode) calls[#calls + 1] = 'setMode ' .. mode end,
+		insert = function(_, r) calls[#calls + 1] = 'insert ' .. r.slot .. (r.force and ' force' or '') end,
+		cast = function(_, r) calls[#calls + 1] = 'cast ' .. r.fluid .. ' ' .. r.format end,
+	})
+	local runtime, terminal = runtimeFor(screen.root, 79, 38)
+	return screen, runtime, terminal
+end
+
+local function screenText(terminal)
+	local lines = {}
+	for y = 1, 38 do lines[y] = terminal.line(y) end
+	return table.concat(lines, '\n')
+end
+
+local function touch(runtime, x, y)
+	runtime:dispatch({ type = 'mouse_click', x = x, y = y, button = 1 })
+	runtime:render()
+end
+
+test('display: overview draws the tank, the fuel and the casting; tabs switch screens', function()
+	local calls = {}
+	local screen, runtime, terminal = screenFor(calls)
+	runtime:render()
+	expect(screenText(terminal):find('Waiting for the controller', 1, true), 'no waiting message before the first state')
+
+	screen:setState(smelteryState())
+	runtime:invalidate({ reason = 'state', kind = 'full' })
+	runtime:render()
+	local text = screenText(terminal)
+	for _, wanted in ipairs({ 'MOLTEN', 'FUEL', 'CASTING', 'gold', 'iron', '3810', 'lava', '2600 mB', '1000 K', 'block', ' AUTO ' }) do
+		expect(text:find(wanted, 1, true), 'overview misses "' .. wanted .. '"')
+	end
+
+	touch(runtime, 39, 2) -- "Modes" tab
+	text = screenText(terminal)
+	expect(text:find('Full stop.', 1, true) and text:find('active', 1, true), 'modes tab not shown')
+	touch(runtime, 4, 15) -- Activate under IDLE
+	expect(calls[1] == 'setMode idle', 'Activate did not ask for idle: ' .. tostring(calls[1]))
+end)
+
+test('display: Force asks twice before a forced insert, and can be cancelled', function()
+	local calls = {}
+	local screen, runtime, terminal = screenFor(calls)
+	screen:setState(smelteryState({
+		mode = 'manual',
+		inputItems = {
+			{ slot = 3, name = 'minecraft:raw_iron', count = 8, fluid = IRON, status = 'ok' },
+			{ slot = 5, name = 'mod:raw_tin', count = 12, fluid = TIN, status = 'alloy', alloy = 'tconstruct:molten_bronze' },
+		},
+	}))
+	runtime:invalidate({ reason = 'state', kind = 'full' })
+	runtime:render()
+	touch(runtime, 49, 2) -- "Manual" tab
+	expect(screenText(terminal):find('raw_tin', 1, true), 'manual tab does not list the input')
+
+	touch(runtime, 38, 8) -- Insert on the first row
+	expect(calls[1] == 'insert 3', 'insert not asked: ' .. tostring(calls[1]))
+
+	touch(runtime, 38, 11) -- Force on the second row
+	expect(screenText(terminal):find('step 1 of 2', 1, true) and screenText(terminal):find('bronze', 1, true), 'first confirmation not shown')
+	touch(runtime, 38, 8) -- under the dialog: must do nothing
+	expect(#calls == 1, 'a button under the dialog was pressed')
+	touch(runtime, 19, 22) -- Continue
+	expect(screenText(terminal):find('step 2 of 2', 1, true), 'second confirmation not shown')
+	expect(#calls == 1, 'inserted after a single confirmation')
+	touch(runtime, 19, 22) -- Force insert
+	expect(calls[2] == 'insert 5 force', 'forced insert not asked: ' .. tostring(calls[2]))
+
+	touch(runtime, 38, 11)
+	touch(runtime, 48, 22) -- Cancel
+	expect(not screenText(terminal):find('FORCE INSERT', 1, true) and #calls == 2, 'cancel did not close the dialog')
+
+	touch(runtime, 38, 11)
+	touch(runtime, 19, 22)
+	FAKE_CLOCK = FAKE_CLOCK + 11
+	screen:tick()
+	runtime:invalidate({ reason = 'state', kind = 'full' })
+	runtime:render()
+	expect(not screenText(terminal):find('FORCE INSERT', 1, true) and #calls == 2, 'the second step must expire after 10 s')
+end)
+
 realPrint(('\n%d passed, %d failed'):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)
