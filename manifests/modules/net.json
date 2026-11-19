@@ -1,0 +1,18 @@
+{
+  "manifestVersion": 1,
+  "type": "component",
+  "id": "modules/net",
+  "name": "Net",
+  "version": "1.0.1",
+  "files": [
+    "modules/net/channel.lua",
+    "modules/net/index.lua",
+    "modules/net/message.lua"
+  ],
+  "dependencies": [
+    "core/errors",
+    "core/logger",
+    "core/peripheral",
+    "core/result"
+  ]
+}

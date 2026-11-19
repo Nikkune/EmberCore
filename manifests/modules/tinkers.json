@@ -1,0 +1,19 @@
+{
+  "manifestVersion": 1,
+  "type": "component",
+  "id": "modules/tinkers",
+  "name": "Tinkers",
+  "version": "1.0.1",
+  "files": [
+    "modules/tinkers/alloys.lua",
+    "modules/tinkers/caster.lua",
+    "modules/tinkers/fluidValues.lua",
+    "modules/tinkers/index.lua",
+    "modules/tinkers/materials.lua",
+    "modules/tinkers/smeltery.lua"
+  ],
+  "dependencies": [
+    "core/inventory",
+    "core/tank"
+  ]
+}
