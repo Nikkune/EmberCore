@@ -1088,6 +1088,11 @@ test('tinkers: AlloyGuard spots an alloy before it forms', function()
 	expect(formed and formed.result == 'tconstruct:molten_rose_gold', 'rose gold not detected')
 	expect(guard:wouldForm({ 'tconstruct:molten_iron' }, 'tconstruct:molten_gold') == nil, 'iron + gold is no alloy')
 	expect(guard:wouldForm({}, 'tconstruct:molten_copper') == nil, 'a single ingredient is no alloy')
+	-- Copper and gold already there (rose gold forming): iron takes no part in it and must stay allowed.
+	expect(guard:wouldForm({ 'tconstruct:molten_copper', 'tconstruct:molten_gold' }, 'tconstruct:molten_iron') == nil,
+		'iron blamed for an alloy it takes no part in')
+	local more = guard:wouldForm({ 'tconstruct:molten_copper', 'tconstruct:molten_gold' }, 'tconstruct:molten_tin')
+	expect(more and more.result == 'tconstruct:molten_bronze', 'tin next to copper must still be refused (bronze)')
 end)
 
 -- ============================================================

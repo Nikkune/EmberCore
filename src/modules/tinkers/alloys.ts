@@ -15,14 +15,15 @@ export class AlloyGuard {
 
 	/**
 	 * The recipe that would form if `adding` joined the fluids already there (in the Smeltery or still
-	 * melting), or undefined when adding it is safe.
+	 * melting), or undefined when adding it is safe. Only recipes `adding` is an ingredient of count: an
+	 * alloy the fluids already there make on their own is not caused by it (iron next to copper and gold).
 	 */
 	public wouldForm(present: string[], adding: string): AlloyRecipe | undefined {
 		const fluids = new Set<string>(present);
 		fluids.add(adding);
 
 		for (const recipe of this.recipes) {
-			if (recipe.ingredients.length === 0) continue;
+			if (recipe.ingredients.length === 0 || !recipe.ingredients.includes(adding)) continue;
 
 			let complete = true;
 			for (const ingredient of recipe.ingredients) {
