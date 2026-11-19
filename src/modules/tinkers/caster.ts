@@ -2,7 +2,7 @@ import {Inventory}                 from '@core/inventory';
 import type {ItemSummary}          from '@core/inventory';
 import {Tank}                      from '@core/tank';
 
-import {DEFAULT_FORMAT_AMOUNTS}    from './fluidValues';
+import {CastAmounts}               from './fluidValues';
 import type {CastFormat}           from './fluidValues';
 import type {Smeltery}             from './smeltery';
 
@@ -51,14 +51,14 @@ export class Caster {
 		public readonly kind: CasterKind,
 		private readonly tank: Tank,
 		private readonly inventory: Inventory,
-		private readonly formatAmounts: Readonly<Record<CastFormat, number>> = DEFAULT_FORMAT_AMOUNTS,
+		private readonly amounts: CastAmounts = new CastAmounts(),
 	) {
 	}
 
 	/** Kind from the peripheral name ('tconstruct:table_0', 'tconstruct:basin_0'). */
-	public static fromName(name: string, formatAmounts?: Readonly<Record<CastFormat, number>>): Caster {
+	public static fromName(name: string, amounts?: CastAmounts): Caster {
 		const kind: CasterKind = name.includes('basin') ? 'basin' : 'table';
-		return new Caster(name, kind, Tank.fromName(name), Inventory.fromName(name), formatAmounts);
+		return new Caster(name, kind, Tank.fromName(name), Inventory.fromName(name), amounts);
 	}
 
 	public read(): CasterState {
@@ -83,9 +83,9 @@ export class Caster {
 		return state;
 	}
 
-	/** Fluid one casting needs, or undefined when the format is unknown. */
-	public amountFor(format: CastFormat | undefined): number | undefined {
-		return format === undefined ? undefined : this.formatAmounts[format];
+	/** Fluid one casting of `fluid` needs in this format, or undefined when it is unknown. */
+	public amountFor(format: CastFormat | undefined, fluid?: string): number | undefined {
+		return this.amounts.get(format, fluid);
 	}
 
 	/**
@@ -95,7 +95,7 @@ export class Caster {
 	 */
 	public pour(smeltery: Smeltery, fluidName: string): number {
 		const state  = this.read();
-		const amount = this.amountFor(state.format);
+		const amount = this.amountFor(state.format, fluidName);
 
 		if (state.status !== 'idle' || amount === undefined) return 0;
 		if (smeltery.amountOf(fluidName) < amount) return 0;

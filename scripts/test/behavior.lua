@@ -976,6 +976,32 @@ test('tinkers: a caster pours exactly one casting, never a partial one', functio
 	expect(tinkers.Caster:fromName('tconstruct:table_1'):pour(smeltery, 'tconstruct:molten_iron') == 0, 'poured into a table without a cast')
 end)
 
+test('tinkers: cast amounts depend on the format, and on the fluid when it differs', function()
+	local amounts = new(tinkers.CastAmounts, {
+		{ format = 'block', amount = 810 },
+		{ format = 'block', amount = 1000, fluid = 'tconstruct:molten_glass' },
+		{ format = 'gear', amount = 360 },
+	})
+	expect(amounts:get('block', 'tconstruct:molten_iron') == 810, 'format amount')
+	expect(amounts:get('block', 'tconstruct:molten_glass') == 1000, 'fluid exception')
+	expect(amounts:get('block') == 810, 'no fluid given')
+	expect(amounts:get('gear', 'tconstruct:molten_glass') == 360, 'an exception of another format leaked')
+	expect(amounts:get('rod', 'tconstruct:molten_iron') == nil and amounts:get(nil) == nil, 'unknown format must give nil')
+
+	local net = fakeTinkers()
+	net.smeltery({ { name = 'tconstruct:molten_iron', amount = 500 }, { name = 'tconstruct:molten_glass', amount = 1000 } })
+	local tableDevice = net.caster('tconstruct:table_0', 360, 'tconstruct:gear_cast')
+	net.caster('tconstruct:basin_0', 1000)
+	net.install()
+	local smeltery = tinkers.Smeltery:fromNames('tconstruct:drain_0', 'tconstruct:chute_0')
+	expect(tinkers.Caster:fromName('tconstruct:table_0'):pour(smeltery, 'tconstruct:molten_iron') == 0,
+		'the default amounts know no gear: nothing must be poured')
+	expect(tinkers.Caster:fromName('tconstruct:table_0', amounts):pour(smeltery, 'tconstruct:molten_iron') == 360, 'gear not poured')
+	expect(tableDevice.fluids.fluids[1].amount == 360, 'wrong gear amount')
+	expect(tinkers.Caster:fromName('tconstruct:basin_0', amounts):pour(smeltery, 'tconstruct:molten_glass') == 1000,
+		'a glass block takes 1000 mB, not 810')
+end)
+
 test('tinkers: collect moves the result to the output, Smeltery insert and melting', function()
 	local net = fakeTinkers()
 	net.smeltery({})
@@ -1241,6 +1267,11 @@ test('smeltery: the default catalogue is written once, then read from its file',
 	local bronze = guard:wouldForm({ 'tconstruct:molten_tin' }, 'tconstruct:molten_copper')
 	expect(bronze and bronze.result == 'tconstruct:molten_bronze', 'bronze missing from the default catalogue')
 	expect(guard:wouldForm({ 'tconstruct:molten_iron' }, 'tconstruct:molten_gold') == nil, 'iron + gold must stay allowed')
+
+	local amounts = catalogue.castAmountsOf(c)
+	expect(amounts:get('gear', 'tconstruct:molten_iron') == 360, 'gear amount (360 mB, checked in game)')
+	expect(amounts:get('block', 'tconstruct:molten_diamond') == 900, 'diamond block amount')
+	expect(amounts:get('pick_head', 'tconstruct:molten_iron') == 180, 'pick head amount')
 
 	local map = catalogue.materialMapOf(c)
 	expect(map:fluidOf({ name = 'x:duralumin_ingot', tags = { ['forge:ingots/duralumin'] = true } }) == 'tinkers_reforged:molten_duralumin',
