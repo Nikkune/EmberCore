@@ -16,6 +16,10 @@
 --   smeltery-probe watch <drain> <chute> [seconds]
 --                                  every second for [seconds] (default 30): the drain fluids and what the
 --                                  chute lists (items melting), to see what CC can tell while items melt
+--   smeltery-probe rednet <drain> [seconds]
+--                                  calls the drain non-stop for [seconds] (default 25) and counts the
+--                                  'probe' rednet messages received: by this loop itself, and by a second
+--                                  coroutine that only listens (run probe-ping on the other computer)
 --   smeltery-probe cast <drain> <caster> [fluid] [mB] [output]
 --                                  Q2: can we cast with pushFluid alone, without a faucet?
 --                                  pushes up to [mB] (default 810) of [fluid] (default: the first fluid
@@ -425,6 +429,39 @@ local ok, err = pcall(function()
 			end
 		end
 		header('Candidates tested: ' .. tested)
+	elseif mode == 'rednet' then
+		header('Smeltery probe: rednet (' .. os.date() .. ')')
+		local drain = need(args[2] or '?')
+		if not drain then log('usage: smeltery-probe rednet <drain> [seconds]') return end
+		local seconds = tonumber(args[3]) or 25
+		peripheral.find('modem', function(name, modem) if modem.isWireless() then rednet.open(name) end end)
+		log('computer #' .. os.getComputerID() .. ': start probe-ping on the other computer now')
+
+		local byLoop, byListener, calls = 0, 0, 0
+		local deadline = os.clock() + seconds
+		local function loop()
+			while os.clock() < deadline do
+				drain.tanks()
+				calls = calls + 1
+				-- Take the events already queued, without waiting: a sentinel marks the end.
+				os.queueEvent('probe_sentinel')
+				while true do
+					local event, _, message, protocol = os.pullEvent()
+					if event == 'probe_sentinel' then break end
+					if event == 'rednet_message' and protocol == 'probe' and message == 'ping' then byLoop = byLoop + 1 end
+				end
+			end
+		end
+		local function listener()
+			while true do
+				local _, message, protocol = rednet.receive('probe')
+				if message == 'ping' then byListener = byListener + 1 end
+			end
+		end
+		parallel.waitForAny(loop, listener)
+		log(string.format('%d drain calls in %d s', calls, seconds))
+		log(string.format('pings seen by the loop that calls the drain: %d', byLoop))
+		log(string.format('pings seen by the listening coroutine:      %d', byListener))
 	elseif mode == 'watch' then
 		local drainName, chuteName, seconds = args[2], args[3], tonumber(args[4]) or 30
 		header('Smeltery probe: watch (' .. os.date() .. ')')

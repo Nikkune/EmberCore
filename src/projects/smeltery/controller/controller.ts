@@ -1,24 +1,36 @@
 import {EmberError}                                     from '@core/errors';
 import {Inventory}                                      from '@core/inventory';
+import type {ItemSummary}                               from '@core/inventory';
+import {Parallel}                                       from '@core/parallel';
+import {Tank}                                           from '@core/tank';
 import type {FluidStack}                                from '@core/tank';
 import {Channel}                                        from '@modules/net/index';
 import {Caster, Smeltery}                               from '@modules/tinkers/index';
-import type {AlloyGuard, CastAmounts, MaterialMap}      from '@modules/tinkers/index';
+import type {AlloyGuard, CastAmounts, CasterState, MaterialMap} from '@modules/tinkers/index';
 
 import {alloyGuardOf, castAmountsOf, loadCatalogue, materialMapOf, temperatureMap} from '../shared/catalogue';
 import type {Catalogue}                                 from '../shared/catalogue';
 import {CONTROLLER_HOSTNAME, Messages, MODES, PROTOCOL} from '../shared/protocol';
-import type {CasterView, CastRequest, InsertRequest, InventoryView, Mode, SetModeRequest, SmelteryState, WaitingItem} from '../shared/protocol';
+import type {CasterView, CastRequest, FuelView, InputItemView, InsertRequest, InventoryView, Mode, SetModeRequest, SmelteryState, WaitingItem} from '../shared/protocol';
 
 import {loadControllerConfig, loadMode, saveMode}       from './config';
 import type {ControllerConfig}                          from './config';
 import {discoverNetwork}                                from './discovery';
 import type {Network}                                   from './discovery';
-import {planTick}                                       from './planner';
+import {assessInput, assessItem, planTick}              from './planner';
 import type {Action, InputSlot, Plan, PlanContext, Snapshot} from './planner';
 
 /** Fluid of an item by name, or false when it melts into nothing known (cached: tags do not change). */
 type FluidCache = Map<string, string | false>;
+
+/** What one reading of the network saw, kept to build the state. */
+interface Reading {
+	fluids: FluidStack[];
+	melting: ItemSummary[];
+	casters: CasterView[];
+	input?: InventoryView;
+	output?: InventoryView;
+}
 
 /**
  * The foundry: reads the Smeltery every tick, plans what the mode allows, does it, and keeps the state
@@ -34,13 +46,24 @@ export class Controller {
 	private output?: Inventory | undefined;
 	private heatOutput?: Inventory | undefined;
 	private unknownOutput?: Inventory | undefined;
+	private fuelTank?: Tank | undefined;
 	private readonly fluidCache: FluidCache      = new Map();
 	private readonly logLines: string[]          = [];
 	private readonly materials: MaterialMap;
 	private readonly guard: AlloyGuard;
 	private readonly amounts: CastAmounts;
 	private readonly meltingTemperatures: Map<string, number>;
-	private readonly fuelTemperature: number | undefined;
+	private readonly fuelTemperatures: Map<string, number>;
+	/** Heat of the configured fuel, used when no fuel tank is on the network. */
+	private readonly fallbackHeat: number | undefined;
+	private fuel?: FuelView | undefined;
+	private heat?: number | undefined;
+	private inputItems: InputItemView[]          = [];
+	/** What the last reading saw, for the state: building it reads no peripheral again. */
+	private lastRead?: Reading | undefined;
+	/** Sizes do not change: read once per inventory. */
+	private readonly sizes = new Map<string, number>();
+	private tickWanted = false;
 	private state: SmelteryState;
 	private needsDiscovery                       = true;
 	private logFile?: string | undefined;
@@ -52,7 +75,8 @@ export class Controller {
 		this.amounts   = castAmountsOf(catalogue);
 
 		this.meltingTemperatures = temperatureMap(catalogue.meltingTemperatures);
-		this.fuelTemperature     = temperatureMap(catalogue.fuels).get(config.fuel);
+		this.fuelTemperatures    = temperatureMap(catalogue.fuels);
+		this.fallbackHeat        = this.fuelTemperatures.get(config.fuel);
 		this.mode      = loadMode(modePath);
 		this.state     = this.emptyState();
 	}
@@ -88,24 +112,20 @@ export class Controller {
 		if (this.needsDiscovery) this.connect();
 
 		const alerts = [...this.network.problems];
-		if (this.fuelTemperature === undefined) alerts.push(`unknown fuel '${this.config.fuel}': melting temperatures not checked`);
 		let plan: Plan = {actions: [], waiting: [], alerts: []};
 
 		try {
-			const snapshot = this.read();
+			const pauseInput = this.readFuel(alerts);
+			const snapshot   = this.read();
 
 			if (snapshot !== undefined) {
-				const context: PlanContext = {
-					guard:               this.guard,
-					amounts:             this.amounts,
-					formatPriority:      this.config.formatPriority,
-					meltingTemperature:  (fluid) => this.meltingTemperatures.get(fluid),
-				};
-				if (this.fuelTemperature !== undefined) context.fuelTemperature = this.fuelTemperature;
-				context.reject = {heat: this.heatOutput !== undefined, unknown: this.unknownOutput !== undefined};
+				if (pauseInput !== undefined) snapshot.pauseInput = pauseInput;
 
-				plan = planTick(this.mode, snapshot, context);
+				const context = this.planContext();
+				this.inputItems = assessInput(snapshot, context);
+				plan            = planTick(this.mode, snapshot, context);
 				this.execute(plan);
+				if (plan.actions.length > 0) this.refreshReading();
 			}
 		}
 		catch (error) {
@@ -114,7 +134,8 @@ export class Controller {
 			this.needsDiscovery = true;
 		}
 
-		this.state = this.buildState([...alerts, ...plan.alerts], plan.waiting);
+		this.tickWanted = false;
+		this.state      = this.buildState([...alerts, ...plan.alerts], plan.waiting);
 
 		const alertText = this.state.alerts.join('; ');
 		if (alertText !== this.lastAlerts) {
@@ -123,7 +144,10 @@ export class Controller {
 		}
 	}
 
-	/** Manual mode: sends items of an input slot to the Smeltery, unless they would form an alloy. */
+	/**
+	 * Manual mode: sends the items of an input slot to the Smeltery. Refused when they would form an alloy
+	 * or need more heat, unless `force` (the display asks twice first); never for an item with no fluid.
+	 */
 	public insert(request: InsertRequest): number {
 		this.requireManual();
 		const smeltery = this.smeltery;
@@ -133,58 +157,83 @@ export class Controller {
 		const detail = input.getItem(request.slot);
 		if (detail === undefined) throw new EmberError(`input slot ${request.slot} is empty`, 'SMELTERY_ERROR');
 
-		const fluid = this.fluidOf(detail.name, () => detail);
-		if (fluid === undefined) throw new EmberError(`${detail.name} melts into no known fluid`, 'SMELTERY_ERROR');
+		const item: InputSlot = {slot: request.slot, name: detail.name, count: detail.count};
+		const fluid           = this.fluidOf(detail.name, () => detail);
+		if (fluid !== undefined) item.fluid = fluid;
 
-		const temperature = this.meltingTemperatures.get(fluid);
-		if (temperature !== undefined && this.fuelTemperature !== undefined && temperature > this.fuelTemperature) {
-			throw new EmberError(`${detail.name} needs ${temperature} K, the fuel gives ${this.fuelTemperature} K`, 'SMELTERY_ERROR');
+		const assessment = assessItem(item, this.presentFluids(smeltery), this.planContext());
+		const forced     = request.force === true;
+
+		if (assessment.status === 'unknown') throw new EmberError(`${detail.name} melts into no known fluid`, 'SMELTERY_ERROR');
+		if (assessment.status === 'heat' && !forced) {
+			throw new EmberError(`${detail.name} needs ${assessment.temperature ?? '?'} K, the fuel gives ${this.heat ?? '?'} K`, 'SMELTERY_ERROR');
 		}
-
-		const alloy = this.guard.wouldForm(this.presentFluids(smeltery), fluid);
-		if (alloy !== undefined) throw new EmberError(`${detail.name} would form ${alloy.result}`, 'SMELTERY_ERROR');
+		if (assessment.status === 'alloy' && !forced) throw new EmberError(`${detail.name} would form ${assessment.alloy ?? 'an alloy'}`, 'SMELTERY_ERROR');
 
 		const moved = smeltery.insert(input, request.slot, request.count);
-		this.log(`inserted ${moved} ${detail.name}`);
+		if (forced && assessment.status !== 'ok') {
+			const why = assessment.status === 'alloy' ? Controller.shortName(assessment.alloy ?? 'an alloy') : `needs ${assessment.temperature ?? '?'} K`;
+			this.log(`FORCED insert ${moved} ${detail.name} (${why})`);
+		}
+		else {
+			this.log(`inserted ${moved} ${detail.name}`);
+		}
 		return moved;
 	}
 
-	/** Manual mode: one casting of a fluid into a caster. */
+	/** Manual mode: one casting of a fluid, into the named caster or into any idle caster of a format. */
 	public cast(request: CastRequest): number {
 		this.requireManual();
 		const smeltery = this.smeltery;
-		const caster   = this.casters.find((candidate) => candidate.name === request.caster);
-		if (smeltery === undefined || caster === undefined) throw new EmberError(`unknown caster ${request.caster}`, 'SMELTERY_ERROR');
+		if (smeltery === undefined) throw new EmberError('Smeltery missing', 'SMELTERY_ERROR');
 
-		const moved = caster.pour(smeltery, request.fluid);
-		if (moved === 0) throw new EmberError(`${caster.name} cannot cast ${request.fluid} now (busy, unknown amount or not enough fluid)`, 'SMELTERY_ERROR');
+		const candidates = this.casters.filter((caster) => request.caster !== undefined
+			? caster.name === request.caster
+			: request.format !== undefined && caster.read().format === request.format);
+		if (candidates.length === 0) throw new EmberError(`no caster ${request.caster ?? request.format ?? ''}`, 'SMELTERY_ERROR');
 
-		this.log(`poured ${moved} mB ${Controller.shortName(request.fluid)} into ${caster.name}`);
-		return moved;
+		for (const caster of candidates) {
+			const moved = caster.pour(smeltery, request.fluid);
+
+			if (moved > 0) {
+				this.log(`poured ${moved} mB ${Controller.shortName(request.fluid)} into ${caster.name}`);
+				return moved;
+			}
+		}
+
+		throw new EmberError(`cannot cast ${Controller.shortName(request.fluid)} now (casters busy, or not enough fluid)`, 'SMELTERY_ERROR');
 	}
 
 	/** Answers the display: state, mode changes, manual commands. Each command replies with the new state. */
 	public serve(channel: Channel): void {
 		channel.on(Messages.getState, () => this.state);
 
+		// Each command answers at once with the state as it is, and asks for a tick right after: the
+		// display gets its reply in a fraction of a second, then the broadcast of the new state.
 		channel.on(Messages.setMode, (payload) => {
 			const mode = (payload as SetModeRequest | undefined)?.mode;
 			if (!MODES.includes(mode as Mode)) throw new EmberError(`unknown mode ${tostring(mode)}`, 'SMELTERY_ERROR');
 			this.setMode(mode as Mode);
+			this.tickWanted = true;
 			return this.state;
 		});
 
 		channel.on(Messages.insert, (payload) => {
 			this.insert(payload as InsertRequest);
-			this.tick();
+			this.tickWanted = true;
 			return this.state;
 		});
 
 		channel.on(Messages.cast, (payload) => {
 			this.cast(payload as CastRequest);
-			this.tick();
+			this.tickWanted = true;
 			return this.state;
 		});
+	}
+
+	/** A command changed something: the main loop should tick now rather than wait for its timer. */
+	public wantsTick(): boolean {
+		return this.tickWanted;
 	}
 
 	private connect(): void {
@@ -196,7 +245,8 @@ export class Controller {
 		this.input    = input !== undefined ? Inventory.fromName(input) : undefined;
 		this.output   = output !== undefined ? Inventory.fromName(output) : undefined;
 
-		const {heatOutput, unknownOutput} = this.network;
+		const {heatOutput, unknownOutput, fuelTank} = this.network;
+		this.fuelTank      = fuelTank !== undefined ? Tank.fromName(fuelTank) : undefined;
 		this.heatOutput    = heatOutput !== undefined ? Inventory.fromName(heatOutput) : undefined;
 		this.unknownOutput = unknownOutput !== undefined ? Inventory.fromName(unknownOutput) : undefined;
 		this.casters  = this.network.casters.map((name) => Caster.fromName(name, this.amounts));
@@ -221,12 +271,23 @@ export class Controller {
 
 		const present = this.readPresent(smeltery);
 
+		// Each peripheral call waits a game tick: the casters are read all at once, not one by one.
+		const states: CasterState[] = [];
+		if (this.casters.length > 0) {
+			Parallel.all(...this.casters.map((caster, index) => () => {
+				states[index] = caster.read();
+			}));
+		}
+
+		const outputUsed = this.output !== undefined ? Controller.usedSlots(this.output) : 0;
+		const outputSize = this.output !== undefined ? this.sizeOf(this.output) : 0;
+
 		const snapshot: Snapshot = {
 			fluids:        present.fluids,
 			meltingFluids: present.melting,
-			casters:       this.casters.map((caster) => ({name: caster.name, state: caster.read()})),
+			casters:       this.casters.map((caster, index) => ({name: caster.name, state: states[index]!})),
 			input:         [],
-			outputFree:    this.output?.getFreeSlotCount() ?? 0,
+			outputFree:    outputSize - outputUsed,
 		};
 		if (present.uncertain) snapshot.uncertain = true;
 
@@ -241,7 +302,52 @@ export class Controller {
 			snapshot.input.sort((a, b) => a.slot - b.slot);
 		}
 
+		const reading: Reading = {
+			fluids:  present.fluids,
+			melting: present.items,
+			casters: this.casters.map((caster, index) => Controller.viewOf(caster, states[index]!)),
+		};
+		if (input !== undefined) reading.input = {name: input.name, size: this.sizeOf(input), used: snapshot.input.length};
+		if (this.output !== undefined) reading.output = {name: this.output.name, size: outputSize, used: outputUsed};
+		this.lastRead = reading;
+
 		return snapshot;
+	}
+
+	/**
+	 * After a tick that acted (poured, collected, inserted), reads again what the state shows, all at once:
+	 * the display sees this tick's result, not the reading taken before it.
+	 */
+	private refreshReading(): void {
+		const reading  = this.lastRead;
+		const smeltery = this.smeltery;
+		if (reading === undefined || smeltery === undefined) return;
+
+		const states: CasterState[] = [];
+		const tasks: (() => void)[] = this.casters.map((caster, index) => () => {
+			states[index] = caster.read();
+		});
+		tasks.push(() => {
+			reading.fluids = smeltery.fluids();
+		});
+		tasks.push(() => {
+			reading.melting = smeltery.melting();
+		});
+		if (this.input !== undefined && reading.input !== undefined) {
+			const input = this.input, view = reading.input;
+			tasks.push(() => {
+				view.used = Controller.usedSlots(input);
+			});
+		}
+		if (this.output !== undefined && reading.output !== undefined) {
+			const output = this.output, view = reading.output;
+			tasks.push(() => {
+				view.used = Controller.usedSlots(output);
+			});
+		}
+
+		Parallel.all(...tasks);
+		reading.casters = this.casters.map((caster, index) => Controller.viewOf(caster, states[index]!));
 	}
 
 	private execute(plan: Plan): void {
@@ -335,21 +441,69 @@ export class Controller {
 	 * in, rose gold). The tags of new items are read afterwards; one that melted meanwhile cannot be
 	 * identified, and the reading is then `uncertain`.
 	 */
-	private readPresent(smeltery: Smeltery): {fluids: FluidStack[]; melting: string[]; uncertain: boolean} {
+	private planContext(): PlanContext {
+		const context: PlanContext = {
+			guard:              this.guard,
+			amounts:            this.amounts,
+			formatPriority:     this.config.formatPriority,
+			meltingTemperature: (fluid) => this.meltingTemperatures.get(fluid),
+			reject:             {heat: this.heatOutput !== undefined, unknown: this.unknownOutput !== undefined},
+		};
+		if (this.heat !== undefined) context.fuelTemperature = this.heat;
+		return context;
+	}
+
+	/**
+	 * Reads the fuel tank and sets the heat items are checked against: the fuel's, otherwise the configured
+	 * fuel's. Returns why the input must pause (an empty tank: nothing would melt), or undefined.
+	 */
+	private readFuel(alerts: string[]): string | undefined {
+		this.fuel = undefined;
+		this.heat = this.fallbackHeat;
+
+		if (this.fuelTank === undefined) {
+			if (this.fallbackHeat === undefined) alerts.push(`unknown fuel '${this.config.fuel}': melting temperatures not checked`);
+			return undefined;
+		}
+
+		const [fluid] = this.fuelTank.getFluids();
+		this.fuel     = {amount: fluid?.amount ?? 0};
+
+		if (fluid === undefined) {
+			alerts.push('fuel tank empty: input paused');
+			return 'fuel tank empty: input paused';
+		}
+
+		this.fuel.fluid  = fluid.name;
+		const temperature = this.fuelTemperatures.get(fluid.name);
+
+		if (temperature === undefined) {
+			alerts.push(`unknown fuel '${fluid.name}': assuming ${this.config.fuel}`);
+			return undefined;
+		}
+
+		this.fuel.temperature = temperature;
+		this.heat             = temperature;
+		return undefined;
+	}
+
+	private readPresent(smeltery: Smeltery): {fluids: FluidStack[]; melting: string[]; items: ItemSummary[]; uncertain: boolean} {
 		const items  = smeltery.chute.list();
 		const fluids = smeltery.fluids();
 
-		const melting: string[] = [];
-		let uncertain           = false;
+		const melting: string[]       = [];
+		const summaries: ItemSummary[] = [];
+		let uncertain                 = false;
 
 		for (const [slot, item] of pairs(items)) {
+			summaries.push({name: item.name, count: item.count});
 			const fluid = this.fluidOf(item.name, () => smeltery.chute.getItem(slot));
 
 			if (fluid === undefined && !this.fluidCache.has(item.name)) uncertain = true;
 			else if (fluid !== undefined && !melting.includes(fluid)) melting.push(fluid);
 		}
 
-		return {fluids, melting, uncertain};
+		return {fluids, melting, items: summaries, uncertain};
 	}
 
 	private presentFluids(smeltery: Smeltery): string[] {
@@ -372,32 +526,39 @@ export class Controller {
 			waiting,
 			alerts,
 			log:     [...this.logLines],
+
+			inputItems:  this.inputItems,
+			autoFormats: this.config.formatPriority,
 		};
+		if (this.fuel !== undefined) state.fuel = this.fuel;
+		if (this.heat !== undefined) state.heat = this.heat;
 
-		try {
-			if (this.smeltery !== undefined) {
-				state.fluids  = this.smeltery.fluids();
-				state.melting = this.smeltery.melting();
-			}
-
-			state.casters = this.casters.map((caster) => Controller.viewOf(caster));
-
-			const input  = Controller.inventoryView(this.input);
-			const output = Controller.inventoryView(this.output);
-			if (input !== undefined) state.input = input;
-			if (output !== undefined) state.output = output;
-		}
-		catch (error) {
-			Controller.passTerminate(error);
-			state.alerts.push(`peripheral error: ${Controller.messageOf(error)}`);
-			this.needsDiscovery = true;
+		// From the reading of this tick (taken before its actions): no peripheral is read again.
+		const reading = this.lastRead;
+		if (reading !== undefined) {
+			state.fluids  = reading.fluids;
+			state.melting = reading.melting;
+			state.casters = reading.casters;
+			if (reading.input !== undefined) state.input = reading.input;
+			if (reading.output !== undefined) state.output = reading.output;
 		}
 
 		return state;
 	}
 
 	private emptyState(): SmelteryState {
-		return {mode: this.mode, time: 0, fluids: [], melting: [], casters: [], waiting: [], alerts: [], log: []};
+		return {
+			mode:        this.mode,
+			time:        0,
+			fluids:      [],
+			melting:     [],
+			casters:     [],
+			inputItems:  [],
+			autoFormats: this.config.formatPriority,
+			waiting:     [],
+			alerts:      [],
+			log:         [],
+		};
 	}
 
 	private log(line: string): void {
@@ -416,8 +577,7 @@ export class Controller {
 		while (this.logLines.length > this.config.logSize) this.logLines.shift();
 	}
 
-	private static viewOf(caster: Caster): CasterView {
-		const state         = caster.read();
+	private static viewOf(caster: Caster, state: CasterState): CasterView {
 		const view: CasterView = {name: caster.name, kind: caster.kind, status: state.status, amount: state.amount};
 		if (state.format !== undefined) view.format = state.format;
 		if (state.fluid !== undefined) view.fluid = state.fluid;
@@ -425,10 +585,19 @@ export class Controller {
 		return view;
 	}
 
-	private static inventoryView(inventory: Inventory | undefined): InventoryView | undefined {
-		if (inventory === undefined) return undefined;
-		const size = inventory.size();
-		return {name: inventory.name, size, used: size - inventory.getFreeSlotCount()};
+	private sizeOf(inventory: Inventory): number {
+		let size = this.sizes.get(inventory.name);
+		if (size === undefined) {
+			size = inventory.size();
+			this.sizes.set(inventory.name, size);
+		}
+		return size;
+	}
+
+	private static usedSlots(inventory: Inventory): number {
+		let used = 0;
+		for (const [_slot] of pairs(inventory.list())) used++;
+		return used;
 	}
 
 	private static addWaiting(waiting: WaitingItem[], name: string, count: number): void {
@@ -456,7 +625,17 @@ export class Controller {
 	}
 }
 
-/** Main loop of the foundry computer: ticks on a timer, answers the display between ticks. */
+/** Event queued by the listener to wake the main loop when a message arrived. */
+const WAKE_EVENT = 'smeltery_message';
+
+/**
+ * Main loop of the foundry computer, in two coroutines:
+ * - the listener only receives the display's messages and queues them. It must be separate: every
+ *   peripheral call waits for its own event and CC drops all the others meanwhile, so a loop busy reading
+ *   the Smeltery missed nearly every command (0 of 20 messages in the in-game probe, 20 of 20 here);
+ * - the main loop ticks on its timer, and between two ticks handles the queued messages one by one, so
+ *   a command never runs in the middle of a tick.
+ */
 export function runController(this: void): void {
 	const config     = loadControllerConfig();
 	const controller = new Controller(config, loadCatalogue());
@@ -475,27 +654,47 @@ export function runController(this: void): void {
 
 	controller.serve(channel);
 
-	let lastSent      = '';
-	let lastSentClock = -Infinity;
-	let timer         = os.startTimer(0);
+	const inbox: unknown[][] = [];
 
-	while (true) {
-		const event = [...os.pullEvent()];
-		if (channel.handleEvent(event)) continue;
-		if (event[0] !== 'timer' || event[1] !== timer) continue;
-
-		controller.tick();
-		timer = os.startTimer(config.tickSeconds);
-
-		if (!online) continue;
-
-		// Broadcast on change (the time does not count as a change), and as a heartbeat.
-		const state = controller.getState();
-		const text  = textutils.serialise({...state, time: 0});
-		if (text !== lastSent || os.clock() - lastSentClock >= config.heartbeatSeconds) {
-			channel.broadcast(Messages.state, state);
-			lastSent      = text;
-			lastSentClock = os.clock();
+	const listen = (): void => {
+		while (true) {
+			const event = [...os.pullEvent('rednet_message')];
+			if (event[3] !== PROTOCOL) continue;
+			inbox.push(event);
+			os.queueEvent(WAKE_EVENT);
 		}
-	}
+	};
+
+	const loop = (): void => {
+		let lastSent      = '';
+		let lastSentClock = -Infinity;
+		let timer         = os.startTimer(0);
+
+		while (true) {
+			const event = [...os.pullEvent()];
+
+			// Messages come through the inbox only (this coroutine may have missed some of them).
+			while (inbox.length > 0) channel.handleEvent(inbox.shift()!);
+
+			const timerDue = event[0] === 'timer' && event[1] === timer;
+			if (!timerDue && !controller.wantsTick()) continue;
+
+			if (!timerDue) os.cancelTimer(timer);
+			controller.tick();
+			timer = os.startTimer(config.tickSeconds);
+
+			if (!online) continue;
+
+			// Broadcast on change (the time does not count as a change), and as a heartbeat.
+			const state = controller.getState();
+			const text  = textutils.serialise({...state, time: 0});
+			if (text !== lastSent || os.clock() - lastSentClock >= config.heartbeatSeconds) {
+				channel.broadcast(Messages.state, state);
+				lastSent      = text;
+				lastSentClock = os.clock();
+			}
+		}
+	};
+
+	Parallel.any(loop, listen);
 }

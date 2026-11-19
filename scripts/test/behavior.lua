@@ -903,6 +903,10 @@ local function fakeTinkers()
 		return addDevice(name, { name:match('^(.-)_%d+$'), 'inventory', 'fluid_storage' }, fluids, items)
 	end
 
+	function net.fuelTank(name, fluids)
+		return addDevice(name, { 'tconstruct:tank', 'fluid_storage' }, fluidStore(fluids or {}, 4000))
+	end
+
 	function net.chest(name, size, items)
 		return addDevice(name, { 'minecraft:chest', 'inventory' }, nil, itemStore(size, items))
 	end
@@ -1690,6 +1694,89 @@ test('controller: too hot and unknown items go to their own inventories', functi
 	expect(unknown.items.slots[1] and unknown.items.slots[1].name == 'minecraft:dirt', 'dirt not moved')
 	expect(fake.devices['tconstruct:chute_0'].items.slots[1].name == 'minecraft:raw_iron', 'iron not melted')
 	expect(#c:getState().waiting == 0 and #c:getState().alerts == 0, 'nothing should wait nor alert')
+end)
+
+local function controllerWith(fake, configure)
+	local controllerModule = require('projects.smeltery.controller.controller')
+	local catalogue = require('projects.smeltery.shared.catalogue')
+	local config = require('projects.smeltery.controller.config').defaultControllerConfig()
+	config.input, config.output = 'minecraft:chest_in', 'minecraft:chest_out'
+	if configure then configure(config) end
+	return quiet(function() return new(controllerModule.Controller, config, catalogue.defaultCatalogue()) end)
+end
+
+test('controller: the fuel tank gives the heat; an empty tank pauses the input', function()
+	FILES = {}
+	local fake = fakeTinkers()
+	fake.smeltery({})
+	fake.caster('tconstruct:basin_0', 810)
+	local fuel = fake.fuelTank('tconstruct:seared_fuel_tank_0', { { name = 'tconstruct:blazing_blood', amount = 2000 } })
+	local input = fake.chest('minecraft:chest_in', 27, {
+		[1] = { name = 'occultism:raw_iesnium', count = 8, tags = { ['forge:raw_materials/iesnium'] = true } },
+	})
+	fake.chest('minecraft:chest_out', 27)
+	fake.install()
+
+	local c = controllerWith(fake)
+	quiet(function() c:setMode('auto'); c:tick() end)
+	local state = c:getState()
+	expect(state.fuel and state.fuel.fluid == 'tconstruct:blazing_blood' and state.fuel.temperature == 1500 and state.heat == 1500,
+		'fuel not read from the tank')
+	expect(input.items.slots[1] == nil, 'iesnium (1090 K) must go in with blazing blood (1500 K)')
+
+	fuel.fluids.fluids = {}
+	input.items.slots[2] = { name = 'minecraft:raw_iron', count = 4, tags = { ['forge:raw_materials/iron'] = true } }
+	quiet(function() c:tick() end)
+	expect(input.items.slots[2] and input.items.slots[2].count == 4, 'iron sent while the fuel tank is empty')
+	expect(table.concat(c:getState().alerts, ' '):find('fuel tank empty', 1, true), 'no alert for the empty fuel tank')
+end)
+
+test('controller: manual insert can be forced (alloy, heat) but never for an unknown item', function()
+	FILES = {}
+	local fake = fakeTinkers()
+	fake.smeltery({ { name = COPPER, amount = 900 } })
+	fake.caster('tconstruct:basin_0', 810)
+	local input = fake.chest('minecraft:chest_in', 27, {
+		[1] = { name = 'mod:raw_tin', count = 12, tags = { ['forge:raw_materials/tin'] = true } },
+		[2] = { name = 'minecraft:dirt', count = 5, tags = {} },
+	})
+	fake.chest('minecraft:chest_out', 27)
+	fake.install()
+
+	local c = controllerWith(fake)
+	quiet(function() c:setMode('manual'); c:tick() end)
+	local items = c:getState().inputItems
+	expect(items[1].status == 'alloy' and items[1].alloy == 'tconstruct:molten_bronze' and items[2].status == 'unknown',
+		'input not assessed: ' .. tostring(items[1] and items[1].status))
+
+	local ok, err = pcall(function() quiet(function() c:insert({ slot = 1 }) end) end)
+	expect(not ok and tostring(err.message or err):find('bronze', 1, true), 'alloy insert not refused')
+	local moved = quiet(function() return c:insert({ slot = 1, force = true }) end)
+	expect(moved == 12 and input.items.slots[1] == nil, 'forced insert did not move the tin')
+	quiet(function() c:tick() end) -- serve() ticks after each command
+	expect(table.concat(c:getState().log, ' '):find('FORCED insert 12 mod:raw_tin', 1, true), 'forced insert not logged')
+
+	ok = pcall(function() quiet(function() c:insert({ slot = 2, force = true }) end) end)
+	expect(not ok and input.items.slots[2].count == 5, 'an unknown item must never be inserted, even forced')
+end)
+
+test('controller: manual cast picks an idle caster of the asked format', function()
+	FILES = {}
+	local fake = fakeTinkers()
+	fake.smeltery({ { name = IRON, amount = 900 } })
+	local busy = fake.caster('tconstruct:basin_0', 810)
+	busy.fluids.fluids = { { name = GOLD, amount = 810 } }
+	local free = fake.caster('tconstruct:basin_1', 810)
+	fake.chest('minecraft:chest_in', 27)
+	fake.chest('minecraft:chest_out', 27)
+	fake.install()
+
+	local c = controllerWith(fake)
+	quiet(function() c:setMode('manual'); c:tick() end)
+	expect(quiet(function() return c:cast({ fluid = IRON, format = 'block' }) end) == 810, 'block not cast')
+	expect(free.fluids.fluids[1] and free.fluids.fluids[1].name == IRON, 'the idle basin was not used')
+	local ok = pcall(function() quiet(function() c:cast({ fluid = IRON, format = 'block' }) end) end)
+	expect(not ok, 'no idle basin left and only 90 mB: the cast must be refused')
 end)
 
 test('controller: missing peripherals become alerts, manual commands need manual mode', function()

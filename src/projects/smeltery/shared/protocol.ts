@@ -58,6 +58,27 @@ export interface WaitingItem {
 	temperature?: number;
 }
 
+/** Fuel of the Smeltery, read from a fuel tank on the network. */
+export interface FuelView {
+	/** Undefined when the tank is empty. */
+	fluid?: string;
+	amount: number;
+	/** Heat the fuel gives, from the catalogue; undefined for an unknown fluid. */
+	temperature?: number;
+}
+
+/** An input slot as the Manual tab shows it: what would happen if it went in now. */
+export interface InputItemView {
+	slot: number;
+	name: string;
+	count: number;
+	fluid?: string;
+	/** ok: safe to insert; alloy / heat: refused, can be forced; unknown: no fluid, never inserted. */
+	status: 'ok' | 'alloy' | 'heat' | 'unknown';
+	alloy?: string;
+	temperature?: number;
+}
+
 export interface SmelteryState {
 	mode: Mode;
 	/** os.epoch('utc') of the reading, in ms. */
@@ -68,6 +89,13 @@ export interface SmelteryState {
 	casters: CasterView[];
 	input?: InventoryView;
 	output?: InventoryView;
+	/** Content of the input, judged against what is in the Smeltery now. */
+	inputItems: InputItemView[];
+	/** Formats auto mode casts, biggest first. */
+	autoFormats: string[];
+	fuel?: FuelView;
+	/** Heat used for the checks: the fuel's, otherwise the configured fallback. */
+	heat?: number;
 	waiting: WaitingItem[];
 	/** Problems the player must fix (missing peripheral, output full, ...). */
 	alerts: string[];
@@ -83,9 +111,13 @@ export interface InsertRequest {
 	/** Slot of the input inventory. */
 	slot: number;
 	count?: number;
+	/** Skips the alloy and heat checks (the display asks twice first). Unknown items are never inserted. */
+	force?: boolean;
 }
 
+/** One casting of `fluid`: into `caster`, or into any idle caster of `format`. */
 export interface CastRequest {
-	caster: string;
 	fluid: string;
+	caster?: string;
+	format?: string;
 }

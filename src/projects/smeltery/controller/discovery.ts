@@ -10,6 +10,7 @@ export interface Network {
 	output?: string;
 	heatOutput?: string;
 	unknownOutput?: string;
+	fuelTank?: string;
 	/** What is missing or wrong, for the alerts. */
 	problems: string[];
 }
@@ -51,6 +52,17 @@ function pickInventory(this: void, configured: string, label: string, problems: 
 	return configured;
 }
 
+/** A TConstruct tank or gauge (any fluid storage of tconstruct that is not a drain, table or basin). */
+function findFuelTank(this: void): string | undefined {
+	for (const name of namesOfType('fluid_storage')) {
+		if (!name.startsWith('tconstruct:')) continue;
+		if (name.includes('drain') || name.includes('table') || name.includes('basin')) continue;
+		if (name.includes('tank') || name.includes('gauge')) return name;
+	}
+
+	return undefined;
+}
+
 /** Finds the Smeltery peripherals: configured names first, otherwise the first (or every) one of the right type. */
 export function discoverNetwork(this: void, config: ControllerConfig): Network {
 	const problems: string[] = [];
@@ -89,5 +101,11 @@ export function discoverNetwork(this: void, config: ControllerConfig): Network {
 	}
 
 	if (network.casters.length === 0) problems.push('no casting table nor basin found on the network');
+
+	// Optional: without a fuel tank, the configured fuel is assumed.
+	const fuelTank = config.fuelTank !== '' ? (peripheral.isPresent(config.fuelTank) ? config.fuelTank : undefined) : findFuelTank();
+	if (config.fuelTank !== '' && fuelTank === undefined) problems.push(`fuel tank '${config.fuelTank}' not found on the network`);
+	if (fuelTank !== undefined) network.fuelTank = fuelTank;
+
 	return network;
 }

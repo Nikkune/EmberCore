@@ -22,7 +22,12 @@ export interface ControllerConfig {
 	chute: string;
 	/** Casting tables and basins; empty: every one on the network. */
 	casters: string[];
-	/** Fluid burning in the Smeltery (its tanks are not on the network): items too hot for it wait. */
+	/**
+	 * A fuel tank of the Smeltery (a seared tank or gauge with a wired modem); empty: the first one found.
+	 * Its fluid gives the heat items are checked against.
+	 */
+	fuelTank: string;
+	/** Fuel assumed when no fuel tank is on the network: items too hot for it wait. */
 	fuel: string;
 	/** Formats auto mode casts, first preferred; casters with another cast are left to the other modes. */
 	formatPriority: string[];
@@ -43,6 +48,7 @@ export function defaultControllerConfig(this: void): ControllerConfig {
 		drain:            '',
 		chute:            '',
 		casters:          [],
+		fuelTank:         '',
 		fuel:             'minecraft:lava',
 		formatPriority:   ['block', 'ingot', 'nugget'],
 		tickSeconds:      1,

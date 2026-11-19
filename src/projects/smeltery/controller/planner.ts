@@ -1,7 +1,7 @@
 import type {FluidStack}                          from '@core/tank';
 import type {AlloyGuard, CastAmounts, CasterState} from '@modules/tinkers/index';
 
-import type {Mode, WaitingItem}                    from '../shared/protocol';
+import type {InputItemView, Mode, WaitingItem}     from '../shared/protocol';
 
 export interface InputSlot {
 	slot: number;
@@ -23,6 +23,8 @@ export interface Snapshot {
 	outputFree: number;
 	/** An item melting could not be identified: nothing goes in this tick, it might alloy. */
 	uncertain?: boolean;
+	/** Why nothing may go in this tick (the alert is raised by the caller), e.g. an empty fuel tank. */
+	pauseInput?: string;
 }
 
 export type Action =
@@ -107,6 +109,42 @@ function wait(this: void, plan: Plan, item: InputSlot, reason: WaitingItem['reas
 	plan.waiting.push(waiting);
 }
 
+export interface Assessment {
+	status: InputItemView['status'];
+	alloy?: string;
+	temperature?: number;
+}
+
+/** What would happen if `item` went into a Smeltery holding `present`: the checks in their order. */
+export function assessItem(this: void, item: InputSlot, present: string[], context: PlanContext): Assessment {
+	if (item.fluid === undefined) return {status: 'unknown'};
+
+	const temperature = context.meltingTemperature(item.fluid);
+	if (temperature !== undefined && context.fuelTemperature !== undefined && temperature > context.fuelTemperature) {
+		return {status: 'heat', temperature};
+	}
+
+	const alloy = context.guard.wouldForm(present, item.fluid);
+	if (alloy !== undefined) return {status: 'alloy', alloy: alloy.result};
+
+	return {status: 'ok'};
+}
+
+/** Every input slot judged on its own against the Smeltery as it is (what the Manual tab shows). */
+export function assessInput(this: void, snapshot: Snapshot, context: PlanContext): InputItemView[] {
+	const present: string[] = [...snapshot.meltingFluids];
+	for (const fluid of snapshot.fluids) present.push(fluid.name);
+
+	return snapshot.input.map((item) => {
+		const assessment = assessItem(item, present, context);
+		const view: InputItemView = {slot: item.slot, name: item.name, count: item.count, status: assessment.status};
+		if (item.fluid !== undefined) view.fluid = item.fluid;
+		if (assessment.alloy !== undefined) view.alloy = assessment.alloy;
+		if (assessment.temperature !== undefined) view.temperature = assessment.temperature;
+		return view;
+	});
+}
+
 /**
  * Sends the input to the Smeltery, item by item, unless its fluid is unknown, it needs more heat than the
  * fuel gives (it would sit in the Smeltery unmelted), or it would form an alloy with what is there, still
@@ -117,33 +155,30 @@ function insertAll(this: void, snapshot: Snapshot, context: PlanContext, plan: P
 	for (const fluid of snapshot.fluids) present.push(fluid.name);
 
 	for (const item of snapshot.input) {
-		if (item.fluid === undefined) {
-			if (context.reject?.unknown === true) plan.actions.push({kind: 'reject', slot: item.slot, name: item.name, count: item.count, reason: 'unknown'});
-			else wait(plan, item, 'unknown');
-			continue;
+		const assessment = assessItem(item, present, context);
+
+		switch (assessment.status) {
+			case 'unknown':
+				if (context.reject?.unknown === true) plan.actions.push({kind: 'reject', slot: item.slot, name: item.name, count: item.count, reason: 'unknown'});
+				else wait(plan, item, 'unknown');
+				break;
+			case 'heat':
+				if (context.reject?.heat === true) {
+					const reject: Action = {kind: 'reject', slot: item.slot, name: item.name, count: item.count, reason: 'heat'};
+					if (assessment.temperature !== undefined) reject.temperature = assessment.temperature;
+					plan.actions.push(reject);
+				}
+				else {
+					wait(plan, item, 'heat', assessment.temperature !== undefined ? {temperature: assessment.temperature} : {});
+				}
+				break;
+			case 'alloy':
+				wait(plan, item, 'alloy', assessment.alloy !== undefined ? {alloy: assessment.alloy} : {});
+				break;
+			default:
+				plan.actions.push({kind: 'insert', slot: item.slot, name: item.name, count: item.count, fluid: item.fluid!, seen: [...present]});
+				present.push(item.fluid!);
 		}
-
-		const temperature = context.meltingTemperature(item.fluid);
-
-		if (temperature !== undefined && context.fuelTemperature !== undefined && temperature > context.fuelTemperature) {
-			if (context.reject?.heat === true) {
-				plan.actions.push({kind: 'reject', slot: item.slot, name: item.name, count: item.count, reason: 'heat', temperature});
-			}
-			else {
-				wait(plan, item, 'heat', {temperature});
-			}
-			continue;
-		}
-
-		const alloy = context.guard.wouldForm(present, item.fluid);
-
-		if (alloy !== undefined) {
-			wait(plan, item, 'alloy', {alloy: alloy.result});
-			continue;
-		}
-
-		plan.actions.push({kind: 'insert', slot: item.slot, name: item.name, count: item.count, fluid: item.fluid, seen: [...present]});
-		present.push(item.fluid);
 	}
 }
 
@@ -164,6 +199,8 @@ export function planTick(this: void, mode: Mode, snapshot: Snapshot, context: Pl
 
 	pourAll(snapshot, context, plan);
 	if (mode === 'lock') return plan;
+
+	if (snapshot.pauseInput !== undefined) return plan;
 
 	if (snapshot.uncertain === true) {
 		plan.alerts.push('an item melting cannot be identified: input paused for this tick');
