@@ -790,5 +790,256 @@ test('a redrawn region is cleared first (no leftovers)', function()
 	expect(terminal.cell(5, 2)[3] == palette.backgroundColor, 'region not cleared with the theme background')
 end)
 
+-- ============================================================
+-- Tinkers module: Smeltery, casters, materials, alloy guard
+-- ============================================================
+
+local tinkers = require('modules.tinkers.index')
+
+-- Fake Tinkers network. Fluid storages hold { {name, amount}, ... } (bottom first) and move fluid
+-- with pushFluid like CC does; a caster takes at most one casting (its capacity) and only when its
+-- output slot is empty; cool(caster) turns its fluid into the finished item.
+local function fakeTinkers()
+	local devices = {}
+	local net = { devices = devices }
+
+	local function fluidStore(fluids, capacity)
+		local store = { fluids = fluids or {}, capacity = capacity or math.huge }
+		function store.total()
+			local total = 0
+			for _, f in ipairs(store.fluids) do total = total + f.amount end
+			return total
+		end
+		function store.take(limit, name)
+			for i, f in ipairs(store.fluids) do
+				if name == nil or f.name == name then
+					local n = math.min(limit, f.amount)
+					f.amount = f.amount - n
+					if f.amount == 0 then table.remove(store.fluids, i) end
+					return f.name, n
+				end
+			end
+			return nil, 0
+		end
+		function store.give(name, n)
+			if store.accepts and not store.accepts(name) then return 0 end
+			n = math.min(n, store.capacity - store.total())
+			if n <= 0 then return 0 end
+			for _, f in ipairs(store.fluids) do
+				if f.name == name then f.amount = f.amount + n return n end
+			end
+			if store.single and #store.fluids > 0 then return 0 end
+			store.fluids[#store.fluids + 1] = { name = name, amount = n }
+			return n
+		end
+		return store
+	end
+
+	local function itemStore(size, items)
+		local store = { slots = items or {}, size = size }
+		function store.give(item, toSlot)
+			local slots = toSlot and { toSlot } or {}
+			if not toSlot then for s = 1, size do slots[#slots + 1] = s end end
+			for _, s in ipairs(slots) do
+				local here = store.slots[s]
+				if here == nil then store.slots[s] = { name = item.name, count = item.count } return item.count end
+				if here.name == item.name then here.count = here.count + item.count return item.count end
+			end
+			return 0
+		end
+		return store
+	end
+
+	local function addDevice(name, types, fluids, items)
+		local object = {}
+		if fluids then
+			object.tanks = function()
+				local t = {}
+				for i, f in ipairs(fluids.fluids) do t[i] = { name = f.name, amount = f.amount } end
+				return t
+			end
+			object.pushFluid = function(to, limit, fluidName)
+				local target = devices[to]
+				if not target or not target.fluids then error("Target '" .. tostring(to) .. "' is not a tank", 2) end
+				local name, n = fluids.take(limit or math.huge, fluidName)
+				if n == 0 then return 0 end
+				local accepted = target.fluids.give(name, n)
+				if accepted < n then fluids.give(name, n - accepted) end
+				return accepted
+			end
+		end
+		if items then
+			object.size = function() return items.size end
+			object.list = function()
+				local t = {}
+				for slot, item in pairs(items.slots) do t[slot] = { name = item.name, count = item.count } end
+				return t
+			end
+			object.getItemDetail = function(slot) return items.slots[slot] end
+			object.pushItems = function(to, fromSlot, limit, toSlot)
+				local target = devices[to]
+				local item = items.slots[fromSlot]
+				if not item then return 0 end
+				local moved = target.items.give({ name = item.name, count = math.min(limit or item.count, item.count) }, toSlot)
+				item.count = item.count - moved
+				if item.count == 0 then items.slots[fromSlot] = nil end
+				return moved
+			end
+		end
+		devices[name] = { types = types, object = object, fluids = fluids, items = items }
+		return devices[name]
+	end
+
+	function net.smeltery(fluids)
+		addDevice('tconstruct:drain_0', { 'tconstruct:drain', 'fluid_storage' }, fluidStore(fluids))
+		addDevice('tconstruct:chute_0', { 'tconstruct:chute', 'inventory' }, nil, itemStore(343))
+	end
+
+	function net.caster(name, capacity, castItem)
+		local fluids = fluidStore({}, capacity)
+		fluids.single = true
+		local items = itemStore(2, castItem and { [1] = { name = castItem, count = 1 } } or {})
+		fluids.accepts = function() return items.slots[2] == nil end
+		return addDevice(name, { name:match('^(.-)_%d+$'), 'inventory', 'fluid_storage' }, fluids, items)
+	end
+
+	function net.chest(name, size, items)
+		return addDevice(name, { 'minecraft:chest', 'inventory' }, nil, itemStore(size, items))
+	end
+
+	function net.cool(device, itemName)
+		local f = device.fluids.fluids[1]
+		device.fluids.fluids = {}
+		device.items.slots[2] = { name = itemName or (f.name:gsub('molten_', '') .. '_block'), count = 1 }
+	end
+
+	function net.install() installPeripherals(devices) end
+	return net
+end
+
+test('tinkers: formatOfCast reads gold, sand and red sand casts', function()
+	expect(tinkers.formatOfCast('tconstruct:ingot_cast') == 'ingot', 'ingot_cast')
+	expect(tinkers.formatOfCast('tconstruct:nugget_sand_cast') == 'nugget', 'nugget_sand_cast')
+	expect(tinkers.formatOfCast('tconstruct:gem_red_sand_cast') == 'gem', 'gem_red_sand_cast')
+	expect(tinkers.formatOfCast('minecraft:iron_ingot') == nil, 'an item that is not a cast')
+end)
+
+test('tinkers: caster state (idle, busy, blocked) and format', function()
+	local net = fakeTinkers()
+	local basin = net.caster('tconstruct:basin_0', 810)
+	net.caster('tconstruct:table_0', 90, 'tconstruct:ingot_cast')
+	net.caster('tconstruct:table_1', 90)
+	net.install()
+
+	local b = tinkers.Caster:fromName('tconstruct:basin_0')
+	local state = b:read()
+	expect(b.kind == 'basin' and state.status == 'idle' and state.format == 'block', 'empty basin: ' .. state.status .. ' ' .. tostring(state.format))
+
+	local t = tinkers.Caster:fromName('tconstruct:table_0')
+	state = t:read()
+	expect(t.kind == 'table' and state.format == 'ingot' and state.cast == 'tconstruct:ingot_cast', 'table with an ingot cast')
+
+	state = tinkers.Caster:fromName('tconstruct:table_1'):read()
+	expect(state.format == nil, 'a table without a cast has no format')
+
+	basin.fluids.fluids = { { name = 'tconstruct:molten_iron', amount = 300 } }
+	state = b:read()
+	expect(state.status == 'busy' and state.fluid == 'tconstruct:molten_iron' and state.amount == 300, 'basin holding fluid')
+
+	net.cool(basin)
+	state = b:read()
+	expect(state.status == 'blocked' and state.output.name == 'tconstruct:iron_block', 'basin with a result waiting')
+end)
+
+test('tinkers: a caster pours exactly one casting, never a partial one', function()
+	local net = fakeTinkers()
+	net.smeltery({ { name = 'tconstruct:molten_iron', amount = 1000 }, { name = 'tconstruct:molten_gold', amount = 500 } })
+	local basin = net.caster('tconstruct:basin_0', 810)
+	local tableDevice = net.caster('tconstruct:table_0', 90, 'tconstruct:ingot_cast')
+	net.caster('tconstruct:table_1', 90)
+	net.install()
+
+	local smeltery = tinkers.Smeltery:fromNames('tconstruct:drain_0', 'tconstruct:chute_0')
+	local b = tinkers.Caster:fromName('tconstruct:basin_0')
+	local t = tinkers.Caster:fromName('tconstruct:table_0')
+
+	expect(b:pour(smeltery, 'tconstruct:molten_gold') == 0, 'poured a block from 500 mB of gold')
+	expect(#basin.fluids.fluids == 0, 'basin received a partial pour')
+
+	expect(b:pour(smeltery, 'tconstruct:molten_iron') == 810, 'block of iron not poured')
+	expect(smeltery:amountOf('tconstruct:molten_iron') == 190, 'iron left: ' .. smeltery:amountOf('tconstruct:molten_iron'))
+	expect(b:pour(smeltery, 'tconstruct:molten_iron') == 0, 'poured into a busy basin')
+
+	expect(t:pour(smeltery, 'tconstruct:molten_gold') == 90, 'ingot of gold (not the bottom fluid) not poured')
+	expect(tableDevice.fluids.fluids[1].name == 'tconstruct:molten_gold', 'the table got the wrong fluid')
+
+	expect(tinkers.Caster:fromName('tconstruct:table_1'):pour(smeltery, 'tconstruct:molten_iron') == 0, 'poured into a table without a cast')
+end)
+
+test('tinkers: collect moves the result to the output, Smeltery insert and melting', function()
+	local net = fakeTinkers()
+	net.smeltery({})
+	local basin = net.caster('tconstruct:basin_0', 810)
+	local output = net.chest('minecraft:chest_out', 27)
+	local input = net.chest('minecraft:chest_in', 27, { [3] = { name = 'minecraft:raw_iron', count = 5 } })
+	net.install()
+
+	local Inventory = require('core.inventory').Inventory
+	local b = tinkers.Caster:fromName('tconstruct:basin_0')
+	expect(b:collect(Inventory:fromName('minecraft:chest_out')) == 0, 'collected from an empty basin')
+
+	basin.fluids.fluids = { { name = 'tconstruct:molten_iron', amount = 810 } }
+	net.cool(basin)
+	expect(b:collect(Inventory:fromName('minecraft:chest_out')) == 1, 'result not collected')
+	expect(output.items.slots[1].name == 'tconstruct:iron_block' and b:read().status == 'idle', 'basin not idle after collecting')
+
+	local smeltery = tinkers.Smeltery:fromNames('tconstruct:drain_0', 'tconstruct:chute_0')
+	expect(smeltery:insert(Inventory:fromName('minecraft:chest_in'), 3, 2) == 2, 'items not inserted')
+	local melting = smeltery:melting()
+	expect(#melting == 1 and melting[1].name == 'minecraft:raw_iron' and melting[1].count == 2, 'melting items not read')
+	expect(input.items.slots[3].count == 3, 'input not decremented')
+end)
+
+test('tinkers: MaterialMap finds the fluid from tags, refuses doubtful items', function()
+	local map = new(tinkers.MaterialMap, {
+		overrides = { { item = 'minecraft:obsidian', fluid = 'tconstruct:molten_obsidian' } },
+	})
+	local function fluidOf(name, tags)
+		local set = {}
+		for _, tag in ipairs(tags) do set[tag] = true end
+		return map:fluidOf({ name = name, tags = set })
+	end
+
+	expect(fluidOf('minecraft:iron_ingot', { 'forge:ingots/iron', 'forge:ingots', 'minecraft:beacon_payment_items' })
+		== 'tconstruct:molten_iron', 'iron ingot')
+	expect(fluidOf('minecraft:raw_gold_block', { 'forge:storage_blocks/raw_gold' }) == 'tconstruct:molten_gold', 'raw gold block')
+	expect(fluidOf('minecraft:deepslate_copper_ore', { 'forge:ores/copper', 'forge:ores_in_ground/deepslate' })
+		== 'tconstruct:molten_copper', 'copper ore')
+	expect(fluidOf('minecraft:obsidian', {}) == 'tconstruct:molten_obsidian', 'override ignored')
+	expect(fluidOf('minecraft:stick', { 'forge:rods/wooden' }) == 'tconstruct:molten_wooden',
+		'without a material list, a rod tag names its material as is')
+	local strict = new(tinkers.MaterialMap, { materials = { 'iron', 'gold' } })
+	expect(strict:fluidOf({ name = 'minecraft:stick', tags = { ['forge:rods/wooden'] = true } }) == nil,
+		'a material outside the list must give nil')
+	expect(strict:fluidOf({ name = 'minecraft:iron_ingot', tags = { ['forge:ingots/iron'] = true } }) == 'tconstruct:molten_iron',
+		'a listed material')
+	expect(fluidOf('mod:weird', { 'forge:ingots/iron', 'forge:ingots/gold' }) == nil, 'two materials must give nil')
+	expect(fluidOf('mod:nested', { 'forge:ores/iron/deepslate' }) == nil, 'nested tag must give nil')
+	expect(map:fluidOf({ name = 'minecraft:dirt' }) == nil, 'item without tags')
+end)
+
+test('tinkers: AlloyGuard spots an alloy before it forms', function()
+	local guard = new(tinkers.AlloyGuard, {
+		{ result = 'tconstruct:molten_bronze', ingredients = { 'tconstruct:molten_copper', 'tconstruct:molten_tin' } },
+		{ result = 'tconstruct:molten_rose_gold', ingredients = { 'tconstruct:molten_copper', 'tconstruct:molten_gold' } },
+	})
+	local formed = guard:wouldForm({ 'tconstruct:molten_tin', 'tconstruct:molten_iron' }, 'tconstruct:molten_copper')
+	expect(formed and formed.result == 'tconstruct:molten_bronze', 'bronze not detected')
+	formed = guard:wouldForm({ 'tconstruct:molten_copper' }, 'tconstruct:molten_gold')
+	expect(formed and formed.result == 'tconstruct:molten_rose_gold', 'rose gold not detected')
+	expect(guard:wouldForm({ 'tconstruct:molten_iron' }, 'tconstruct:molten_gold') == nil, 'iron + gold is no alloy')
+	expect(guard:wouldForm({}, 'tconstruct:molten_copper') == nil, 'a single ingredient is no alloy')
+end)
+
 realPrint(('\n%d passed, %d failed'):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)
