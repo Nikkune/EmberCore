@@ -226,6 +226,8 @@ export class Channel {
 			if (message.id !== undefined) this.reply(from, message.id, true, result);
 		}
 		catch (error) {
+			// Ctrl+T raises "Terminated" inside the handler: it must stop the program, not become a reply.
+			if (error === 'Terminated') throw error;
 			const text = error instanceof Error ? error.message : tostring(error);
 			log.error('Message handler failed', {type: message.type, from, error: text});
 			if (message.id !== undefined) this.reply(from, message.id, false, undefined, text);
