@@ -6,7 +6,9 @@
 --   embercore list           list available components and what is installed
 --
 -- <id> is a full id ("modules/ui", "core/config") or its last part when unique ("ui", "config").
--- Files are installed at the root of the computer, so require("core.config") works as is.
+-- Files are installed at the root of the computer. A program at the root finds require("core.config")
+-- as is; a project entry (projects/<name>/main.lua) adds the root to package.path on its first line
+-- (added by the build), since CC looks for modules next to the running program.
 -- What is installed is recorded in /.embercore/installed (textutils.serialise format).
 
 local REPOSITORY = "Nikkune/EmberCore"

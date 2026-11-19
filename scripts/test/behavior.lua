@@ -1257,6 +1257,36 @@ test('smeltery: the role comes from the argument, then the saved one, then the p
 	expect(runSmelteryMain('oops'):find('Usage', 1, true), 'a wrong argument must show the usage')
 end)
 
+test('smeltery: main finds core/ and modules/ with the require of CC (program folder only)', function()
+	-- In CC:Tweaked, require looks next to the program and in /rom, not at the root. The build adds the
+	-- root to package.path on the first line of main.lua; here the root is luasDir.
+	local file = assert(io.open(luasDir .. '/projects/smeltery/main.lua'))
+	local source = file:read('*a')
+	file:close()
+	local firstLine = source:match('^[^\n]*')
+	expect(firstLine == 'package.path = "/?.lua;/?/init.lua;" .. package.path', 'first line of main.lua: ' .. firstLine)
+
+	local savedPath, savedLoaded = package.path, {}
+	for name, value in pairs(package.loaded) do
+		if name:match('^core%.') or name:match('^modules%.') or name:match('^projects%.') or name:match('^utils%.') then
+			savedLoaded[name] = value
+			package.loaded[name] = nil
+		end
+	end
+
+	package.path = luasDir .. '/projects/smeltery/?.lua'
+	local chunk = assert((loadstring or load)(source:gsub('"/%?%.lua;/%?/init%.lua;"', '"' .. luasDir .. '/?.lua;"', 1), '=main'))
+	local printed = {}
+	print = function(text) printed[#printed + 1] = tostring(text) end
+	local ok, err = pcall(chunk, 'oops')
+	print = realPrint
+	package.path = savedPath
+	for name, value in pairs(savedLoaded) do package.loaded[name] = value end
+
+	expect(ok, 'main.lua could not load its modules: ' .. tostring(err))
+	expect(table.concat(printed):find('Usage', 1, true), 'main.lua did not run to the end')
+end)
+
 test('smeltery: the default catalogue is written once, then read from its file', function()
 	FILES = {}
 	local catalogue = require('projects.smeltery.shared.catalogue')
