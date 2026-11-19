@@ -85,8 +85,14 @@ dist/          # Generated Lua output
 
 ## 📦 Deployment (In-Game)
 
-The installer is [`installer/embercore.lua`](installer/embercore.lua). Put it on the computer once
-(for example with `pastebin get <code> embercore`), then:
+The installer is [`installer/embercore.lua`](installer/embercore.lua), also on
+[Pastebin](https://pastebin.com/PKV47STh). Put it on the computer once:
+
+```
+pastebin get PKV47STh embercore
+```
+
+then:
 
 ```
 embercore install ui        install a component or project with its dependencies
@@ -99,6 +105,32 @@ An id is a full id (`modules/ui`, `core/config`) or its last part when unique (`
 Files come from the `lua` branch through `raw.githubusercontent.com` and are installed at the root
 of the computer, so `require("core.config")` works as is. Each component is downloaded completely
 before anything is written. What is installed is recorded in `/.embercore/installed`.
+
+The paste is not updated automatically: when `installer/embercore.lua` changes, update it on Pastebin.
+
+### 🔧 Dev mode (any server)
+
+Work in TypeScript on your machine and see every change on a computer of a server you do not own:
+
+```bash
+npm run dev
+```
+
+It compiles continuously (`tstl --watch`), serves `luas/` and `scripts/ingame/`, and opens a public
+tunnel with [`cloudflared`](https://github.com/cloudflare/cloudflared) when it is installed
+(CC:Tweaked refuses local addresses, so the tunnel is needed even in single player). Once the new
+URL answers (it can take a minute), it prints the commands to type in game:
+
+```
+wget <url>/client embercore-dev
+embercore-dev <url> embercore-check ui
+```
+
+`embercore-dev` downloads what changed (only files whose content changed) and restarts the program;
+if the program crashes it waits for the next change. Afterwards `embercore-dev` alone reuses the
+same server and program, and `embercore-dev <program> [args...]` switches program. Ctrl+T quits.
+It only deletes files it downloaded itself. `DEV_PORT` (default: any free port, the tunnel follows it)
+and `DEV_TUNNEL=0` configure `npm run dev`.
 
 ---
 
