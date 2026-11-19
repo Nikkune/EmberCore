@@ -10,15 +10,17 @@ export interface MaterialOverride {
 export interface MaterialMapOptions {
 	/** Tags of the form '<prefix><material>' that name the material of an item. */
 	tagPrefixes?: string[];
-	/** Fluid name built from a material: '%s' is replaced by the material. */
+	/** Fluid name built from a material when no `fluids` list is given: '%s' is replaced by the material. */
 	fluidPattern?: string;
 	/** Checked before the tags: items whose fluid cannot be guessed from their tags. */
 	overrides?: MaterialOverride[];
 	/**
-	 * Only these materials are accepted ('iron', 'gold', ...). Without it, any material named by a tag
-	 * is, so a stick (forge:rods/wooden) would count as 'wooden'.
+	 * The molten fluids that exist ('tconstruct:molten_iron', 'tinkers_reforged:molten_duralumin', ...).
+	 * A material gives the fluid of this list named '<namespace>:molten_<material>', whatever the mod,
+	 * and a material without one gives undefined. Without the list, every material named by a tag goes
+	 * through fluidPattern, so a stick (forge:rods/wooden) would count as 'tconstruct:molten_wooden'.
 	 */
-	materials?: string[];
+	fluids?: string[];
 }
 
 export const DEFAULT_TAG_PREFIXES = [
@@ -43,13 +45,22 @@ export class MaterialMap {
 	private readonly tagPrefixes: string[];
 	private readonly fluidPattern: string;
 	private readonly overrides = new Map<string, string>();
-	private readonly materials?: Set<string>;
+	private readonly fluidsByMaterial?: Map<string, string>;
 
 	public constructor(options: MaterialMapOptions = {}) {
 		this.tagPrefixes  = options.tagPrefixes ?? DEFAULT_TAG_PREFIXES;
 		this.fluidPattern = options.fluidPattern ?? DEFAULT_FLUID_PATTERN;
 
-		if (options.materials !== undefined) this.materials = new Set(options.materials);
+		if (options.fluids !== undefined) {
+			const byMaterial = new Map<string, string>();
+
+			for (const fluid of options.fluids) {
+				const index = fluid.indexOf(':molten_');
+				if (index >= 0) byMaterial.set(fluid.substring(index + ':molten_'.length), fluid);
+			}
+
+			this.fluidsByMaterial = byMaterial;
+		}
 
 		for (const override of options.overrides ?? []) {
 			this.overrides.set(override.item, override.fluid);
@@ -61,7 +72,10 @@ export class MaterialMap {
 		if (override !== undefined) return override;
 
 		const material = this.materialOf(item);
-		return material === undefined ? undefined : this.fluidPattern.replace('%s', material);
+		if (material === undefined) return undefined;
+
+		if (this.fluidsByMaterial !== undefined) return this.fluidsByMaterial.get(material);
+		return this.fluidPattern.replace('%s', material);
 	}
 
 	public materialOf(item: Pick<ItemDetail, 'name' | 'tags'>): string | undefined {
@@ -93,7 +107,7 @@ export class MaterialMap {
 
 			// A nested tag (forge:ores/iron/deepslate) or an empty one names no single material.
 			if (material.length === 0 || material.includes('/')) return undefined;
-			if (this.materials !== undefined && !this.materials.has(material)) return undefined;
+			if (this.fluidsByMaterial !== undefined && !this.fluidsByMaterial.has(material)) return undefined;
 
 			return material;
 		}

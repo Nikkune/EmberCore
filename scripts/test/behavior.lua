@@ -1018,11 +1018,15 @@ test('tinkers: MaterialMap finds the fluid from tags, refuses doubtful items', f
 	expect(fluidOf('minecraft:obsidian', {}) == 'tconstruct:molten_obsidian', 'override ignored')
 	expect(fluidOf('minecraft:stick', { 'forge:rods/wooden' }) == 'tconstruct:molten_wooden',
 		'without a material list, a rod tag names its material as is')
-	local strict = new(tinkers.MaterialMap, { materials = { 'iron', 'gold' } })
+	local strict = new(tinkers.MaterialMap, { fluids = { 'tconstruct:molten_iron', 'tinkers_reforged:molten_duralumin', 'tconstruct:blood' } })
 	expect(strict:fluidOf({ name = 'minecraft:stick', tags = { ['forge:rods/wooden'] = true } }) == nil,
-		'a material outside the list must give nil')
+		'a material without a known fluid must give nil')
 	expect(strict:fluidOf({ name = 'minecraft:iron_ingot', tags = { ['forge:ingots/iron'] = true } }) == 'tconstruct:molten_iron',
-		'a listed material')
+		'a known tconstruct fluid')
+	expect(strict:fluidOf({ name = 'tinkers_reforged:duralumin_ingot', tags = { ['forge:ingots/duralumin'] = true } })
+		== 'tinkers_reforged:molten_duralumin', 'a known fluid of another mod')
+	expect(strict:fluidOf({ name = 'mod:weird', tags = { ['forge:ingots/iron'] = true, ['forge:ingots/wooden'] = true } }) == 'tconstruct:molten_iron',
+		'a tag naming an unknown material does not hide the known one')
 	expect(fluidOf('mod:weird', { 'forge:ingots/iron', 'forge:ingots/gold' }) == nil, 'two materials must give nil')
 	expect(fluidOf('mod:nested', { 'forge:ores/iron/deepslate' }) == nil, 'nested tag must give nil')
 	expect(map:fluidOf({ name = 'minecraft:dirt' }) == nil, 'item without tags')
@@ -1189,6 +1193,66 @@ test('net: peers filter out other computers, broadcasts are never answered', fun
 	expect(sent.to == 'all', 'broadcast not sent to all')
 	server:handleEvent(event)
 	expect(count == 1 and #SENT == 0, 'broadcast not handled, or answered')
+end)
+
+-- ============================================================
+-- Smeltery project: role of the computer, catalogue
+-- ============================================================
+
+-- Runs projects/smeltery/main.lua with arguments; returns what it printed.
+local function runSmelteryMain(...)
+	local printed = {}
+	local chunk = assert(loadfile(luasDir .. '/projects/smeltery/main.lua'))
+	print = function(...)
+		local parts = {}
+		for i = 1, select('#', ...) do parts[i] = tostring(select(i, ...)) end
+		printed[#printed + 1] = table.concat(parts, ' ')
+	end
+	local ok, err = pcall(chunk, ...)
+	print = realPrint
+	if not ok then error(err, 0) end
+	return table.concat(printed, '\n')
+end
+
+test('smeltery: the role comes from the argument, then the saved one, then the peripherals', function()
+	FILES = {}
+	installPeripherals({ ['tconstruct:drain_0'] = { types = { 'tconstruct:drain', 'fluid_storage' }, object = {} } })
+	expect(runSmelteryMain():find('controller', 1, true), 'a computer next to a drain must be the controller')
+
+	installPeripherals({ top = { types = { 'monitor' }, object = {} } })
+	expect(runSmelteryMain():find('controller', 1, true), 'the saved role must win over the peripherals')
+
+	expect(runSmelteryMain('display'):find('display', 1, true), 'the argument must win')
+	expect(runSmelteryMain():find('display', 1, true), 'the role given as argument must be saved')
+
+	FILES = {}
+	installPeripherals({})
+	expect(runSmelteryMain():find('No Smeltery drain nor monitor', 1, true), 'no role without drain nor monitor')
+	expect(runSmelteryMain('oops'):find('Usage', 1, true), 'a wrong argument must show the usage')
+end)
+
+test('smeltery: the default catalogue is written once, then read from its file', function()
+	FILES = {}
+	local catalogue = require('projects.smeltery.shared.catalogue')
+	local c = quiet(function() return catalogue.loadCatalogue() end)
+	expect(FILES['/smeltery/catalogue.db'] ~= nil, 'catalogue file not written')
+
+	local guard = catalogue.alloyGuardOf(c)
+	local bronze = guard:wouldForm({ 'tconstruct:molten_tin' }, 'tconstruct:molten_copper')
+	expect(bronze and bronze.result == 'tconstruct:molten_bronze', 'bronze missing from the default catalogue')
+	expect(guard:wouldForm({ 'tconstruct:molten_iron' }, 'tconstruct:molten_gold') == nil, 'iron + gold must stay allowed')
+
+	local map = catalogue.materialMapOf(c)
+	expect(map:fluidOf({ name = 'x:duralumin_ingot', tags = { ['forge:ingots/duralumin'] = true } }) == 'tinkers_reforged:molten_duralumin',
+		'a Tinkers Reforged metal must map to its own fluid')
+
+	-- A local change in the file survives the next start.
+	local edited = textutils.unserialise(FILES['/smeltery/catalogue.db'])
+	edited.overrides = { { item = 'minecraft:obsidian', fluid = 'tconstruct:molten_obsidian' } }
+	FILES['/smeltery/catalogue.db'] = textutils.serialise(edited)
+	c = quiet(function() return catalogue.loadCatalogue() end)
+	expect(#c.overrides == 1 and catalogue.materialMapOf(c):fluidOf({ name = 'minecraft:obsidian' }) == 'tconstruct:molten_obsidian',
+		'local override lost')
 end)
 
 realPrint(('\n%d passed, %d failed'):format(passed, failed))
