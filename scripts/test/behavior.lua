@@ -1041,5 +1041,155 @@ test('tinkers: AlloyGuard spots an alloy before it forms', function()
 	expect(guard:wouldForm({}, 'tconstruct:molten_copper') == nil, 'a single ingredient is no alloy')
 end)
 
+-- ============================================================
+-- Net module: rednet channel (messages, requests, replies, timeouts)
+-- ============================================================
+
+local net = require('modules.net.index')
+
+-- Fake rednet: every send/broadcast lands in SENT (copied, as rednet serialises messages).
+-- Callbacks get TSTL's implicit self first: function(_, payload, from).
+-- deliver() turns the oldest sent message into the rednet_message event its receiver would see.
+local function deepCopy(value)
+	if type(value) ~= 'table' then return value end
+	local copy = {}
+	for k, v in pairs(value) do copy[k] = deepCopy(v) end
+	return copy
+end
+
+local SENT = {}
+local OPENED = {}
+rednet = {
+	open = function(name) OPENED[#OPENED + 1] = name end,
+	close = function() end,
+	send = function(to, message, protocol)
+		SENT[#SENT + 1] = { to = to, message = deepCopy(message), protocol = protocol }
+		return true
+	end,
+	broadcast = function(message, protocol)
+		SENT[#SENT + 1] = { to = 'all', message = deepCopy(message), protocol = protocol }
+	end,
+	host = function() end,
+	lookup = function() return nil end,
+}
+
+local function deliver(fromId)
+	local sent = table.remove(SENT, 1)
+	expect(sent ~= nil, 'nothing was sent')
+	return { 'rednet_message', fromId, sent.message, sent.protocol }, sent
+end
+
+local function channel(options)
+	options = options or {}
+	options.protocol = options.protocol or 'test/v1'
+	return quiet(function() return new(net.Channel, options) end)
+end
+
+test('net: open picks the wireless modem, fails without any modem', function()
+	local wired = { isWireless = function() return false end }
+	local wireless = { isWireless = function() return true end }
+	installPeripherals({
+		left = { types = { 'modem', 'peripheral_hub' }, object = wired },
+		right = { types = { 'modem' }, object = wireless },
+	})
+	OPENED = {}
+	expect(quiet(function() return channel():open() end) == 'right', 'did not pick the wireless modem')
+
+	installPeripherals({})
+	local ok = pcall(function() quiet(function() channel():open() end) end)
+	expect(not ok, 'open() without a modem must fail')
+end)
+
+test('net: a message reaches its handler, other protocols and foreign messages are left out', function()
+	SENT = {}
+	local a, b = channel(), channel()
+	local got
+	b:on('hello', function(_, payload, from) got = { payload = payload, from = from } end)
+
+	a:send(7, 'hello', { n = 1 })
+	local event, sent = deliver(1)
+	expect(sent.to == 7 and sent.protocol == 'test/v1', 'sent to the wrong computer or protocol')
+	expect(b:handleEvent(event) == true and got.payload.n == 1 and got.from == 1, 'handler not called with payload and sender')
+	expect(#SENT == 0, 'a plain message must not be answered')
+
+	expect(b:handleEvent({ 'rednet_message', 1, { net = 1, type = 'hello' }, 'other' }) == false, 'other protocol consumed')
+	expect(b:handleEvent({ 'rednet_message', 1, 'plain text', 'test/v1' }) == true, 'foreign message not consumed')
+	expect(b:handleEvent({ 'mouse_click', 1, 2, 3 }) == false, 'unrelated event consumed')
+end)
+
+test('net: a request gets the handler result as its reply', function()
+	SENT = {}
+	local client, server = channel(), channel()
+	server:on('add', function(_, payload) return payload.a + payload.b end)
+
+	local result
+	client:request(2, 'add', { a = 2, b = 3 }, function(_, r) result = r end)
+	expect(client:pendingCount() == 1, 'request not pending')
+
+	quiet(function() server:handleEvent((deliver(1))) end)
+	expect(client:handleEvent((deliver(2))) == true, 'reply not consumed')
+	expect(result and result.ok and result.value == 5, 'reply value not received')
+	expect(client:pendingCount() == 0, 'request still pending after its reply')
+end)
+
+test('net: failed requests (handler error, unknown type) reply with an error', function()
+	SENT = {}
+	local client, server = channel(), channel()
+	server:on('boom', function() error('cannot do that', 0) end)
+
+	local r1, r2
+	client:request(2, 'boom', nil, function(_, r) r1 = r end)
+	client:request(2, 'nope', nil, function(_, r) r2 = r end)
+	quiet(function()
+		server:handleEvent((deliver(1)))
+		server:handleEvent((deliver(1)))
+	end)
+	client:handleEvent((deliver(2)))
+	client:handleEvent((deliver(2)))
+	expect(r1 and not r1.ok and tostring(r1.error):find('cannot do that', 1, true), 'handler error not sent back: ' .. tostring(r1 and r1.error))
+	expect(r2 and not r2.ok and tostring(r2.error):find('unknown message type', 1, true), 'unknown type not refused')
+end)
+
+test('net: a request times out, a late reply or one from another computer is ignored', function()
+	SENT = {}
+	local client, server = channel(), channel()
+	server:on('slow', function() return 'late' end)
+
+	local calls, result = 0, nil
+	client:request(2, 'slow', nil, function(_, r) calls = calls + 1; result = r end, 1)
+	local timer = LAST_TIMER
+
+	quiet(function() server:handleEvent((deliver(1))) end)
+	local reply = deliver(2)
+	reply[2] = 9 -- the reply comes from computer 9, not 2
+	client:handleEvent(reply)
+	expect(calls == 0, 'a reply from another computer was accepted')
+
+	expect(client:handleEvent({ 'timer', timer }) == true, 'timeout timer not consumed')
+	expect(calls == 1 and not result.ok and result.error == 'timeout', 'no timeout error')
+
+	reply[2] = 2
+	client:handleEvent(reply)
+	expect(calls == 1, 'a late reply called the callback again')
+	expect(client:handleEvent({ 'timer', 999 }) == false, 'a foreign timer was consumed')
+end)
+
+test('net: peers filter out other computers, broadcasts are never answered', function()
+	SENT = {}
+	local server = channel({ peers = { 4 } })
+	local count = 0
+	server:on('ping', function() count = count + 1; return 'pong' end)
+
+	server:handleEvent({ 'rednet_message', 5, { net = 1, type = 'ping', id = 1 }, 'test/v1' })
+	expect(count == 0 and #SENT == 0, 'message from a computer outside the peers handled')
+
+	local sender = channel()
+	sender:broadcast('ping')
+	local event, sent = deliver(4)
+	expect(sent.to == 'all', 'broadcast not sent to all')
+	server:handleEvent(event)
+	expect(count == 1 and #SENT == 0, 'broadcast not handled, or answered')
+end)
+
 realPrint(('\n%d passed, %d failed'):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)
