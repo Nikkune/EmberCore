@@ -11,6 +11,7 @@ export interface Network {
 	heatOutput?: string;
 	unknownOutput?: string;
 	fuelTank?: string;
+	reservoirs: string[];
 	/** What is missing or wrong, for the alerts. */
 	problems: string[];
 }
@@ -66,7 +67,7 @@ function findFuelTank(this: void): string | undefined {
 /** Finds the Smeltery peripherals: configured names first, otherwise the first (or every) one of the right type. */
 export function discoverNetwork(this: void, config: ControllerConfig): Network {
 	const problems: string[] = [];
-	const network: Network   = {casters: [], problems};
+	const network: Network   = {casters: [], reservoirs: [], problems};
 
 	const drain = pick(config.drain, 'tconstruct:drain', 'Smeltery drain', problems);
 	const chute = pick(config.chute, 'tconstruct:chute', 'Smeltery chute', problems);
@@ -106,6 +107,21 @@ export function discoverNetwork(this: void, config: ControllerConfig): Network {
 	const fuelTank = config.fuelTank !== '' ? (peripheral.isPresent(config.fuelTank) ? config.fuelTank : undefined) : findFuelTank();
 	if (config.fuelTank !== '' && fuelTank === undefined) problems.push(`fuel tank '${config.fuelTank}' not found on the network`);
 	if (fuelTank !== undefined) network.fuelTank = fuelTank;
+
+	// Reservoirs: the configured ones, otherwise every other fluid storage (not the Smeltery, its casters
+	// nor its fuel tank).
+	if (config.reservoirs.length > 0) {
+		for (const name of config.reservoirs) {
+			if (peripheral.isPresent(name)) network.reservoirs.push(name);
+			else problems.push(`reservoir '${name}' not found on the network`);
+		}
+	}
+	else {
+		for (const name of namesOfType('fluid_storage')) {
+			if (name.startsWith('tconstruct:') || name === fuelTank) continue;
+			network.reservoirs.push(name);
+		}
+	}
 
 	return network;
 }

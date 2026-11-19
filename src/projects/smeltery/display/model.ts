@@ -143,9 +143,10 @@ export function attentionLines(this: void, state: SmelteryState): AttentionLine[
 	const lines: AttentionLine[] = [];
 
 	for (const alert of state.alerts) {
-		const colon = alert.indexOf(':');
+		// ': ' and not ':': fluid ids hold one ('no reservoir for tconstruct:molten_tin: it stays...').
+		const colon = alert.indexOf(': ');
 		lines.push(colon >= 0
-		           ? {color: colors.red, title: alert.substring(0, colon), detail: alert.substring(colon + 1).trim()}
+		           ? {color: colors.red, title: alert.substring(0, colon), detail: alert.substring(colon + 2).trim()}
 		           : {color: colors.red, title: alert, detail: ''});
 	}
 

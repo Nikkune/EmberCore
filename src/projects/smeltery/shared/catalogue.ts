@@ -1,9 +1,9 @@
 import {Config}                                               from '@core/config';
 import {AlloyGuard, CastAmounts, MaterialMap}                from '@modules/tinkers/index';
-import type {AlloyRecipe, CastAmount, MaterialOverride}      from '@modules/tinkers/index';
+import type {AlloyRatio, AlloyRecipe, CastAmount, MaterialOverride} from '@modules/tinkers/index';
 
 import {DEFAULT_CAST_AMOUNTS}                                 from './castAmountsData';
-import {DEFAULT_ALLOYS, DEFAULT_MOLTEN_FLUIDS}                from './catalogueData';
+import {DEFAULT_ALLOY_RATIOS, DEFAULT_ALLOYS, DEFAULT_MOLTEN_FLUIDS} from './catalogueData';
 import {DEFAULT_FUELS, DEFAULT_MELTING_TEMPERATURES}           from './temperaturesData';
 import type {FluidTemperature}                               from './temperaturesData';
 
@@ -15,6 +15,11 @@ export const CATALOGUE_PATH = '/smeltery/catalogue.db';
  */
 export interface Catalogue {
 	alloys: AlloyRecipe[];
+	/**
+	 * The same recipes with their amounts, for alloy mode. A key of its own: a catalogue file written
+	 * before it existed gets the default ratios, its own `alloys` stay.
+	 */
+	alloyRatios: AlloyRatio[];
 	/** Molten fluids that exist: an item melts into one of them or is left in the input. */
 	moltenFluids: string[];
 	/** Items whose fluid their tags do not tell. */
@@ -30,6 +35,7 @@ export interface Catalogue {
 export function defaultCatalogue(this: void): Catalogue {
 	return {
 		alloys:       DEFAULT_ALLOYS,
+		alloyRatios:  DEFAULT_ALLOY_RATIOS,
 		moltenFluids: DEFAULT_MOLTEN_FLUIDS,
 		overrides:    [],
 		castAmounts:  DEFAULT_CAST_AMOUNTS,

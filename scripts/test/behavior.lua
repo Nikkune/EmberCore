@@ -858,6 +858,15 @@ local function fakeTinkers()
 				for i, f in ipairs(fluids.fluids) do t[i] = { name = f.name, amount = f.amount } end
 				return t
 			end
+			object.pullFluid = function(from, limit, fluidName)
+				local source = devices[from]
+				if not source or not source.fluids then error("Source '" .. tostring(from) .. "' is not a tank", 2) end
+				local name, n = source.fluids.take(limit or math.huge, fluidName)
+				if n == 0 then return 0 end
+				local accepted = fluids.give(name, n)
+				if accepted < n then source.fluids.give(name, n - accepted) end
+				return accepted
+			end
 			object.pushFluid = function(to, limit, fluidName)
 				local target = devices[to]
 				if not target or not target.fluids then error("Target '" .. tostring(to) .. "' is not a tank", 2) end
@@ -901,6 +910,12 @@ local function fakeTinkers()
 		local items = itemStore(2, castItem and { [1] = { name = castItem, count = 1, tags = castTags } } or {})
 		fluids.accepts = function() return items.slots[2] == nil end
 		return addDevice(name, { name:match('^(.-)_%d+$'), 'inventory', 'fluid_storage' }, fluids, items)
+	end
+
+	function net.reservoir(name, capacity, fluids)
+		local store = fluidStore(fluids or {}, capacity)
+		store.single = true
+		return addDevice(name, { 'miniutilities:drum', 'fluid_storage' }, store)
 	end
 
 	function net.fuelTank(name, fluids)
@@ -1376,7 +1391,7 @@ local function planContext()
 end
 
 local function snapshot(fields)
-	local s = { fluids = {}, meltingFluids = {}, casters = {}, input = {}, outputFree = 10 }
+	local s = { fluids = {}, meltingFluids = {}, casters = {}, input = {}, outputFree = 10, stored = {}, storable = {} }
 	for k, v in pairs(fields) do s[k] = v end
 	return s
 end
@@ -1465,6 +1480,71 @@ test('planner: rejected items leave the input only when an inventory is set for 
 	plan = planner.planTick('auto', s, context)
 	expect(kinds(plan) == 'reject:minecraft:dirt' and plan.actions[1].reason == 'unknown', 'dirt not rejected: ' .. kinds(plan))
 	expect(#planner.planTick('lock', s, context).actions == 0, 'lock must not touch the input')
+end)
+
+test('planner: drain sends every fluid to the reservoirs, then finishes', function()
+	local s = snapshot({
+		fluids = { { name = IRON, amount = 900 }, { name = GOLD, amount = 40 } },
+		casters = { basinIdle, basinBlocked }, storable = { IRON, GOLD },
+	})
+	local plan = planner.planTick('drain', s, planContext())
+	expect(kinds(plan) == 'collect:basin_1 store:/iron store:/gold' and not plan.finished, 'drain: ' .. kinds(plan))
+
+	s = snapshot({ fluids = { { name = COPPER, amount = 50 } }, storable = {} })
+	plan = planner.planTick('drain', s, planContext())
+	expect(#plan.actions == 0 and plan.finished and plan.alerts[1]:find('no reservoir', 1, true), 'copper without room must alert and finish')
+
+	s = snapshot({ meltingFluids = { IRON } })
+	expect(not planner.planTick('drain', s, planContext()).finished, 'drain must wait for what is still melting')
+end)
+
+test('planner: purge sends leftovers and alloys only, then finishes', function()
+	local context = planContext()
+	context.isAlloy = function(_, fluid) return fluid == 'tconstruct:molten_bronze' end
+	local s = snapshot({
+		fluids = { { name = IRON, amount = 900 }, { name = GOLD, amount = 5 }, { name = 'tconstruct:molten_bronze', amount = 300 } },
+		casters = { basinIdle, tableIdle, nuggetIdle }, storable = { IRON, GOLD, 'tconstruct:molten_bronze' },
+	})
+	local plan = planner.planTick('purge', s, context)
+	expect(kinds(plan) == 'store:/gold store:/bronze' and not plan.finished, 'purge: ' .. kinds(plan))
+
+	s = snapshot({ fluids = { { name = IRON, amount = 900 } }, casters = { basinIdle, nuggetIdle }, storable = { IRON } })
+	plan = planner.planTick('purge', s, context)
+	expect(#plan.actions == 0 and plan.finished, 'nothing to purge must finish')
+end)
+
+test('planner: auto purges a leftover only when it blocks an input', function()
+	local s = snapshot({
+		fluids = { { name = COPPER, amount = 5 } }, casters = { basinIdle, nuggetIdle }, storable = { COPPER },
+		input = { { slot = 1, name = 'mod:tin_ingot', count = 4, fluid = TIN } },
+	})
+	local plan = planner.planTick('auto', s, planContext())
+	expect(kinds(plan) == 'store:/copper' and plan.actions[1].why == 'unblock' and plan.waiting[1].reason == 'alloy',
+		'5 mB of copper blocking tin must be stored: ' .. kinds(plan))
+
+	s.fluids = { { name = COPPER, amount = 900 } }
+	plan = planner.planTick('auto', s, planContext())
+	expect(not kinds(plan):find('store', 1, true), 'a castable amount of copper must not be stored: ' .. kinds(plan))
+
+	s = snapshot({ fluids = { { name = COPPER, amount = 5 } }, casters = { basinIdle, nuggetIdle }, storable = { COPPER } })
+	expect(#planner.planTick('auto', s, planContext()).actions == 0, 'a leftover that blocks nothing must stay')
+end)
+
+test('planner: auto completes a cast from the stock, never pours smaller meanwhile', function()
+	local s = snapshot({
+		fluids = { { name = IRON, amount = 700 } }, casters = { basinIdle, tableIdle },
+		stored = { { fluid = IRON, amount = 300 } },
+	})
+	local plan = planner.planTick('auto', s, planContext())
+	expect(kinds(plan) == 'restore:/iron' and plan.actions[1].amount == 110, '700 + 110 from the stock = a block: ' .. kinds(plan))
+
+	s.stored = { { fluid = IRON, amount = 50 } }
+	plan = planner.planTick('auto', s, planContext())
+	expect(kinds(plan) == 'pour:table_0/iron', 'not enough stock for a block: ingots as usual: ' .. kinds(plan))
+
+	s.stored = { { fluid = GOLD, amount = 900 } }
+	plan = planner.planTick('auto', s, planContext())
+	expect(not kinds(plan):find('restore', 1, true), 'gold must not come back while only iron is there')
 end)
 
 test('planner: nothing is cast while the output is full', function()
@@ -1779,6 +1859,64 @@ test('controller: manual cast picks an idle caster of the asked format', functio
 	expect(not ok, 'no idle basin left and only 90 mB: the cast must be refused')
 end)
 
+test('controller: drain empties the Smeltery into the reservoirs then idles; purge goes back to auto', function()
+	FILES = {}
+	local fake = fakeTinkers()
+	fake.smeltery({ { name = IRON, amount = 1500 }, { name = GOLD, amount = 5 } })
+	fake.caster('tconstruct:basin_0', 810)
+	fake.caster('tconstruct:table_9', 10, 'tconstruct:nugget_cast')
+	local d0 = fake.reservoir('miniutilities:drum_0', 1000)
+	local d1 = fake.reservoir('miniutilities:drum_1', 1000)
+	local d2 = fake.reservoir('miniutilities:drum_2', 1000)
+	fake.chest('minecraft:chest_in', 27)
+	fake.chest('minecraft:chest_out', 27)
+	fake.install()
+
+	local c = controllerWith(fake)
+	quiet(function() c:setMode('auto'); c:setMode('purge'); c:tick() end)
+	expect(d0.fluids.fluids[1] and d0.fluids.fluids[1].name == GOLD and d0.fluids.fluids[1].amount == 5, 'the 5 mB gold leftover not purged')
+	quiet(function() c:tick() end)
+	expect(c:getMode() == 'auto', 'purge did not go back to auto: ' .. c:getMode())
+
+	quiet(function() c:setMode('drain'); c:tick() end)
+	local iron = 0
+	for _, d in ipairs({ d1, d2 }) do if d.fluids.fluids[1] and d.fluids.fluids[1].name == IRON then iron = iron + d.fluids.fluids[1].amount end end
+	expect(iron == 1500, 'iron not drained into two drums: ' .. iron)
+	expect(#fake.devices['tconstruct:drain_0'].fluids.fluids == 0, 'the Smeltery is not empty')
+	expect(FILES['/smeltery/reservoirs.db'] and FILES['/smeltery/reservoirs.db']:find('1000', 1, true), 'learnt capacity not saved')
+	quiet(function() c:tick() end)
+	expect(c:getMode() == 'idle', 'drain did not end in idle: ' .. c:getMode())
+	expect(#c:getState().reservoirs == 3, 'reservoirs missing from the state')
+end)
+
+test('controller: auto, alloy and melt drain and go idle after idleSeconds with nothing happening', function()
+	FILES = {}
+	local fake = fakeTinkers()
+	fake.smeltery({ { name = IRON, amount = 40 } })
+	fake.caster('tconstruct:basin_0', 810)
+	local d0 = fake.reservoir('miniutilities:drum_0', 1000)
+	fake.chest('minecraft:chest_in', 27)
+	fake.chest('minecraft:chest_out', 27)
+	fake.install()
+
+	local c = controllerWith(fake)
+	quiet(function() c:setMode('auto'); c:tick() end)
+	FAKE_CLOCK = FAKE_CLOCK + 20
+	quiet(function() c:tick() end)
+	expect(c:getMode() == 'auto', 'drained after 20 s: ' .. c:getMode())
+	FAKE_CLOCK = FAKE_CLOCK + 11
+	quiet(function() c:tick() end)
+	expect(c:getMode() == 'drain', 'not draining after 31 s of nothing: ' .. c:getMode())
+	quiet(function() c:tick(); c:tick() end)
+	expect(c:getMode() == 'idle' and d0.fluids.fluids[1] and d0.fluids.fluids[1].amount == 40, 'not idle with the iron stored: ' .. c:getMode())
+
+	-- Manual is left alone.
+	quiet(function() c:setMode('manual'); c:tick() end)
+	FAKE_CLOCK = FAKE_CLOCK + 60
+	quiet(function() c:tick() end)
+	expect(c:getMode() == 'manual', 'manual must never drain on its own')
+end)
+
 test('controller: missing peripherals become alerts, manual commands need manual mode', function()
 	FILES = {}
 	installPeripherals({})
@@ -1875,7 +2013,7 @@ local function smelteryState(fields)
 		mode = 'auto', time = 0, melting = {}, waiting = {}, alerts = {}, log = { '20:24:54 inserted 64 minecraft:raw_gold (seen: x)' },
 		fluids = { { name = IRON, amount = 1110 }, { name = GOLD, amount = 2700 } },
 		casters = { { name = 'tconstruct:basin_0', kind = 'basin', status = 'busy', format = 'block', amount = 810 } },
-		inputItems = {}, autoFormats = { 'block', 'ingot', 'nugget' },
+		inputItems = {}, autoFormats = { 'block', 'ingot', 'nugget' }, reservoirs = {},
 		fuel = { fluid = 'minecraft:lava', amount = 2600, temperature = 1000 }, heat = 1000,
 	}
 	for k, v in pairs(fields or {}) do state[k] = v end
@@ -1888,6 +2026,8 @@ local function screenFor(calls)
 		setMode = function(_, mode) calls[#calls + 1] = 'setMode ' .. mode end,
 		insert = function(_, r) calls[#calls + 1] = 'insert ' .. r.slot .. (r.force and ' force' or '') end,
 		cast = function(_, r) calls[#calls + 1] = 'cast ' .. r.fluid .. ' ' .. r.format end,
+		setFormat = function(_, r) calls[#calls + 1] = 'format ' .. r.format .. ' ' .. tostring(r.auto) end,
+		setAlloy = function(_, r) calls[#calls + 1] = 'alloy ' .. r.result .. ' ' .. tostring(r.target) .. (r.activate and ' on' or '') end,
 	})
 	local runtime, terminal = runtimeFor(screen.root, 79, 38)
 	return screen, runtime, terminal
@@ -1921,7 +2061,7 @@ test('display: overview draws the tank, the fuel and the casting; tabs switch sc
 	touch(runtime, 39, 2) -- "Modes" tab
 	text = screenText(terminal)
 	expect(text:find('Full stop.', 1, true) and text:find('active', 1, true), 'modes tab not shown')
-	touch(runtime, 4, 15) -- Activate under IDLE
+	touch(runtime, 4, 14) -- Activate under IDLE
 	expect(calls[1] == 'setMode idle', 'Activate did not ask for idle: ' .. tostring(calls[1]))
 end)
 
@@ -1964,6 +2104,344 @@ test('display: Force asks twice before a forced insert, and can be cancelled', f
 	runtime:invalidate({ reason = 'state', kind = 'full' })
 	runtime:render()
 	expect(not screenText(terminal):find('FORCE INSERT', 1, true) and #calls == 2, 'the second step must expire after 10 s')
+end)
+
+test('planner: auto empties the stock once the input is done, biggest stock first, one fluid at a time', function()
+	local s = snapshot({
+		fluids = { { name = IRON, amount = 40 } },
+		casters = { basinIdle, tableIdle },
+		stored = { { fluid = GOLD, amount = 500 }, { fluid = COPPER, amount = 2000 } },
+		storable = { IRON },
+	})
+	local plan = planner.planTick('auto', s, planContext())
+	expect(kinds(plan) == 'restore:/copper', 'auto: ' .. kinds(plan))
+	expect(plan.actions[1].amount == 2000 and plan.actions[1].why == 'stock', 'the whole stock must come back, as stock')
+	expect(kinds(planner.planTick('lock', s, planContext())) == '', 'lock must not take the stock')
+	expect(kinds(planner.planTick('manual', s, planContext())) == '', 'manual must not take the stock')
+end)
+
+test('planner: the stock waits for the input, for a fluid still to cast, and for items melting', function()
+	local stored = { { fluid = GOLD, amount = 500 } }
+	local withInput = snapshot({
+		casters = { basinIdle, tableIdle }, stored = stored,
+		input = { { slot = 1, name = 'minecraft:raw_iron', count = 4, fluid = IRON } },
+	})
+	expect(not kinds(planner.planTick('auto', withInput, planContext())):find('restore', 1, true), 'stock taken while the input has work')
+
+	local busyBasin = { name = 'basin_0', state = { status = 'busy', format = 'block', amount = 810 } }
+	local toCast = snapshot({ fluids = { { name = IRON, amount = 900 } }, casters = { busyBasin }, stored = stored })
+	expect(kinds(planner.planTick('auto', toCast, planContext())) == '', 'stock taken while iron still waits for a caster')
+
+	local melting = snapshot({ casters = { basinIdle }, meltingFluids = { IRON }, stored = stored })
+	expect(kinds(planner.planTick('auto', melting, planContext())) == '', 'stock taken while an item melts')
+
+	-- An input item too hot waits forever: it does not hold the stock back.
+	local hot = snapshot({
+		casters = { basinIdle, tableIdle }, stored = stored,
+		input = { { slot = 1, name = 'occultism:raw_iesnium', count = 4, fluid = IESNIUM } },
+	})
+	expect(kinds(planner.planTick('auto', hot, planContext())) == 'restore:/gold', 'a waiting hot item blocked the stock')
+end)
+
+test('planner: a stock that would alloy moves the leftover away first; a stock below a cast stays', function()
+	local s = snapshot({
+		fluids = { { name = TIN, amount = 40 } },
+		casters = { basinIdle, tableIdle },
+		stored = { { fluid = COPPER, amount = 2000 } },
+		storable = { TIN },
+	})
+	local plan = planner.planTick('auto', s, planContext())
+	expect(kinds(plan) == 'store:/tin', 'tin leftover must go first, copper must not come: ' .. kinds(plan))
+	expect(plan.actions[1].why == 'unblock', 'tin stored for the wrong reason')
+
+	local small = snapshot({ casters = { basinIdle, tableIdle }, stored = { { fluid = GOLD, amount = 50 } } })
+	plan = planner.planTick('auto', small, planContext())
+	expect(kinds(plan) == '' and plan.alerts[1] == 'stock of gold: 50 mB, below a cast', 'small stock: ' .. kinds(plan) .. ' ' .. tostring(plan.alerts[1]))
+
+	-- With the 40 mB already in the Smeltery, 50 mB of stock make an ingot.
+	local together = snapshot({ fluids = { { name = GOLD, amount = 40 } }, casters = { basinIdle, tableIdle }, stored = { { fluid = GOLD, amount = 50 } } })
+	expect(kinds(planner.planTick('auto', together, planContext())) == 'restore:/gold', 'stock plus leftover make an ingot')
+end)
+
+test('controller: auto formats are switched from the display, stay biggest first, and are saved', function()
+	local controllerModule = require('projects.smeltery.controller.controller')
+	local catalogue = require('projects.smeltery.shared.catalogue')
+	local configModule = require('projects.smeltery.controller.config')
+	local config = configModule.defaultControllerConfig()
+	local c = quiet(function() return new(controllerModule.Controller, config, catalogue.defaultCatalogue()) end)
+	c:setConfigPath('/test/smeltery-formats.db')
+
+	local function formats() return table.concat(c:getState().autoFormats, ',') end
+	quiet(function() c:setFormat({ format = 'block', auto = false }) end)
+	expect(formats() == 'ingot,nugget', 'block not removed: ' .. formats())
+	quiet(function() c:setFormat({ format = 'gear', auto = true }) end)
+	quiet(function() c:setFormat({ format = 'block', auto = true }) end)
+	expect(formats() == 'block,gear,ingot,nugget', 'not biggest first: ' .. formats())
+	expect(table.concat(configModule.loadControllerConfig('/test/smeltery-formats.db').formatPriority, ',') == formats(), 'formats not saved')
+
+	local ok = pcall(function() c:setFormat({ format = 'no cast', auto = true }) end)
+	expect(not ok, 'a caster without a cast cannot be a format')
+end)
+
+test('display: the stock tab shows reservoirs, totals and room; CASTING switches auto formats', function()
+	local calls = {}
+	local screen, runtime, terminal = screenFor(calls)
+	screen:setState(smelteryState({
+		fluids = { { name = GOLD, amount = 15300 } },
+		casters = {
+			{ name = 'tconstruct:basin_0', kind = 'basin', status = 'idle', format = 'block', amount = 0 },
+			{ name = 'tconstruct:table_0', kind = 'table', status = 'idle', format = 'gear', amount = 0 },
+		},
+		reservoirs = {
+			{ name = 'evilcraft:drum_1', fluid = IRON, amount = 3630 },
+			{ name = 'evilcraft:drum_2', fluid = COPPER, amount = 16000, capacity = 16000 },
+			{ name = 'evilcraft:drum_3', amount = 0, assigned = TIN },
+			{ name = 'evilcraft:drum_4', amount = 0 },
+		},
+		alerts = { 'stock of gold: 50 mB, below a cast' },
+	}))
+	runtime:invalidate({ reason = 'state', kind = 'full' })
+	runtime:render()
+
+	-- The molten total no longer runs into the fuel tank (column 37).
+	expect(terminal.line(26):sub(24, 36):find('15300 mB', 1, true) and terminal.line(27):sub(24, 36):find('molten', 1, true), 'molten total: ' .. terminal.line(26))
+
+	touch(runtime, 72, 7) -- block row: AUTO -> off
+	touch(runtime, 72, 10) -- gear row: off -> AUTO
+	expect(calls[1] == 'format block false' and calls[2] == 'format gear true', 'switches: ' .. tostring(calls[1]) .. ' / ' .. tostring(calls[2]))
+
+	touch(runtime, 55, 2) -- "Stock" tab
+	local text = screenText(terminal)
+	for _, wanted in ipairs({ 'RESERVOIRS', 'TOTALS', '3630 mB', 'FULL', 'for tin', 'drum 4', '177 ing', '1 free', 'capacity known for 1/4', 'stock of gold' }) do
+		expect(text:find(wanted, 1, true), 'stock tab misses "' .. wanted .. '"')
+	end
+end)
+
+local ROSE = 'tconstruct:molten_rose_gold'
+
+local function alloyContext(remaining)
+	local context = planContext()
+	context.alloy = { result = ROSE, ratios = { { result = ROSE, amount = 180, inputs = { { fluid = COPPER, amount = 90 }, { fluid = GOLD, amount = 90 } } } } }
+	context.alloy.remaining = remaining
+	return context
+end
+
+local function amountOf(plan, kind, fluid)
+	for _, a in ipairs(plan.actions) do
+		if a.kind == kind and a.fluid == fluid then return a.amount end
+	end
+end
+
+test('planner: melt stores every fluid and melts the input, casts nothing; no room stops the input', function()
+	local s = snapshot({
+		fluids = { { name = IRON, amount = 900 } },
+		casters = { basinIdle },
+		input = { { slot = 1, name = 'minecraft:raw_gold', count = 4, fluid = GOLD } },
+		storable = { IRON },
+	})
+	expect(kinds(planner.planTick('melt', s, planContext())) == 'store:/iron insert:minecraft:raw_gold/gold', 'melt: ' .. kinds(planner.planTick('melt', s, planContext())))
+
+	s.storable = {}
+	local plan = planner.planTick('melt', s, planContext())
+	expect(kinds(plan) == '' and plan.alerts[1]:find('no reservoir for iron', 1, true), 'melt without room: ' .. kinds(plan))
+end)
+
+test('planner: alloy doses its ingredients from the stock, in batches of the recipe, to the one that lacks', function()
+	local s = snapshot({
+		casters = { basinIdle, tableIdle },
+		stored = { { fluid = COPPER, amount = 2000 }, { fluid = GOLD, amount = 2000 }, { fluid = IRON, amount = 900 } },
+	})
+	local plan = planner.planTick('alloy', s, alloyContext())
+	expect(kinds(plan) == 'restore:/copper restore:/gold', 'alloy from stock: ' .. kinds(plan))
+	expect(amountOf(plan, 'restore', COPPER) == 720 and amountOf(plan, 'restore', GOLD) == 720 and plan.actions[1].why == 'alloy', '8 batches of each')
+
+	-- 300 mB of copper already there: only what lacks comes.
+	s.fluids = { { name = COPPER, amount = 300 } }
+	plan = planner.planTick('alloy', s, alloyContext())
+	expect(amountOf(plan, 'restore', COPPER) == 420 and amountOf(plan, 'restore', GOLD) == 720, 'copper ' .. tostring(amountOf(plan, 'restore', COPPER)))
+
+	-- 360 mB still wanted: two batches only.
+	s.fluids = {}
+	plan = planner.planTick('alloy', s, alloyContext(360))
+	expect(amountOf(plan, 'restore', COPPER) == 180 and amountOf(plan, 'restore', GOLD) == 180, 'two batches')
+end)
+
+test('planner: alloy casts only the alloy, waits for the casters, takes its ingredients from the input', function()
+	local s = snapshot({
+		fluids = { { name = ROSE, amount = 900 }, { name = IRON, amount = 900 } },
+		casters = { basinIdle, tableIdle },
+		stored = { { fluid = COPPER, amount = 2000 }, { fluid = GOLD, amount = 2000 } },
+	})
+	expect(kinds(planner.planTick('alloy', s, alloyContext())) == 'pour:basin_0/rose_gold', 'alloy pours: ' .. kinds(planner.planTick('alloy', s, alloyContext())))
+
+	local fromInput = snapshot({
+		casters = { basinIdle, tableIdle },
+		input = {
+			{ slot = 1, name = 'minecraft:raw_iron', count = 4, fluid = IRON },
+			{ slot = 2, name = 'minecraft:raw_copper', count = 9, fluid = COPPER },
+			{ slot = 3, name = 'minecraft:raw_gold', count = 9, fluid = GOLD },
+		},
+	})
+	local plan = planner.planTick('alloy', fromInput, alloyContext())
+	expect(kinds(plan) == 'insert:minecraft:raw_copper/copper insert:minecraft:raw_gold/gold', 'alloy input: ' .. kinds(plan))
+
+	table.remove(fromInput.input, 3)
+	plan = planner.planTick('alloy', fromInput, alloyContext())
+	expect(plan.alerts[1] == 'rose gold: missing gold', 'missing alert: ' .. tostring(plan.alerts[1]))
+
+	-- 90 mB still wanted: one ingot, not a block, even with 900 mB there.
+	local last = snapshot({ fluids = { { name = ROSE, amount = 900 } }, casters = { basinIdle, tableIdle } })
+	expect(kinds(planner.planTick('alloy', last, alloyContext(90))) == 'pour:table_0/rose_gold', 'more than wanted: ' .. kinds(planner.planTick('alloy', last, alloyContext(90))))
+end)
+
+test('planner: alloy moves away a fluid that would form another alloy; once made, it stores what is left and ends', function()
+	local s = snapshot({
+		fluids = { { name = TIN, amount = 40 } },
+		casters = { basinIdle, tableIdle },
+		stored = { { fluid = COPPER, amount = 2000 }, { fluid = GOLD, amount = 2000 } },
+		storable = { TIN },
+	})
+	local plan = planner.planTick('alloy', s, alloyContext())
+	expect(kinds(plan) == 'store:/tin restore:/gold', 'tin must go, copper wait: ' .. kinds(plan))
+
+	local done = snapshot({
+		fluids = { { name = ROSE, amount = 100 }, { name = COPPER, amount = 50 }, { name = IRON, amount = 30 } },
+		casters = { basinIdle, tableIdle },
+		storable = { ROSE, COPPER, IRON },
+	})
+	plan = planner.planTick('alloy', done, alloyContext(0))
+	expect(kinds(plan) == 'store:/rose_gold store:/copper' and not plan.finished, 'leftovers of the alloy: ' .. kinds(plan))
+	done.fluids = { { name = IRON, amount = 30 } }
+	expect(planner.planTick('alloy', done, alloyContext(0)).finished, 'alloy must end once its fluids are stored')
+end)
+
+test('controller: an alloy is chosen, saved, activated; it goes back to the mode it interrupted', function()
+	local controllerModule = require('projects.smeltery.controller.controller')
+	local catalogue = require('projects.smeltery.shared.catalogue')
+	local configModule = require('projects.smeltery.controller.config')
+	if fs.exists('/smeltery/alloy.db') then fs.delete('/smeltery/alloy.db') end
+	local c = quiet(function() return new(controllerModule.Controller, configModule.defaultControllerConfig(), catalogue.defaultCatalogue()) end)
+
+	expect(not pcall(function() c:setMode('alloy') end), 'alloy mode without an alloy must be refused')
+	expect(not pcall(function() c:setAlloy({ result = 'mod:molten_nothing' }) end), 'an unknown alloy must be refused')
+
+	quiet(function() c:setMode('auto'); c:setAlloy({ result = ROSE, target = 1800, activate = true }) end)
+	expect(c:getMode() == 'alloy' and c:getState().alloy.target == 1800, 'not activated')
+	local saved = configModule.loadAlloy()
+	expect(saved.result == ROSE and saved.target == 1800 and saved.made == 0, 'alloy not saved')
+
+	local options = c:getState().alloyOptions
+	local rose
+	for _, option in ipairs(options) do if option.result == ROSE then rose = option end end
+	expect(rose and rose.amount == 180 and #rose.inputs == 2, 'rose gold missing from the options')
+
+	-- Its amount made (the planner says finished): back to auto.
+	quiet(function() c:finish() end)
+	expect(c:getMode() == 'auto', 'alloy must go back to the mode it interrupted, not ' .. c:getMode())
+end)
+
+test('display: alloy and melt cards; Change alloy picks an alloy and an amount', function()
+	local calls = {}
+	local screen, runtime, terminal = screenFor(calls)
+	screen:setState(smelteryState({
+		mode = 'alloy',
+		alloy = { result = ROSE, target = 1800, made = 540 },
+		reservoirs = { { name = 'evilcraft:drum_1', fluid = COPPER, amount = 1800 }, { name = 'evilcraft:drum_2', fluid = GOLD, amount = 900 } },
+		alloyOptions = {
+			{ result = ROSE, amount = 180, inputs = { { fluid = COPPER, amount = 90 }, { fluid = GOLD, amount = 90 } }, fromStock = 1800 },
+			{ result = 'tconstruct:molten_bronze', amount = 360, inputs = { { fluid = COPPER, amount = 270 }, { fluid = TIN, amount = 90 } }, fromStock = 0 },
+		},
+	}))
+	runtime:invalidate({ reason = 'state', kind = 'full' })
+	runtime:render()
+	touch(runtime, 39, 2) -- "Modes" tab
+	local text = screenText(terminal)
+	for _, wanted in ipairs({ 'ALLOY', 'MELT', 'Only rose gold,', '6/20 ingots', 'Change alloy', 'into the stock,' }) do
+		expect(text:find(wanted, 1, true), 'modes tab misses "' .. wanted .. '"')
+	end
+
+	touch(runtime, 43, 29) -- Change alloy
+	text = screenText(terminal)
+	for _, wanted in ipairs({ 'from stock: 20 ing', 'put in the input', 'recipe', '1 copper', '= 20 ingots now', '20 ingots', 'then back to' }) do
+		expect(text:find(wanted, 1, true), 'picker misses "' .. wanted .. '"')
+	end
+
+	touch(runtime, 10, 10) -- bronze
+	expect(screenText(terminal):find('3 copper', 1, true), 'bronze recipe not shown')
+	touch(runtime, 70, 22) -- + (20 ingots: a block more)
+	touch(runtime, 55, 30) -- Select
+	expect(calls[1] and calls[1]:find('alloy tconstruct:molten_bronze 2610', 1, true), 'select: ' .. tostring(calls[1]))
+	expect(screenText(terminal):find('Change alloy', 1, true), 'the picker must close after Select')
+end)
+
+-- ============================================================
+-- Fluids module: reservoir pool (dynamic, never mixing)
+-- ============================================================
+
+local fluids = require('modules.fluids.index')
+
+local function poolNet()
+	local fake = fakeTinkers()
+	fake.smeltery({ { name = IRON, amount = 3000 }, { name = GOLD, amount = 500 }, { name = COPPER, amount = 40 } })
+	local r = {
+		fake.reservoir('drum_0', 1000, { { name = GOLD, amount = 200 } }),
+		fake.reservoir('drum_1', 1000),
+		fake.reservoir('drum_2', 1000),
+	}
+	fake.install()
+	return fake, r
+end
+
+local function drainTank()
+	return require('core.tank').Tank:fromName('tconstruct:drain_0')
+end
+
+test('fluids: a fluid goes to the reservoir already holding it, then to empty ones', function()
+	local fake, r = poolNet()
+	local pool = new(fluids.ReservoirPool, { 'drum_0', 'drum_1', 'drum_2' })
+	pool:refresh()
+
+	expect(pool:store(drainTank(), GOLD, 300) == 300, 'gold not stored')
+	expect(r[1].fluids.fluids[1].amount == 500 and #r[2].fluids.fluids == 0, 'gold must join the drum already holding gold')
+
+	expect(pool:store(drainTank(), IRON, 1500) == 1500, 'iron not stored')
+	expect(r[2].fluids.fluids[1].name == IRON and r[2].fluids.fluids[1].amount == 1000, 'first empty drum not filled with iron')
+	expect(r[3].fluids.fluids[1].name == IRON and r[3].fluids.fluids[1].amount == 500, 'iron did not overflow into the next drum')
+	expect(pool:capacities().drum_1 == 1000, 'capacity not learnt when the drum refused more')
+	expect(pool:stored(IRON) == 1500 and pool:stored(GOLD) == 500, 'stored amounts')
+
+	-- Every drum is taken: copper has nowhere to go, and nothing is mixed.
+	expect(pool:store(drainTank(), COPPER, 40) == 0 and not pool:canStore(COPPER), 'copper stored next to another fluid')
+	for i = 1, 3 do expect(#r[i].fluids.fluids == 1, 'drum ' .. i .. ' holds two fluids') end
+end)
+
+test('fluids: a reservoir changed since the last reading is checked again before a transfer', function()
+	local fake, r = poolNet()
+	local pool = new(fluids.ReservoirPool, { 'drum_1', 'drum_2' })
+	pool:refresh()
+	r[2].fluids.fluids = { { name = COPPER, amount = 10 } } -- someone filled drum_1 meanwhile
+	expect(pool:store(drainTank(), IRON, 100) == 100, 'iron not stored')
+	expect(r[2].fluids.fluids[1].name == COPPER and r[3].fluids.fluids[1].name == IRON, 'iron poured onto the copper')
+end)
+
+test('fluids: assigned reservoirs only take their fluid; take() gives back, smallest stock first', function()
+	local fake, r = poolNet()
+	local pool = new(fluids.ReservoirPool, { 'drum_1', 'drum_2' }, { assignments = { drum_2 = GOLD } })
+	pool:refresh()
+	pool:store(drainTank(), IRON, 200)
+	expect(r[2].fluids.fluids[1].name == IRON and #r[3].fluids.fluids == 0, 'iron went into the drum assigned to gold')
+	pool:store(drainTank(), GOLD, 100)
+	expect(r[3].fluids.fluids[1].name == GOLD, 'gold not put in its assigned drum')
+
+	local smeltery = fake.devices['tconstruct:drain_0'].fluids
+	local before = 0
+	for _, f in ipairs(smeltery.fluids) do if f.name == IRON then before = f.amount end end
+	expect(pool:take(drainTank(), IRON, 150) == 150, 'iron not given back')
+	local after = 0
+	for _, f in ipairs(smeltery.fluids) do if f.name == IRON then after = f.amount end end
+	expect(after == before + 150 and pool:stored(IRON) == 50, 'smeltery or pool amounts wrong after take')
+	local views = pool:views()
+	expect(views[2].assigned == GOLD and views[2].fluid == GOLD and views[1].amount == 50, 'views')
 end)
 
 realPrint(('\n%d passed, %d failed'):format(passed, failed))

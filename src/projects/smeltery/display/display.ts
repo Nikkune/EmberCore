@@ -70,6 +70,8 @@ export function runDisplay(this: void): void {
 		setMode: (mode) => request(Messages.setMode, {mode}, `mode ${mode}`),
 		insert:  (insert) => request(Messages.insert, insert, insert.force === true ? 'forced insert sent' : 'inserted'),
 		cast:    (cast) => request(Messages.cast, cast, 'cast'),
+		setFormat: (format) => request(Messages.setFormat, format, `${format.format}: ${format.auto ? 'auto' : 'off'}`),
+		setAlloy:  (alloy) => request(Messages.setAlloy, alloy, `alloy ${alloy.result.substring(alloy.result.indexOf(':') + 1)}`),
 	});
 
 	channel.on(Messages.state, (payload, from) => {

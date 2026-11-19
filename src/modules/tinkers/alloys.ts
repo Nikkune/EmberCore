@@ -5,6 +5,13 @@ export interface AlloyRecipe {
 	ingredients: string[];
 }
 
+/** An alloy recipe with its amounts: `amount` mB of `result` from the given mB of each input. */
+export interface AlloyRatio {
+	result: string;
+	amount: number;
+	inputs: {fluid: string; amount: number}[];
+}
+
 /**
  * Prevents accidental alloys: the Smeltery alloys on its own as soon as it holds every ingredient
  * of a recipe, so the check must happen BEFORE an item goes in, not after the alloy appeared.
@@ -17,13 +24,14 @@ export class AlloyGuard {
 	 * The recipe that would form if `adding` joined the fluids already there (in the Smeltery or still
 	 * melting), or undefined when adding it is safe. Only recipes `adding` is an ingredient of count: an
 	 * alloy the fluids already there make on their own is not caused by it (iron next to copper and gold).
+	 * `wanted` is an alloy being made on purpose: it does not count.
 	 */
-	public wouldForm(present: string[], adding: string): AlloyRecipe | undefined {
+	public wouldForm(present: string[], adding: string, wanted?: string): AlloyRecipe | undefined {
 		const fluids = new Set<string>(present);
 		fluids.add(adding);
 
 		for (const recipe of this.recipes) {
-			if (recipe.ingredients.length === 0 || !recipe.ingredients.includes(adding)) continue;
+			if (recipe.ingredients.length === 0 || !recipe.ingredients.includes(adding) || recipe.result === wanted) continue;
 
 			let complete = true;
 			for (const ingredient of recipe.ingredients) {
