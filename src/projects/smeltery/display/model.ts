@@ -256,9 +256,6 @@ export function itemAmount(this: void, name: string): number {
 	return 90;
 }
 
-/** A row of a fluid list: free (no reservation), a section title, or a fluid. */
-export type FluidChoice = {kind: 'free'} | {kind: 'header'; text: string} | {kind: 'fluid'; fluid: string};
-
 /** Fluids the foundry is seeing: in the Smeltery, in the reservoirs, reserved; then `extra`. No duplicates. */
 export function knownFluids(this: void, state: SmelteryState, extra: (string | undefined)[] = []): string[] {
 	const known: string[] = [];
@@ -275,22 +272,3 @@ export function knownFluids(this: void, state: SmelteryState, extra: (string | u
 	return known;
 }
 
-/**
- * The rows of a fluid list: "free" first when asked, the known fluids, then every other fluid of the
- * catalogue (undefined until the display has received it).
- */
-export function fluidChoices(this: void, known: string[], all: string[] | undefined, withFree: boolean): FluidChoice[] {
-	const rows: FluidChoice[] = [];
-	if (withFree) rows.push({kind: 'free'});
-
-	if (known.length > 0) {
-		rows.push({kind: 'header', text: 'KNOWN'});
-		for (const fluid of known) rows.push({kind: 'fluid', fluid});
-	}
-
-	rows.push({kind: 'header', text: 'ALL FLUIDS'});
-	if (all === undefined) rows.push({kind: 'header', text: 'loading...'});
-	else for (const fluid of all) if (!known.includes(fluid)) rows.push({kind: 'fluid', fluid});
-
-	return rows;
-}

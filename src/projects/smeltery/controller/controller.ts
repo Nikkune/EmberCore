@@ -394,7 +394,9 @@ export class Controller {
 			const moved = caster.pour(smeltery, request.fluid);
 
 			if (moved > 0) {
-				this.log(`poured ${moved} mB ${Controller.shortName(request.fluid)} into ${caster.name}`);
+				// As in auto: the format at the end, for the log of the display.
+				const format = this.lastRead?.casters.find((view) => view.name === caster.name)?.format ?? request.format;
+				this.log(`poured ${moved} mB ${Controller.shortName(request.fluid)} into ${caster.name}${format !== undefined ? ` (${format})` : ''}`);
 				return moved;
 			}
 		}
