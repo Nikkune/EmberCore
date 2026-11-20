@@ -414,11 +414,29 @@ export class Controller {
 			: request.format !== undefined && caster.read().format === request.format);
 		if (candidates.length === 0) throw new EmberError(`no caster ${request.caster ?? request.format ?? ''}`, 'SMELTERY_ERROR');
 
+		// What an idle caster needed, for the refusal: the smallest casting asked for.
+		let need: {format: string; amount: number} | undefined;
+		let idle = false;
+		let refused: string | undefined;
+
 		for (const caster of candidates) {
 			const state = caster.read();
-			if (state.status === 'idle') this.bringBackForCast(smeltery, request.fluid, caster.amountFor(state.format, request.fluid));
+			if (state.status === 'idle') {
+				idle = true;
+				const amount = caster.amountFor(state.format, request.fluid);
+				if (amount !== undefined && (need === undefined || amount < need.amount)) need = {format: state.format ?? 'cast', amount};
+				this.bringBackForCast(smeltery, request.fluid, amount);
+			}
 
+			const ready = state.status === 'idle' && state.format !== undefined && need !== undefined
+			              && smeltery.amountOf(request.fluid) >= (caster.amountFor(state.format, request.fluid) ?? Infinity);
 			const moved = caster.pour(smeltery, request.fluid);
+
+			// Idle, enough fluid, and it took nothing: that cast has no recipe for this fluid.
+			if (moved === 0 && ready) {
+				this.learnUncastable(caster.name, state.format!, request.fluid);
+				refused = `${caster.name} has no ${state.format!} recipe for ${Controller.shortName(request.fluid)}`;
+			}
 
 			if (moved > 0) {
 				// As in auto: the format at the end, for the log of the display.
@@ -428,7 +446,34 @@ export class Controller {
 			}
 		}
 
-		throw new EmberError(`cannot cast ${Controller.shortName(request.fluid)} now (casters busy, or not enough fluid)`, 'SMELTERY_ERROR');
+		throw new EmberError(refused ?? this.castRefusal(smeltery, request, idle, need), 'SMELTERY_ERROR');
+	}
+
+	/**
+	 * A caster took nothing of a fluid it was ready for: its format has no casting recipe for that fluid
+	 * (quartz makes no ingot). Remembered in the catalogue (amount 0), so it is never tried again and auto
+	 * mode stores the fluid when no other caster can cast it.
+	 */
+	private learnUncastable(caster: string, format: string, fluid: string): void {
+		if (this.amounts.get(format, fluid) === undefined) return;
+
+		this.amounts.forbid(format, fluid);
+		this.catalogue.castAmounts = this.catalogue.castAmounts.filter((entry) => entry.format !== format || entry.fluid !== fluid);
+		this.catalogue.castAmounts.push({format, amount: 0, fluid});
+		if (this.cataloguePath !== undefined) saveCatalogue(this.catalogue, this.cataloguePath);
+		this.log(`${caster} refused ${Controller.shortName(fluid)}: no ${format} recipe, never cast into ${format} again`);
+	}
+
+	/** Why a manual cast poured nothing: every caster busy, or how much fluid there is against one casting. */
+	private castRefusal(
+		smeltery: Smeltery, request: CastRequest, idle: boolean, need: {format: string; amount: number} | undefined,
+	): string {
+		const fluid = Controller.shortName(request.fluid);
+		if (!idle) return `every ${request.format ?? request.caster ?? ''} caster is busy`;
+		if (need === undefined) return `cannot cast ${fluid} now`;
+
+		const total = smeltery.amountOf(request.fluid) + (this.pool?.stored(request.fluid) ?? 0);
+		return `only ${total} mB ${fluid} (Smeltery + reservoirs): a ${need.format} needs ${need.amount}`;
 	}
 
 	/**
@@ -799,6 +844,8 @@ export class Controller {
 
 				const moved  = caster.pourPlanned(smeltery, action.fluid, action.amount);
 				const format = this.lastRead?.casters.find((view) => view.name === caster.name)?.format;
+				// Planned on an idle caster with enough fluid: taking nothing means no recipe.
+				if (moved === 0 && format !== undefined) this.learnUncastable(caster.name, format, action.fluid);
 				if (moved > 0) this.worked = true;
 				if (moved > 0) this.log(`poured ${moved} mB ${Controller.shortName(action.fluid)} into ${caster.name}${format !== undefined ? ` (${format})` : ''}`);
 

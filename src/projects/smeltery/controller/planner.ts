@@ -31,7 +31,7 @@ export interface Snapshot {
 	storable: string[];
 }
 
-export type StoreReason = 'drain' | 'purge' | 'unblock' | 'melt' | 'alloy';
+export type StoreReason = 'drain' | 'purge' | 'unblock' | 'melt' | 'alloy' | 'uncastable';
 
 /** Alloy mode: the alloy being made, and how much of it is still wanted. */
 export interface AlloyJob {
@@ -99,6 +99,16 @@ function smallestCast(this: void, fluid: string, snapshot: Snapshot, context: Pl
 function isLeftover(this: void, fluid: FluidStack, snapshot: Snapshot, context: PlanContext): boolean {
 	const smallest = smallestCast(fluid.name, snapshot, context);
 	return smallest !== undefined && fluid.amount < smallest;
+}
+
+/**
+ * Auto: a fluid no caster on the network can cast (no cast of a format it has a recipe for) would only sit
+ * in the Smeltery and block the input (an alloy it would form): it goes to the reservoirs at once.
+ */
+function storeUncastable(this: void, snapshot: Snapshot, context: PlanContext, plan: Plan): void {
+	for (const fluid of snapshot.fluids) {
+		if (smallestCast(fluid.name, snapshot, context) === undefined) store(fluid, 'uncastable', snapshot, plan);
+	}
 }
 
 /** Sends a fluid to the reservoirs, or raises an alert when none can take it. */
@@ -490,8 +500,9 @@ function takeStock(this: void, snapshot: Snapshot, context: PlanContext, plan: P
  * purge:  collect, leftovers and alloys to the reservoirs;
  * melt:   collect, every fluid to the reservoirs, and the input melted like in auto (nothing is cast);
  * alloy:  collect, the chosen alloy only: its ingredients dosed in, from the stock first, and cast;
- * auto:   collect, complete a cast from the stock, cast, and melt the input that is safe (a leftover that
- *         blocks an input goes to the reservoirs); once the input has nothing left to melt, the stock.
+ * auto:   collect, complete a cast from the stock, cast, store what no caster can cast, and melt the input
+ *         that is safe (a leftover that blocks an input goes to the reservoirs); once the input has nothing
+ *         left to melt, the stock.
  */
 export function planTick(this: void, mode: Mode, snapshot: Snapshot, context: PlanContext): Plan {
 	const plan: Plan = {actions: [], waiting: [], alerts: []};
@@ -521,6 +532,7 @@ export function planTick(this: void, mode: Mode, snapshot: Snapshot, context: Pl
 	const completing = mode === 'auto' ? restoreAll(snapshot, context, plan) : new Set<string>();
 	pourAll(snapshot, context, plan, completing);
 	if (mode === 'lock') return plan;
+	storeUncastable(snapshot, context, plan);
 
 	if (snapshot.pauseInput !== undefined) return plan;
 
