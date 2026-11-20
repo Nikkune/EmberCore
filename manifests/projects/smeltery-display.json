@@ -3,7 +3,7 @@
   "type": "project",
   "id": "projects/smeltery-display",
   "name": "Smeltery (display)",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "entry": "projects/smeltery/main.lua",
   "files": [
     "projects/smeltery/main.lua",

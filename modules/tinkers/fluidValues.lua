@@ -236,6 +236,12 @@ function CastAmounts.prototype.____constructor(self, entries)
         end
     end
 end
+function CastAmounts.prototype.forbid(self, format, fluid)
+    self.byFluid:set(
+        ____exports.CastAmounts:key(format, fluid),
+        0
+    )
+end
 function CastAmounts.key(self, format, fluid)
     return (format .. "|") .. fluid
 end
@@ -246,7 +252,7 @@ function CastAmounts.prototype.get(self, format, fluid)
     if fluid ~= nil then
         local exception = self.byFluid:get(____exports.CastAmounts:key(format, fluid))
         if exception ~= nil then
-            return exception
+            return exception > 0 and exception or nil
         end
     end
     return self.byFormat:get(format)

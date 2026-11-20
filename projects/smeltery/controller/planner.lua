@@ -525,10 +525,10 @@ end
 function unblock(item, assessment, snapshot, context, plan, done)
     for ____, ingredient in ipairs(assessment.ingredients or ({})) do
         do
-            local __continue82
+            local __continue86
             repeat
                 if ingredient == item.fluid or done:has(ingredient) then
-                    __continue82 = true
+                    __continue86 = true
                     break
                 end
                 local fluid = __TS__ArrayFind(
@@ -536,16 +536,23 @@ function unblock(item, assessment, snapshot, context, plan, done)
                     function(____, candidate) return candidate.name == ingredient end
                 )
                 if fluid == nil or not isLeftover(fluid, snapshot, context) then
-                    __continue82 = true
+                    __continue86 = true
                     break
                 end
                 done:add(ingredient)
                 store(fluid, "unblock", snapshot, plan)
-                __continue82 = true
+                __continue86 = true
             until true
-            if not __continue82 then
+            if not __continue86 then
                 break
             end
+        end
+    end
+end
+local function storeUncastable(snapshot, context, plan)
+    for ____, fluid in ipairs(snapshot.fluids) do
+        if smallestCast(fluid.name, snapshot, context) == nil then
+            store(fluid, "uncastable", snapshot, plan)
         end
     end
 end
@@ -580,7 +587,7 @@ local function restoreAll(snapshot, context, plan)
     local completing = __TS__New(Set)
     for ____, fluid in ipairs(snapshot.fluids) do
         do
-            local __continue22
+            local __continue26
             repeat
                 local ____opt_5 = __TS__ArrayFind(
                     snapshot.stored,
@@ -588,19 +595,19 @@ local function restoreAll(snapshot, context, plan)
                 )
                 local stock = ____opt_5 and ____opt_5.amount or 0
                 if stock <= 0 then
-                    __continue22 = true
+                    __continue26 = true
                     break
                 end
                 for ____, format in ipairs(context.formatPriority) do
                     do
-                        local __continue25
+                        local __continue29
                         repeat
                             local amount = context.amounts:get(format, fluid.name)
                             if amount == nil or not __TS__ArraySome(
                                 snapshot.casters,
                                 function(____, caster) return caster.state.format == format end
                             ) then
-                                __continue25 = true
+                                __continue29 = true
                                 break
                             end
                             if fluid.amount >= amount then
@@ -612,16 +619,16 @@ local function restoreAll(snapshot, context, plan)
                                 completing:add(fluid.name)
                                 break
                             end
-                            __continue25 = true
+                            __continue29 = true
                         until true
-                        if not __continue25 then
+                        if not __continue29 then
                             break
                         end
                     end
                 end
-                __continue22 = true
+                __continue26 = true
             until true
-            if not __continue22 then
+            if not __continue26 then
                 break
             end
         end
@@ -657,16 +664,16 @@ local function pourAll(snapshot, context, plan, skip)
     end
     for ____, fluid in ipairs(snapshot.fluids) do
         do
-            local __continue42
+            local __continue46
             repeat
                 if skip:has(fluid.name) then
-                    __continue42 = true
+                    __continue46 = true
                     break
                 end
                 local left = fluid.amount
                 for ____, format in ipairs(context.formatPriority) do
                     do
-                        local __continue44
+                        local __continue48
                         repeat
                             local amount = context.amounts:get(format, fluid.name)
                             local casters = __TS__ArrayFilter(
@@ -674,41 +681,41 @@ local function pourAll(snapshot, context, plan, skip)
                                 function(____, caster) return caster.state.format == format end
                             )
                             if amount == nil or #casters == 0 or left < amount then
-                                __continue44 = true
+                                __continue48 = true
                                 break
                             end
                             for ____, caster in ipairs(casters) do
                                 do
-                                    local __continue47
+                                    local __continue51
                                     repeat
                                         if left < amount then
                                             break
                                         end
                                         if used:has(caster.name) or not free(nil, caster) then
-                                            __continue47 = true
+                                            __continue51 = true
                                             break
                                         end
                                         local ____plan_actions_10 = plan.actions
                                         ____plan_actions_10[#____plan_actions_10 + 1] = {kind = "pour", caster = caster.name, fluid = fluid.name, amount = amount}
                                         used:add(caster.name)
                                         left = left - amount
-                                        __continue47 = true
+                                        __continue51 = true
                                     until true
-                                    if not __continue47 then
+                                    if not __continue51 then
                                         break
                                     end
                                 end
                             end
                             break
                         until true
-                        if not __continue44 then
+                        if not __continue48 then
                             break
                         end
                     end
                 end
-                __continue42 = true
+                __continue46 = true
             until true
-            if not __continue42 then
+            if not __continue46 then
                 break
             end
         end
@@ -780,9 +787,9 @@ local function insertAll(snapshot, context, plan)
     for ____, item in ipairs(snapshot.input) do
         local assessment = ____exports.assessItem(item, present, context)
         repeat
-            local ____switch74 = assessment.status
-            local ____cond74 = ____switch74 == "unknown"
-            if ____cond74 then
+            local ____switch78 = assessment.status
+            local ____cond78 = ____switch78 == "unknown"
+            if ____cond78 then
                 local ____opt_12 = context.reject
                 if (____opt_12 and ____opt_12.unknown) == true then
                     local ____plan_actions_14 = plan.actions
@@ -798,8 +805,8 @@ local function insertAll(snapshot, context, plan)
                 end
                 break
             end
-            ____cond74 = ____cond74 or ____switch74 == "heat"
-            if ____cond74 then
+            ____cond78 = ____cond78 or ____switch78 == "heat"
+            if ____cond78 then
                 local ____opt_15 = context.reject
                 if (____opt_15 and ____opt_15.heat) == true then
                     local reject = {
@@ -819,8 +826,8 @@ local function insertAll(snapshot, context, plan)
                 end
                 break
             end
-            ____cond74 = ____cond74 or ____switch74 == "alloy"
-            if ____cond74 then
+            ____cond78 = ____cond78 or ____switch78 == "alloy"
+            if ____cond78 then
                 wait(plan, item, "alloy", assessment.alloy ~= nil and ({alloy = assessment.alloy}) or ({}))
                 unblock(
                     item,
@@ -1076,11 +1083,11 @@ local function takeStock(snapshot, context, plan)
     )
     for ____, stock in ipairs(stocks) do
         do
-            local __continue143
+            local __continue147
             repeat
                 local smallest = smallestCast(stock.fluid, snapshot, context)
                 if smallest == nil or stock.amount <= 0 then
-                    __continue143 = true
+                    __continue147 = true
                     break
                 end
                 local ____opt_30 = __TS__ArrayFind(
@@ -1094,7 +1101,7 @@ local function takeStock(snapshot, context, plan)
                     end
                     local ____plan_smallStocks_32 = plan.smallStocks
                     ____plan_smallStocks_32[#____plan_smallStocks_32 + 1] = {name = stock.fluid, amount = stock.amount}
-                    __continue143 = true
+                    __continue147 = true
                     break
                 end
                 local alloy = context.guard:wouldForm(present, stock.fluid)
@@ -1106,20 +1113,20 @@ local function takeStock(snapshot, context, plan)
                 local unblocking = false
                 for ____, ingredient in ipairs(alloy.ingredients) do
                     do
-                        local __continue148
+                        local __continue152
                         repeat
                             local fluid = __TS__ArrayFind(
                                 snapshot.fluids,
                                 function(____, candidate) return candidate.name == ingredient end
                             )
                             if ingredient == stock.fluid or fluid == nil or not isLeftover(fluid, snapshot, context) then
-                                __continue148 = true
+                                __continue152 = true
                                 break
                             end
                             unblocking = store(fluid, "unblock", snapshot, plan) or unblocking
-                            __continue148 = true
+                            __continue152 = true
                         until true
-                        if not __continue148 then
+                        if not __continue152 then
                             break
                         end
                     end
@@ -1127,9 +1134,9 @@ local function takeStock(snapshot, context, plan)
                 if unblocking then
                     return
                 end
-                __continue143 = true
+                __continue147 = true
             until true
-            if not __continue143 then
+            if not __continue147 then
                 break
             end
         end
@@ -1165,6 +1172,7 @@ function ____exports.planTick(mode, snapshot, context)
     if mode == "lock" then
         return plan
     end
+    storeUncastable(snapshot, context, plan)
     if snapshot.pauseInput ~= nil then
         return plan
     end
