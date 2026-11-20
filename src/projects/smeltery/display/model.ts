@@ -7,13 +7,15 @@ export const Glyph = {
 	right:     String.fromCharCode(16),
 	left:      String.fromCharCode(17),
 	dot:       String.fromCharCode(7),
+	/** Middle dot (Latin-1), between the parts of a line. */
+	mid:       String.fromCharCode(183),
 	/** Thin line across the middle of the cell (drawing block, middle pixel row). */
 	rule:      String.fromCharCode(0x80 + 4 + 8),
 	/** Thin line on the top of the cell (drawing block, top pixel row): an underline for the line above. */
 	underline: String.fromCharCode(0x80 + 1 + 2),
 } as const;
 
-/** Colors of the molten fluids, from a keyword of their name; unknown fluids get magenta. */
+/** Colors of the molten fluids, from a keyword of their name (the others: OTHER_COLORS). */
 const FLUID_COLORS: [string, number][] = [
 	['rose_gold', colors.pink],
 	['pig_iron', colors.pink],
@@ -58,11 +60,16 @@ const FLUID_COLORS: [string, number][] = [
 
 const DARK_COLORS = [colors.gray, colors.blue, colors.purple, colors.brown, colors.green, colors.red, colors.black];
 
+/** Colors given to the fluids no keyword knows: the same fluid always gets the same one. */
+const OTHER_COLORS = [colors.lightBlue, colors.brown, colors.blue, colors.purple, colors.orange, colors.lime, colors.cyan, colors.pink];
+
 export function fluidColor(this: void, fluid: string): number {
 	for (const [keyword, color] of FLUID_COLORS) {
 		if (fluid.includes(keyword)) return color;
 	}
-	return colors.magenta;
+	let hash = 0;
+	for (let index = 0; index < fluid.length; index++) hash = (hash * 31 + fluid.charCodeAt(index)) % 9973;
+	return OTHER_COLORS[hash % OTHER_COLORS.length]!;
 }
 
 /** Text drawn on a color: white on the dark ones, black otherwise. */
@@ -98,7 +105,10 @@ export interface CastGroup {
 	auto: boolean;
 }
 
-/** Casters grouped by cast: auto mode's formats first (in its order), then the others by name. */
+/**
+ * Casters grouped by cast, by name ('no cast' last): a fixed order, so a row does not move under the
+ * finger when its format goes in or out of auto mode.
+ */
 export function groupCasters(this: void, casters: CasterView[], autoFormats: string[]): CastGroup[] {
 	const groups = new Map<string, CastGroup>();
 
@@ -117,18 +127,11 @@ export function groupCasters(this: void, casters: CasterView[], autoFormats: str
 	}
 
 	const list: CastGroup[] = [];
-	for (const format of autoFormats) {
-		const group = groups.get(format);
-		if (group !== undefined) list.push(group);
-	}
+	for (const [, group] of groups) list.push(group);
+	const key = (group: CastGroup): string => (group.format === 'no cast' ? '~' : group.format);
+	list.sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
 
-	const others: CastGroup[] = [];
-	for (const [, group] of groups) {
-		if (!group.auto) others.push(group);
-	}
-	others.sort((a, b) => (a.format < b.format ? -1 : a.format > b.format ? 1 : 0));
-
-	return [...list, ...others];
+	return list;
 }
 
 export interface AttentionLine {
@@ -162,12 +165,25 @@ export function attentionLines(this: void, state: SmelteryState): AttentionLine[
 	return lines;
 }
 
-export type LogKind = 'in' | 'cast' | 'out' | 'reject' | 'forced' | 'mode' | 'other';
+export type LogKind = 'in' | 'cast' | 'out' | 'store' | 'stock' | 'held' | 'forced' | 'mode' | 'alert' | 'other';
 
 export interface LogLine {
 	time: string;
 	kind: LogKind;
 	text: string;
+}
+
+/** 'tconstruct:basin_3' → 'basin 3'; 'minecraft:copper_block' → 'copper block'. */
+export function placeLabel(this: void, name: string): string {
+	return itemLabel(name).split('_').join(' ');
+}
+
+/** The reason at the end of a line, between parentheses: 'moved ... (needs 1090 K)' → 'needs 1090 K'. */
+function reasonOf(this: void, body: string): string {
+	// No lastIndexOf in TSTL: the last '(' by hand.
+	let open = -1;
+	for (let index = body.indexOf('('); index >= 0; index = body.indexOf('(', index + 1)) open = index;
+	return open >= 0 && body.endsWith(')') ? body.substring(open + 1, body.length - 1) : '';
 }
 
 /** A controller log line ('20:24:54 inserted 64 minecraft:raw_gold (seen: ...)') in a short form. */
@@ -179,24 +195,65 @@ export function parseLogLine(this: void, line: string): LogLine {
 
 	switch (word(0)) {
 		case 'inserted':
-			return {time, kind: 'in', text: `${itemLabel(word(2))} ${word(1)}`};
-		case 'poured':
-			return {time, kind: 'cast', text: `${fluidLabel(word(3))} ${word(1)} > ${itemLabel(word(5))}`};
-		case 'collected':
-			return {time, kind: 'out', text: `${word(1)} from ${itemLabel(word(3))}`};
-		case 'moved': {
-			// The reason is the text between the parentheses at the end: '(needs 1090 K)'.
-			const open = body.indexOf('(');
-			const why  = open >= 0 && body.endsWith(')') ? body.substring(open + 1, body.length - 1) : '';
-			return {time, kind: 'reject', text: `${itemLabel(word(2))} ${word(1)} > ${why}`};
+			return {time, kind: 'in', text: `${placeLabel(word(2))} x${word(1)}`};
+		case 'poured': {
+			const format = body.endsWith(')') ? ` (${reasonOf(body)})` : '';
+			return {time, kind: 'cast', text: `${fluidLabel(word(3))} ${word(1)} mB > ${placeLabel(word(5))}${format}`};
 		}
+		case 'collected':
+			// 'collected 1 minecraft:copper_block from tconstruct:basin_3' (older: 'collected 1 from basin').
+			return word(2) === 'from'
+			       ? {time, kind: 'out', text: `x${word(1)} from ${placeLabel(word(3))}`}
+			       : {time, kind: 'out', text: `${placeLabel(word(2))} x${word(1)} from ${placeLabel(word(4))}`};
+		case 'moved':
+			return {time, kind: 'held', text: `${placeLabel(word(2))} x${word(1)} > ${placeLabel(word(4))} (${reasonOf(body)})`};
+		case 'stored':
+			return {time, kind: 'store', text: `${fluidLabel(word(3))} ${word(1)} mB > reservoirs (${reasonOf(body)})`};
+		case 'restored':
+			return {time, kind: 'stock', text: `${fluidLabel(word(3))} ${word(1)} mB back ${words.slice(4).join(' ')}`};
 		case 'FORCED':
 			return {time, kind: 'forced', text: body.substring('FORCED '.length)};
 		case 'mode':
-			return {time, kind: 'mode', text: body};
+			// 'mode drain -> idle': the kind already says "mode".
+			return {time, kind: 'mode', text: body.substring('mode '.length)};
+		case 'alerts:':
+			return {time, kind: 'alert', text: body.substring('alerts: '.length)};
+		case 'no':
+			return word(1) === 'room' ? {time, kind: 'alert', text: body} : {time, kind: 'other', text: body};
 		default:
 			return {time, kind: 'other', text: body};
 	}
+}
+
+/** Short forms of the words of the screen, used when a text does not fit (fit). */
+const ABBREVIATIONS: Record<string, string> = {
+	nugget: 'nug.', nuggets: 'nug.', ingot: 'ing.', ingots: 'ing.', block: 'blk.', blocks: 'blk.',
+	utilities: 'util.', grinding: 'grind.', reservoirs: 'res.', reservoir: 'res.', advanced: 'adv.',
+	industrial: 'ind.', storage: 'stor.', smeltery: 'smelt.',
+};
+
+/**
+ * `text` in at most `width` columns: the known words are shortened from the end ('4 nugget' → '4 nug.'),
+ * then the rest is cut (ending with '.') as a last resort.
+ */
+export function fit(this: void, text: string, width: number): string {
+	if (text.length <= width) return text;
+	const words = text.split(' ');
+	for (let index = words.length - 1; index >= 0 && words.join(' ').length > width; index--) {
+		const short = ABBREVIATIONS[words[index]!];
+		if (short !== undefined) words[index] = short;
+	}
+	const fitted = words.join(' ');
+	if (fitted.length <= width) return fitted;
+	// CC has no ellipsis: a dot ends the cut text.
+	return width <= 1 ? fitted.substring(0, width) : `${fitted.substring(0, width - 1)}.`;
+}
+
+/** mB an item gives once melted, from its name (blocks 810, nuggets 10, the rest an ingot): an estimate. */
+export function itemAmount(this: void, name: string): number {
+	if (name.includes('block')) return 810;
+	if (name.includes('nugget')) return 10;
+	return 90;
 }
 
 /** A row of a fluid list: free (no reservation), a section title, or a fluid. */

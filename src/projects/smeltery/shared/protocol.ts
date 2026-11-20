@@ -48,6 +48,8 @@ export const Messages = {
 	 * Too long for the state broadcast: the display asks for it once, and again after a recipe change.
 	 */
 	getFluids:     'getFluids',
+	/** Display → controller, request: SetSmelteryCapacityRequest. */
+	setSmelteryCapacity: 'setSmelteryCapacity',
 } as const;
 
 export interface CasterView {
@@ -148,8 +150,38 @@ export interface SmelteryState {
 	waiting: WaitingItem[];
 	/** Problems the player must fix (missing peripheral, output full, ...). */
 	alerts: string[];
+	/** Capacity of the Smeltery in mB, once learnt or set. */
+	smelteryCapacity?: number;
+	smelteryCapacitySource?: 'learnt' | 'set';
+	/** Molten total of the Smeltery, one sample every HISTORY_SECONDS, oldest first. */
+	history?: number[];
+	/** os.epoch('utc') when the current mode started. */
+	modeSince?: number;
+	/** Seconds until the input is melted, at the pace of the last minutes; unknown when nothing went in. */
+	inputSeconds?: number;
+	/** What each molten fluid will be cast into with the auto formats, biggest first. */
+	forecast?: FluidForecast[];
+	/** Stocks too small for any cast auto mode makes (not a problem: they wait for more). */
+	smallStocks?: FluidStack[];
 	/** Latest events, newest last. */
 	log: string[];
+}
+
+/** Samples of SmelteryState.history: one every this many seconds, this many kept (10 minutes). */
+export const HISTORY_SECONDS = 30;
+export const HISTORY_SIZE    = 20;
+
+export interface FluidForecast {
+	fluid: string;
+	amount: number;
+	casts: {format: string; count: number}[];
+	/** mB too small for any auto cast (they go to the stock). */
+	left: number;
+}
+
+/** The Smeltery capacity set from the display; undefined: auto (learnt again when it is full). */
+export interface SetSmelteryCapacityRequest {
+	capacity?: number;
 }
 
 export interface SetModeRequest {
