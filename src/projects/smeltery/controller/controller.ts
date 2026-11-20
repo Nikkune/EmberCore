@@ -2,6 +2,7 @@ import {EmberError}                                     from '@core/errors';
 import {Inventory}                                      from '@core/inventory';
 import type {ItemSummary}                               from '@core/inventory';
 import {Parallel}                                       from '@core/parallel';
+import {Peripheral}                                     from '@core/peripheral';
 import {Tank}                                           from '@core/tank';
 import type {FluidStack}                                from '@core/tank';
 import {ReservoirPool}                                  from '@modules/fluids/index';
@@ -9,12 +10,13 @@ import {Channel}                                        from '@modules/net/index
 import {Caster, Smeltery}                               from '@modules/tinkers/index';
 import type {AlloyGuard, AlloyRatio, CastAmounts, CasterState, MaterialMap} from '@modules/tinkers/index';
 
-import {alloyGuardOf, castAmountsOf, loadCatalogue, materialMapOf, temperatureMap} from '../shared/catalogue';
+import {alloyGuardOf, CATALOGUE_PATH, catalogueFluids, castAmountsOf, loadCatalogue, materialMapOf, saveCatalogue, temperatureMap} from '../shared/catalogue';
 import type {Catalogue}                                 from '../shared/catalogue';
 import {CONTROLLER_HOSTNAME, Messages, MODES, PROTOCOL} from '../shared/protocol';
-import type {AlloyOption, AlloyView, CasterView, CastRequest, FuelView, InputItemView, InsertRequest, InventoryView, Mode, SetAlloyRequest, SetFormatRequest, SetModeRequest, SmelteryState, WaitingItem} from '../shared/protocol';
+import type {AlloyOption, AlloyView, CasterView, CastRequest, DeleteRecipeRequest, FuelView, InputItemView, InsertRequest, InventoryView, Mode, SaveRecipeRequest, SetAlloyRequest, SetReservoirRequest, SetFormatRequest, SetModeRequest, SmelteryState, WaitingItem} from '../shared/protocol';
+import {checkIndex, deleteRecipe, recipeProblem, saveRecipe} from '../shared/recipes';
 
-import {CONFIG_PATH, loadAlloy, loadCapacities, loadControllerConfig, loadMode, saveAlloy, saveCapacities, saveControllerConfig, saveMode} from './config';
+import {clearAlloy, CONFIG_PATH, loadAlloy, loadCapacities, loadControllerConfig, loadMode, saveAlloy, saveCapacities, saveControllerConfig, saveMode} from './config';
 import type {ControllerConfig}                          from './config';
 import {discoverNetwork}                                from './discovery';
 import type {Network}                                   from './discovery';
@@ -44,8 +46,10 @@ export class Controller {
 	private pool?: ReservoirPool | undefined;
 	/** Mode a purge goes back to. */
 	private previousMode: Mode;
-	private readonly alloyResults: Set<string>;
-	private readonly alloyRatios: AlloyRatio[];
+	/** Rebuilt from the catalogue whenever a recipe is edited (applyRecipes). */
+	private alloyResults: Set<string> = new Set();
+	private alloyRatios: AlloyRatio[] = [];
+	private guard!: AlloyGuard;
 	/** The alloy of alloy mode, and how much of it was cast. */
 	private alloy?: AlloyView | undefined;
 	private smeltery?: Smeltery | undefined;
@@ -58,7 +62,6 @@ export class Controller {
 	private readonly fluidCache: FluidCache      = new Map();
 	private readonly logLines: string[]          = [];
 	private readonly materials: MaterialMap;
-	private readonly guard: AlloyGuard;
 	private readonly amounts: CastAmounts;
 	private readonly meltingTemperatures: Map<string, number>;
 	private readonly fuelTemperatures: Map<string, number>;
@@ -77,14 +80,20 @@ export class Controller {
 	private logFile?: string | undefined;
 	/** Where settings changed from the display are saved; unset: they only last until a restart. */
 	private configPath?: string | undefined;
+	/** Where recipes edited from the display are saved; unset: they only last until a restart. */
+	private cataloguePath?: string | undefined;
 	private lastAlerts                           = '';
 	/** os.clock() of the last activity in auto, alloy or melt (see idleSeconds). */
 	private quietSince?: number | undefined;
 
-	public constructor(private readonly config: ControllerConfig, catalogue: Catalogue, private readonly modePath?: string) {
+	public constructor(
+		private readonly config: ControllerConfig,
+		private readonly catalogue: Catalogue,
+		private readonly modePath?: string,
+	) {
 		this.materials = materialMapOf(catalogue);
-		this.guard     = alloyGuardOf(catalogue);
 		this.amounts   = castAmountsOf(catalogue);
+		this.applyRecipes();
 
 		this.meltingTemperatures = temperatureMap(catalogue.meltingTemperatures);
 		this.fuelTemperatures    = temperatureMap(catalogue.fuels);
@@ -92,8 +101,6 @@ export class Controller {
 		const saved       = loadMode(modePath);
 		this.mode         = saved.mode;
 		this.previousMode = saved.previous;
-		this.alloyResults = new Set(catalogue.alloys.map((alloy) => alloy.result));
-		this.alloyRatios  = catalogue.alloyRatios;
 		this.alloy        = loadAlloy();
 		this.state     = this.emptyState();
 	}
@@ -110,6 +117,78 @@ export class Controller {
 	/** Settings changed from the display (the auto formats) are written back to this file. */
 	public setConfigPath(path: string): void {
 		this.configPath = path;
+	}
+
+	/** Recipes edited from the display are written back to this file. */
+	public setCataloguePath(path: string): void {
+		this.cataloguePath = path;
+	}
+
+	/** Every fluid the catalogue names, for the fluid lists of the display. */
+	public fluids(): string[] {
+		return catalogueFluids(this.catalogue);
+	}
+
+	/**
+	 * The settings of a reservoir from the display: the fluid it is reserved for (or free), and its
+	 * capacity set by hand (or none). Kept in the configuration; the capacity it learnt is forgotten
+	 * when the hand-set one changes.
+	 */
+	public setReservoir(request: SetReservoirRequest): void {
+		const reservoir = request.reservoir;
+		const fluid     = request.fluid;
+		const capacity  = request.capacity;
+		const pool      = this.pool;
+		if (typeof reservoir !== 'string' || pool === undefined || !pool.has(reservoir)) {
+			throw new EmberError(`unknown reservoir ${tostring(reservoir)}`, 'SMELTERY_ERROR');
+		}
+		if (fluid !== undefined && (typeof fluid !== 'string' || fluid === '')) throw new EmberError('unknown fluid', 'SMELTERY_ERROR');
+		if (capacity !== undefined && !(capacity > 0 && capacity % 1 === 0)) throw new EmberError('the capacity must be positive', 'SMELTERY_ERROR');
+
+		const assignments = this.config.assignments.filter((entry) => entry.reservoir !== reservoir);
+		if (fluid !== undefined) assignments.push({reservoir, fluid});
+		this.config.assignments = assignments;
+
+		const before     = this.config.capacities.find((entry) => entry.reservoir === reservoir)?.capacity;
+		const capacities = this.config.capacities.filter((entry) => entry.reservoir !== reservoir);
+		if (capacity !== undefined) capacities.push({reservoir, capacity});
+		this.config.capacities = capacities;
+		if (this.configPath !== undefined) saveControllerConfig(this.config, this.configPath);
+
+		pool.assign(reservoir, fluid);
+		if (capacity !== before) {
+			pool.setCapacity(reservoir, capacity);
+			saveCapacities(pool.capacities());
+		}
+		this.state.reservoirs = pool.views();
+
+		const size = capacity !== before ? `, capacity ${capacity !== undefined ? `${capacity} mB` : 'auto'}` : '';
+		this.log(`${reservoir}: ${fluid !== undefined ? `for ${Controller.shortName(fluid)}` : 'free'}${size}`);
+	}
+
+	/** Adds a recipe, or replaces one; the guard and alloy mode use it at once. */
+	public saveRecipe(request: SaveRecipeRequest): void {
+		const recipe = request.recipe;
+		if (type(recipe) !== 'table' || type(recipe.inputs) !== 'table') throw new EmberError('no recipe', 'SMELTERY_ERROR');
+		const index   = request.index;
+		const problem = recipeProblem(recipe) ?? (index !== undefined ? checkIndex(this.catalogue, index, request.expected) : undefined);
+		if (problem !== undefined) throw new EmberError(problem, 'SMELTERY_ERROR');
+
+		const old = request.index !== undefined ? this.catalogue.alloyRatios[request.index] : undefined;
+		saveRecipe(this.catalogue, recipe, request.index);
+		const what = recipe.inputs.map((input) => `${input.amount} ${Controller.shortName(input.fluid)}`).join(' + ');
+		this.log(`${old !== undefined ? 'recipe changed' : 'recipe added'}: ${what} -> ${recipe.amount} ${Controller.shortName(recipe.result)}`);
+		this.recipesChanged();
+	}
+
+	/** Deletes a recipe; when it was the last one of the chosen alloy, alloy mode has nothing left to make. */
+	public deleteRecipe(request: DeleteRecipeRequest): void {
+		const problem = checkIndex(this.catalogue, request.index, request.expected);
+		if (problem !== undefined) throw new EmberError(problem, 'SMELTERY_ERROR');
+
+		const old = deleteRecipe(this.catalogue, request.index);
+		this.log(`recipe deleted: ${Controller.shortName(old.result)}`);
+		this.recipesChanged();
 	}
 
 	/**
@@ -318,11 +397,58 @@ export class Controller {
 			this.tickWanted = true;
 			return this.state;
 		});
+
+		channel.on(Messages.setReservoir, (payload) => {
+			this.setReservoir(payload as SetReservoirRequest);
+			this.tickWanted = true;
+			return this.state;
+		});
+
+		channel.on(Messages.saveRecipe, (payload) => {
+			this.saveRecipe(payload as SaveRecipeRequest);
+			this.tickWanted = true;
+			return this.state;
+		});
+
+		channel.on(Messages.deleteRecipe, (payload) => {
+			this.deleteRecipe(payload as DeleteRecipeRequest);
+			this.tickWanted = true;
+			return this.state;
+		});
+
+		channel.on(Messages.getFluids, () => this.fluids());
 	}
 
 	/** A command changed something: the main loop should tick now rather than wait for its timer. */
 	public wantsTick(): boolean {
 		return this.tickWanted;
+	}
+
+	/** The guard and alloy mode follow the recipes of the catalogue. */
+	private applyRecipes(): void {
+		this.guard        = alloyGuardOf(this.catalogue);
+		this.alloyResults = new Set(this.catalogue.alloys.map((alloy) => alloy.result));
+		this.alloyRatios  = this.catalogue.alloyRatios;
+	}
+
+	/**
+	 * After an edit: saves the catalogue, rebuilds the guard, and forgets the chosen alloy when no recipe
+	 * makes it any more (alloy mode then goes back to the mode it interrupted).
+	 */
+	private recipesChanged(): void {
+		if (this.cataloguePath !== undefined) saveCatalogue(this.catalogue, this.cataloguePath);
+		this.applyRecipes();
+
+		const alloy = this.alloy;
+		if (alloy !== undefined && !this.alloyRatios.some((ratio) => ratio.result === alloy.result)) {
+			this.log(`alloy ${Controller.shortName(alloy.result)}: no recipe left`);
+			if (this.mode === 'alloy') this.setMode(Controller.ends(this.previousMode) ? 'idle' : this.previousMode);
+			this.alloy = undefined;
+			clearAlloy();
+			delete this.state.alloy;
+		}
+
+		this.state.alloyOptions = this.alloyOptions();
 	}
 
 	private connect(): void {
@@ -336,7 +462,14 @@ export class Controller {
 
 		const assignments: Record<string, string> = {};
 		for (const entry of this.config.assignments) assignments[entry.reservoir] = entry.fluid;
-		this.pool = new ReservoirPool(this.network.reservoirs, {capacities: loadCapacities(), assignments});
+		const setCapacities: Record<string, number> = {};
+		for (const entry of this.config.capacities) setCapacities[entry.reservoir] = entry.capacity;
+		const typeCapacities: Record<string, number> = {};
+		for (const name of this.network.reservoirs) {
+			const known = this.catalogue.reservoirCapacities.find((entry) => Peripheral.hasType(name, entry.type));
+			if (known !== undefined) typeCapacities[name] = known.capacity;
+		}
+		this.pool = new ReservoirPool(this.network.reservoirs, {capacities: loadCapacities(), setCapacities, typeCapacities, assignments});
 
 		const {heatOutput, unknownOutput, fuelTank} = this.network;
 		this.fuelTank      = fuelTank !== undefined ? Tank.fromName(fuelTank) : undefined;
@@ -748,24 +881,22 @@ export class Controller {
 		const stockOf = (fluid: string): number => stored.find((entry) => entry.fluid === fluid)?.amount ?? 0;
 		const options: AlloyOption[] = [];
 
-		for (const ratio of this.alloyRatios) {
+		this.alloyRatios.forEach((ratio, index) => {
 			const batches   = Math.min(...ratio.inputs.map((input) => Math.floor(stockOf(input.fluid) / input.amount)));
 			const fromStock = Math.max(0, batches) * ratio.amount;
-			const existing  = options.find((option) => option.result === ratio.result);
-			if (existing !== undefined && existing.fromStock >= fromStock) continue;
 
-			const option: AlloyOption = {result: ratio.result, amount: ratio.amount, inputs: ratio.inputs, fromStock};
+			const option: AlloyOption = {index, result: ratio.result, amount: ratio.amount, inputs: ratio.inputs, fromStock};
 			const temperature = this.meltingTemperatures.get(ratio.result);
 			const heat        = this.heat ?? this.fallbackHeat;
 			if (temperature !== undefined && heat !== undefined && temperature > heat) option.temperature = temperature;
+			options.push(option);
+		});
 
-			if (existing !== undefined) options[options.indexOf(existing)] = option;
-			else options.push(option);
-		}
-
+		// Those the stock can make first, then by name; the recipes of one alloy stay in catalogue order.
 		return options.sort((a, b) => {
 			if (a.fromStock !== b.fromStock) return b.fromStock - a.fromStock;
-			return a.result < b.result ? -1 : a.result > b.result ? 1 : 0;
+			if (a.result !== b.result) return a.result < b.result ? -1 : 1;
+			return a.index - b.index;
 		});
 	}
 
@@ -867,6 +998,7 @@ export function runController(this: void): void {
 	const controller = new Controller(config, loadCatalogue());
 	controller.setLogFile('/smeltery/controller.log');
 	controller.setConfigPath(CONFIG_PATH);
+	controller.setCataloguePath(CATALOGUE_PATH);
 	const channel    = new Channel({protocol: PROTOCOL});
 
 	let online = false;

@@ -7,15 +7,23 @@ export interface ReservoirView {
 	/** Undefined when empty. */
 	fluid?: string;
 	amount: number;
-	/** Learnt the first time it refused fluid; undefined until then. */
+	/** Undefined while unknown: then learnt the first time the reservoir refuses fluid. */
 	capacity?: number;
+	/** Where `capacity` comes from: learnt (it refused fluid), set by hand, or given by its type. */
+	capacitySource?: CapacitySource;
 	/** Fluid it is reserved for by the configuration, even when empty. */
 	assigned?: string;
 }
 
+export type CapacitySource = 'learnt' | 'set' | 'type';
+
 export interface ReservoirPoolOptions {
 	/** Capacities already known (learnt during an earlier run), by reservoir name. */
 	capacities?: Record<string, number>;
+	/** Capacities set by hand, by reservoir name: used when none was learnt. */
+	setCapacities?: Record<string, number>;
+	/** Capacities given by the type of the reservoir, by reservoir name: the last resort. */
+	typeCapacities?: Record<string, number>;
 	/** Manual assignments, by reservoir name: such a reservoir only ever takes that fluid. */
 	assignments?: Record<string, string>;
 }
@@ -35,16 +43,22 @@ interface Reservoir {
 export class ReservoirPool {
 	private readonly reservoirs: Reservoir[];
 	private readonly assignments: Record<string, string>;
+	private readonly learnt: Record<string, number>;
+	private readonly setCapacities: Record<string, number>;
+	private readonly typeCapacities: Record<string, number>;
 
 	public constructor(names: string[], options: ReservoirPoolOptions = {}) {
-		this.assignments = options.assignments ?? {};
-		this.reservoirs  = names.map((name) => {
+		this.assignments    = options.assignments ?? {};
+		this.learnt         = {...options.capacities};
+		this.setCapacities  = {...options.setCapacities};
+		this.typeCapacities = {...options.typeCapacities};
+		this.reservoirs     = names.map((name) => {
 			const view: ReservoirView = {name, amount: 0};
-			const capacity            = options.capacities?.[name];
 			const assigned            = this.assignments[name];
-			if (capacity !== undefined) view.capacity = capacity;
 			if (assigned !== undefined) view.assigned = assigned;
-			return {tank: Tank.fromName(name), view};
+			const reservoir = {tank: Tank.fromName(name), view};
+			this.resolveCapacity(reservoir);
+			return reservoir;
 		});
 	}
 
@@ -58,11 +72,49 @@ export class ReservoirPool {
 		return this.reservoirs.map((reservoir) => ({...reservoir.view}));
 	}
 
-	/** Capacities learnt so far, to keep them for the next run. */
+	/** True when `name` is one of the reservoirs of the pool. */
+	public has(name: string): boolean {
+		return this.reservoirs.some((reservoir) => reservoir.view.name === name);
+	}
+
+	/**
+	 * Reserves a reservoir for `fluid` from now on (undefined: frees it). A reservoir that holds another
+	 * fluid keeps it and can still give it back, but takes no more of it: it changes fluid once emptied.
+	 */
+	public assign(name: string, fluid: string | undefined): void {
+		const reservoir = this.reservoirs.find((candidate) => candidate.view.name === name);
+		if (reservoir === undefined) return;
+
+		if (fluid === undefined) {
+			delete this.assignments[name];
+			delete reservoir.view.assigned;
+		}
+		else {
+			this.assignments[name] = fluid;
+			reservoir.view.assigned = fluid;
+		}
+	}
+
+	/**
+	 * Sets the capacity of a reservoir by hand (undefined: back to the learnt or type one). What was
+	 * learnt for it is forgotten: the hand-set value is newer; a reservoir refusing fluid teaches it again.
+	 */
+	public setCapacity(name: string, capacity: number | undefined): void {
+		const reservoir = this.reservoirs.find((candidate) => candidate.view.name === name);
+		if (reservoir === undefined) return;
+
+		delete this.learnt[name];
+		if (capacity === undefined) delete this.setCapacities[name];
+		else this.setCapacities[name] = capacity;
+		this.resolveCapacity(reservoir);
+	}
+
+	/** Capacities learnt so far (not the set or type ones), to keep them for the next run. */
 	public capacities(): Record<string, number> {
 		const result: Record<string, number> = {};
 		for (const {view} of this.reservoirs) {
-			if (view.capacity !== undefined) result[view.name] = view.capacity;
+			const learnt = this.learnt[view.name];
+			if (learnt !== undefined) result[view.name] = learnt;
 		}
 		return result;
 	}
@@ -103,7 +155,10 @@ export class ReservoirPool {
 			stored += moved;
 
 			// Took less than offered (the source had it all): the reservoir is full, its capacity is known.
-			if (moved < wanted && reservoir.view.fluid === fluid) reservoir.view.capacity = reservoir.view.amount;
+			if (moved < wanted && reservoir.view.fluid === fluid) {
+				this.learnt[reservoir.view.name] = reservoir.view.amount;
+				this.resolveCapacity(reservoir);
+			}
 		}
 
 		return stored;
@@ -124,6 +179,24 @@ export class ReservoirPool {
 		}
 
 		return taken;
+	}
+
+	/** Capacity of the view: learnt first (what the reservoir really did), then set by hand, then by type. */
+	private resolveCapacity(reservoir: Reservoir): void {
+		const name = reservoir.view.name;
+		const view = reservoir.view;
+		const found: [number | undefined, CapacitySource][] = [
+			[this.learnt[name], 'learnt'], [this.setCapacities[name], 'set'], [this.typeCapacities[name], 'type'],
+		];
+
+		delete view.capacity;
+		delete view.capacitySource;
+		for (const [capacity, source] of found) {
+			if (capacity === undefined) continue;
+			view.capacity       = capacity;
+			view.capacitySource = source;
+			return;
+		}
 	}
 
 	private read(reservoir: Reservoir): void {

@@ -912,10 +912,10 @@ local function fakeTinkers()
 		return addDevice(name, { name:match('^(.-)_%d+$'), 'inventory', 'fluid_storage' }, fluids, items)
 	end
 
-	function net.reservoir(name, capacity, fluids)
+	function net.reservoir(name, capacity, fluids, kind)
 		local store = fluidStore(fluids or {}, capacity)
 		store.single = true
-		return addDevice(name, { 'miniutilities:drum', 'fluid_storage' }, store)
+		return addDevice(name, { kind or 'miniutilities:drum', 'fluid_storage' }, store)
 	end
 
 	function net.fuelTank(name, fluids)
@@ -2028,6 +2028,14 @@ local function screenFor(calls)
 		cast = function(_, r) calls[#calls + 1] = 'cast ' .. r.fluid .. ' ' .. r.format end,
 		setFormat = function(_, r) calls[#calls + 1] = 'format ' .. r.format .. ' ' .. tostring(r.auto) end,
 		setAlloy = function(_, r) calls[#calls + 1] = 'alloy ' .. r.result .. ' ' .. tostring(r.target) .. (r.activate and ' on' or '') end,
+		setReservoir = function(_, r) calls[#calls + 1] = 'assign ' .. r.reservoir .. ' ' .. tostring(r.fluid) .. (r.capacity and (' ' .. r.capacity) or '') end,
+		saveRecipe = function(_, r, saved)
+			local inputs = {}
+			for i, input in ipairs(r.recipe.inputs) do inputs[i] = input.amount .. ' ' .. input.fluid end
+			calls[#calls + 1] = 'recipe ' .. tostring(r.index) .. ' ' .. r.recipe.amount .. ' ' .. r.recipe.result .. ' = ' .. table.concat(inputs, ' + ')
+			saved()
+		end,
+		deleteRecipe = function(_, r) calls[#calls + 1] = 'delete ' .. r.index .. ' ' .. r.expected end,
 	})
 	local runtime, terminal = runtimeFor(screen.root, 79, 38)
 	return screen, runtime, terminal
@@ -2348,8 +2356,8 @@ test('display: alloy and melt cards; Change alloy picks an alloy and an amount',
 		alloy = { result = ROSE, target = 1800, made = 540 },
 		reservoirs = { { name = 'evilcraft:drum_1', fluid = COPPER, amount = 1800 }, { name = 'evilcraft:drum_2', fluid = GOLD, amount = 900 } },
 		alloyOptions = {
-			{ result = ROSE, amount = 180, inputs = { { fluid = COPPER, amount = 90 }, { fluid = GOLD, amount = 90 } }, fromStock = 1800 },
-			{ result = 'tconstruct:molten_bronze', amount = 360, inputs = { { fluid = COPPER, amount = 270 }, { fluid = TIN, amount = 90 } }, fromStock = 0 },
+			{ index = 3, result = ROSE, amount = 180, inputs = { { fluid = COPPER, amount = 90 }, { fluid = GOLD, amount = 90 } }, fromStock = 1800 },
+			{ index = 0, result = 'tconstruct:molten_bronze', amount = 360, inputs = { { fluid = COPPER, amount = 270 }, { fluid = TIN, amount = 90 } }, fromStock = 0 },
 		},
 	}))
 	runtime:invalidate({ reason = 'state', kind = 'full' })
@@ -2442,6 +2450,295 @@ test('fluids: assigned reservoirs only take their fluid; take() gives back, smal
 	expect(after == before + 150 and pool:stored(IRON) == 50, 'smeltery or pool amounts wrong after take')
 	local views = pool:views()
 	expect(views[2].assigned == GOLD and views[2].fluid == GOLD and views[1].amount == 50, 'views')
+end)
+
+-- ============================================================
+-- Smeltery: reservoirs reserved and alloy recipes edited from the display
+-- ============================================================
+
+local BRONZE = 'tconstruct:molten_bronze'
+local ZINC = 'tconstruct:molten_zinc'
+local FERROGOLD = 'test:molten_ferrogold'
+
+test('recipes: a recipe is checked, then added, changed and deleted in both lists', function()
+	local recipes = require('projects.smeltery.shared.recipes')
+	local function ratio(result, amount, ...)
+		local inputs = {}
+		for i, pair in ipairs({ ... }) do inputs[i] = { fluid = pair[1], amount = pair[2] } end
+		return { result = result, amount = amount, inputs = inputs }
+	end
+
+	expect(recipes.recipeProblem(ratio(BRONZE, 360, { COPPER, 270 })) == 'at least 2 ingredients', 'one ingredient accepted')
+	expect(recipes.recipeProblem(ratio(BRONZE, 360, { COPPER, 270 }, { BRONZE, 90 })) == 'the result cannot be an ingredient', 'result as ingredient')
+	expect(recipes.recipeProblem(ratio(BRONZE, 360, { COPPER, 270 }, { COPPER, 90 })) == 'an ingredient is there twice', 'twice')
+	expect(recipes.recipeProblem(ratio(BRONZE, 360, { COPPER, 0 }, { TIN, 90 })) == 'every amount must be positive', 'zero amount')
+	expect(recipes.recipeProblem(ratio(BRONZE, 0, { COPPER, 270 }, { TIN, 90 })) ~= nil, 'zero result')
+	expect(recipes.recipeProblem(ratio(BRONZE, 360, { COPPER, 1 }, { TIN, 1 }, { GOLD, 1 }, { IRON, 1 }, { ZINC, 1 })) ~= nil, 'five ingredients')
+	expect(recipes.recipeProblem(ratio(BRONZE, 360, { COPPER, 270 }, { TIN, 90 })) == nil, 'bronze refused')
+
+	local catalogue = {
+		alloys = { { result = BRONZE, ingredients = { COPPER, TIN } } },
+		alloyRatios = { ratio(BRONZE, 360, { COPPER, 270 }, { TIN, 90 }) },
+	}
+	expect(recipes.saveRecipe(catalogue, ratio(ROSE, 180, { COPPER, 90 }, { GOLD, 90 })) == 1, 'a new recipe goes last')
+	expect(#catalogue.alloyRatios == 2 and #catalogue.alloys == 2 and catalogue.alloys[2].result == ROSE, 'new recipe not in both lists')
+
+	-- Bronze now needs gold too: the guard recipe changes with it, nothing else.
+	recipes.saveRecipe(catalogue, ratio(BRONZE, 360, { COPPER, 270 }, { TIN, 90 }, { GOLD, 90 }), 0)
+	local guard = new(tinkers.AlloyGuard, catalogue.alloys)
+	expect(guard:wouldForm({ COPPER }, TIN) == nil, 'copper and tin still form the old bronze')
+	expect(guard:wouldForm({ COPPER, GOLD }, TIN).result == BRONZE, 'the new bronze is not guarded')
+	expect(#catalogue.alloys == 2 and catalogue.alloyRatios[1].inputs[3].fluid == GOLD, 'bronze not replaced in place')
+
+	expect(recipes.checkIndex(catalogue, 1, BRONZE):find('changed', 1, true), 'a stale index must be refused')
+	expect(recipes.checkIndex(catalogue, 5, nil) == 'no recipe #6', 'a missing index must be refused')
+	expect(recipes.checkIndex(catalogue, 1, ROSE) == nil, 'a right index refused')
+
+	-- Two recipes with the same ingredients share one guard recipe: deleting one keeps it.
+	recipes.saveRecipe(catalogue, ratio(ROSE, 270, { COPPER, 180 }, { GOLD, 90 }))
+	expect(#catalogue.alloys == 2, 'the same guard recipe was added twice')
+	recipes.deleteRecipe(catalogue, 1)
+	expect(#catalogue.alloyRatios == 2 and #catalogue.alloys == 2, 'the guard of the other rose gold recipe was dropped')
+	recipes.deleteRecipe(catalogue, 1)
+	expect(#catalogue.alloyRatios == 1 and #catalogue.alloys == 1 and catalogue.alloys[1].result == BRONZE, 'rose gold not deleted')
+end)
+
+test('fluids: a reservoir reserved while it holds another fluid keeps it, takes no more of it, then its new fluid', function()
+	local fake, r = poolNet()
+	local pool = new(fluids.ReservoirPool, { 'drum_0', 'drum_1' })
+	pool:refresh()
+	expect(pool:has('drum_0') and not pool:has('drum_9'), 'has()')
+
+	pool:assign('drum_0', IRON) -- drum_0 holds 200 mB of gold
+	expect(pool:store(drainTank(), GOLD, 100) == 100, 'gold not stored')
+	expect(r[1].fluids.fluids[1].amount == 200 and r[2].fluids.fluids[1].name == GOLD, 'gold went into the drum reserved for iron')
+	expect(pool:views()[1].assigned == IRON and pool:views()[1].fluid == GOLD, 'view of the reserved drum')
+
+	expect(pool:take(drainTank(), GOLD, 300) == 300, 'the gold of the reserved drum cannot be taken back')
+	pool:store(drainTank(), IRON, 100)
+	expect(r[1].fluids.fluids[1].name == IRON, 'the emptied drum did not take its new fluid')
+
+	pool:assign('drum_0', nil)
+	expect(pool:views()[1].assigned == nil, 'reservation not removed')
+end)
+
+test('controller: the display reserves a reservoir and edits the recipes; the guard and alloy mode follow', function()
+	FILES = {}
+	local fake = fakeTinkers()
+	fake.smeltery({ { name = GOLD, amount = 900 } })
+	fake.caster('tconstruct:basin_0', 810)
+	fake.reservoir('drum_0', 1000)
+	local input = fake.chest('minecraft:chest_in', 27, {
+		[1] = { name = 'minecraft:raw_iron', count = 4, tags = { ['forge:raw_materials/iron'] = true } },
+	})
+	fake.chest('minecraft:chest_out', 27)
+	fake.install()
+
+	local configModule = require('projects.smeltery.controller.config')
+	local catalogue = require('projects.smeltery.shared.catalogue')
+	local c = controllerWith(fake, function(config) config.reservoirs = { 'drum_0' } end)
+	c:setConfigPath('/smeltery/controller.db')
+	c:setCataloguePath('/smeltery/catalogue.db')
+	quiet(function() c:tick() end)
+
+	quiet(function() c:setReservoir({ reservoir = 'drum_0', fluid = TIN }) end)
+	expect(c:getState().reservoirs[1].assigned == TIN, 'reservation not in the state')
+	local saved = configModule.loadControllerConfig('/smeltery/controller.db').assignments
+	expect(#saved == 1 and saved[1].reservoir == 'drum_0' and saved[1].fluid == TIN, 'reservation not saved')
+	quiet(function() c:setReservoir({ reservoir = 'drum_0' }) end)
+	expect(c:getState().reservoirs[1].assigned == nil and #configModule.loadControllerConfig('/smeltery/controller.db').assignments == 0, 'reservation not removed')
+	expect(not pcall(function() c:setReservoir({ reservoir = 'drum_9', fluid = TIN }) end), 'an unknown reservoir must be refused')
+	expect(not pcall(function() c:setReservoir({ reservoir = 'drum_0', capacity = -5 }) end), 'a negative capacity must be refused')
+
+	-- A new alloy of iron and gold: raw iron must now wait next to the gold.
+	expect(not pcall(function() c:saveRecipe({ recipe = { result = FERROGOLD, amount = 180, inputs = { { fluid = IRON, amount = 90 } } } }) end), 'an invalid recipe was saved')
+	quiet(function() c:saveRecipe({ recipe = { result = FERROGOLD, amount = 180, inputs = { { fluid = IRON, amount = 90 }, { fluid = GOLD, amount = 90 } } } }) end)
+	quiet(function() c:setMode('auto'); c:tick() end)
+	local waiting = c:getState().waiting[1]
+	expect(input.items.slots[1] and input.items.slots[1].count == 4, 'raw iron went in next to the gold')
+	expect(waiting and waiting.reason == 'alloy' and waiting.alloy == FERROGOLD, 'raw iron not waiting for the new alloy')
+
+	local file = catalogue.loadCatalogue('/smeltery/catalogue.db')
+	expect(file.alloyRatios[#file.alloyRatios].result == FERROGOLD and file.alloys[#file.alloys].result == FERROGOLD, 'recipe not saved in the catalogue file')
+	local option
+	for _, candidate in ipairs(c:getState().alloyOptions) do
+		if candidate.result == FERROGOLD then option = candidate end
+	end
+	expect(option and option.index == #file.alloyRatios - 1, 'the new recipe has no index in the picker')
+	expect(#c:getState().alloyOptions == #file.alloyRatios, 'the picker must list every recipe (orichalcum has three)')
+
+	-- Chosen, then deleted while being made: alloy mode stops and auto comes back.
+	quiet(function() c:setAlloy({ result = FERROGOLD, activate = true }) end)
+	expect(c:getMode() == 'alloy', 'alloy mode not started')
+	expect(not pcall(function() c:deleteRecipe({ index = option.index, expected = BRONZE }) end), 'a stale delete must be refused')
+	quiet(function() c:deleteRecipe({ index = option.index, expected = FERROGOLD }) end)
+	expect(c:getMode() == 'auto' and c:getState().alloy == nil, 'alloy mode still running without a recipe')
+	expect(configModule.loadAlloy() == nil, 'the deleted alloy is still saved as chosen')
+
+	quiet(function() c:tick() end)
+	local chute = fake.devices['tconstruct:chute_0'].items.slots
+	expect(chute[1] and chute[1].name == 'minecraft:raw_iron', 'raw iron still refused once the recipe was deleted')
+	local fluidList = c:fluids()
+	expect(#fluidList > 50 and fluidList[1] < fluidList[2], 'the fluid list is short or not sorted')
+end)
+
+test('display: Stock reserves a reservoir; the editor writes and saves a recipe; Delete asks twice', function()
+	local calls = {}
+	local screen, runtime, terminal = screenFor(calls)
+	screen:setState(smelteryState({
+		reservoirs = { { name = 'drum_0', amount = 0 }, { name = 'drum_1', fluid = GOLD, amount = 500 } },
+		alloyOptions = { { index = 0, result = BRONZE, amount = 360, inputs = { { fluid = COPPER, amount = 270 }, { fluid = TIN, amount = 90 } }, fromStock = 0 } },
+	}))
+	screen:setFluids({ COPPER, GOLD, IRON, TIN, ZINC })
+	runtime:invalidate({ reason = 'state', kind = 'full' })
+	runtime:render()
+
+	touch(runtime, 55, 2) -- "Stock" tab
+	touch(runtime, 4, 17) -- the name of drum_0
+	local text = screenText(terminal)
+	expect(text:find('ASSIGN RESERVOIR', 1, true) and text:find('free (no fluid)', 1, true) and text:find('ALL FLUIDS', 1, true), 'assign panel not shown')
+	-- free, KNOWN, iron, gold, ALL FLUIDS, copper, tin, zinc
+	expect(terminal.line(16):find('tin', 1, true), 'line 16: ' .. terminal.line(16))
+	touch(runtime, 60, 16) -- tin
+	touch(runtime, 56, 33) -- Save
+	expect(calls[1] == 'assign drum_0 ' .. TIN, 'assignment not sent: ' .. tostring(calls[1]))
+	expect(not screenText(terminal):find('ASSIGN RESERVOIR', 1, true), 'the panel stays open after Save')
+
+	touch(runtime, 16, 17) -- drum_1, holding gold
+	touch(runtime, 60, 15) -- copper
+	expect(screenText(terminal):find('Keeps its gold', 1, true), 'no warning for a reservoir holding another fluid')
+	touch(runtime, 64, 33) -- Cancel
+	expect(#calls == 1, 'Cancel sent something')
+
+	touch(runtime, 39, 2) -- "Modes" tab
+	touch(runtime, 43, 29) -- Change alloy
+	touch(runtime, 61, 34) -- New
+	text = screenText(terminal)
+	expect(text:find('NEW RECIPE', 1, true) and text:find('cannot save: choose the result', 1, true), 'editor not opened: ' .. terminal.line(28))
+	touch(runtime, 56, 33) -- Save, not ready
+	expect(#calls == 1, 'an incomplete recipe was sent')
+
+	-- The result is chosen first: KNOWN, iron, gold, ALL FLUIDS, copper, tin, zinc.
+	touch(runtime, 60, 16) -- zinc
+	touch(runtime, 7, 14) -- ingredient 1: KNOWN, iron, gold, zinc, ALL FLUIDS, copper, tin
+	touch(runtime, 60, 15) -- copper
+	touch(runtime, 7, 16) -- ingredient 2: KNOWN, iron, gold, zinc, copper, ALL FLUIDS, tin
+	touch(runtime, 60, 16) -- tin
+	touch(runtime, 10, 25) -- step 10 mB
+	touch(runtime, 39, 9) -- result + 10
+	text = screenText(terminal)
+	expect(text:find('ready to save', 1, true) and text:find('makes 100 mB zinc', 1, true), 'recipe not ready: ' .. terminal.line(28) .. ' / ' .. terminal.line(31))
+	touch(runtime, 56, 33) -- Save
+	expect(calls[2] == 'recipe nil 100 ' .. ZINC .. ' = 90 ' .. COPPER .. ' + 90 ' .. TIN, 'recipe not sent: ' .. tostring(calls[2]))
+	expect(screenText(terminal):find('ALLOY', 1, true) and not screenText(terminal):find('NEW RECIPE', 1, true), 'the editor stays open once saved')
+
+	touch(runtime, 9, 7) -- bronze in the list
+	touch(runtime, 54, 34) -- Edit
+	expect(screenText(terminal):find('EDIT RECIPE', 1, true) and screenText(terminal):find('270 mB', 1, true), 'bronze not in the editor')
+	touch(runtime, 44, 16) -- x on tin
+	expect(screenText(terminal):find('at least 2 ingredients', 1, true), 'removing an ingredient not checked')
+	touch(runtime, 64, 33) -- Cancel
+
+	touch(runtime, 67, 34) -- Delete
+	expect(screenText(terminal):find('DELETE RECIPE', 1, true) and screenText(terminal):find('step 1 of 2', 1, true), 'delete not confirmed first')
+	touch(runtime, 19, 22) -- Continue
+	expect(#calls == 2 and screenText(terminal):find('step 2 of 2', 1, true), 'deleted after one confirmation')
+	touch(runtime, 19, 22) -- Delete
+	expect(calls[3] == 'delete 0 ' .. BRONZE, 'delete not sent: ' .. tostring(calls[3]))
+end)
+
+test('fluids: a capacity comes from what was learnt, then from the hand, then from the type', function()
+	local fake, r = poolNet()
+	local pool = new(fluids.ReservoirPool, { 'drum_0', 'drum_1', 'drum_2' }, {
+		capacities = { drum_0 = 1000 }, setCapacities = { drum_0 = 500, drum_1 = 700 }, typeCapacities = { drum_1 = 32000, drum_2 = 1000 },
+	})
+	local views = pool:views()
+	expect(views[1].capacity == 1000 and views[1].capacitySource == 'learnt', 'learnt must come first')
+	expect(views[2].capacity == 700 and views[2].capacitySource == 'set', 'set by hand must come before the type')
+	expect(views[3].capacity == 1000 and views[3].capacitySource == 'type', 'type')
+
+	-- Set by hand: what was learnt is forgotten, and only learnt capacities are kept for the next run.
+	pool:setCapacity('drum_0', 2000)
+	expect(pool:views()[1].capacity == 2000 and pool:views()[1].capacitySource == 'set', 'hand-set capacity not used')
+	expect(pool:capacities().drum_0 == nil and pool:capacities().drum_1 == nil, 'set or type capacities saved as learnt')
+	pool:setCapacity('drum_1', nil)
+	expect(pool:views()[2].capacity == 32000 and pool:views()[2].capacitySource == 'type', 'auto must fall back to the type')
+
+	-- Set too big: the empty drum_1 (1000 mB in truth) teaches its real capacity when it refuses.
+	pool:setCapacity('drum_1', 2000)
+	pool:refresh()
+	pool:store(drainTank(), IRON, 1500)
+	local drum1 = pool:views()[2]
+	expect(drum1.capacity == 1000 and drum1.capacitySource == 'learnt' and pool:capacities().drum_1 == 1000, 'real capacity not learnt over the hand-set one')
+end)
+
+test('controller: reservoir capacities by type, set from the display and saved', function()
+	FILES = {}
+	local fake = fakeTinkers()
+	fake.smeltery({})
+	fake.reservoir('tank_0', 32000, {}, 'mob_grinding_utils:tank')
+	fake.reservoir('drum_0', 256000)
+	fake.chest('minecraft:chest_in', 27)
+	fake.chest('minecraft:chest_out', 27)
+	fake.install()
+
+	local configModule = require('projects.smeltery.controller.config')
+	local c = controllerWith(fake, function(config) config.reservoirs = { 'tank_0', 'drum_0' } end)
+	c:setConfigPath('/smeltery/controller.db')
+	quiet(function() c:tick() end)
+	local views = c:getState().reservoirs
+	expect(views[1].capacity == 32000 and views[1].capacitySource == 'type', 'the type capacity of a Mob Grinding Utils tank is not used')
+	expect(views[2].capacity == nil, 'a drum must stay unknown: its type does not tell its tier')
+
+	quiet(function() c:setReservoir({ reservoir = 'drum_0', capacity = 256000 }) end)
+	expect(c:getState().reservoirs[2].capacity == 256000 and c:getState().reservoirs[2].capacitySource == 'set', 'capacity not set')
+	local saved = configModule.loadControllerConfig('/smeltery/controller.db').capacities
+	expect(#saved == 1 and saved[1].reservoir == 'drum_0' and saved[1].capacity == 256000, 'capacity not saved')
+
+	-- A restart keeps it.
+	local again = controllerWith(fake, function(config) config.reservoirs = { 'tank_0', 'drum_0' }; config.capacities = saved end)
+	quiet(function() again:tick() end)
+	expect(again:getState().reservoirs[2].capacity == 256000, 'capacity lost on restart')
+
+	quiet(function() c:setReservoir({ reservoir = 'drum_0' }) end)
+	expect(c:getState().reservoirs[2].capacity == nil and #configModule.loadControllerConfig('/smeltery/controller.db').capacities == 0, 'auto not restored')
+end)
+
+test('display: Stock sets a capacity with the arrows, and tells where it comes from', function()
+	local calls = {}
+	local screen, runtime, terminal = screenFor(calls)
+	screen:setState(smelteryState({
+		reservoirs = {
+			{ name = 'drum_0', amount = 0 },
+			{ name = 'tank_0', amount = 0, capacity = 32000, capacitySource = 'type' },
+			{ name = 'drum_1', amount = 0, capacity = 256000, capacitySource = 'set' },
+		},
+	}))
+	screen:setFluids({ COPPER })
+	runtime:invalidate({ reason = 'state', kind = 'full' })
+	runtime:render()
+	touch(runtime, 55, 2) -- "Stock" tab
+
+	touch(runtime, 4, 17) -- drum_0: unknown
+	expect(screenText(terminal):find('unknown: set it', 1, true) and terminal.line(31):find('auto ?', 1, true), 'unknown capacity: ' .. terminal.line(31))
+	touch(runtime, 74, 31) -- ▶ 16000
+	touch(runtime, 74, 31) -- ▶ 32000
+	touch(runtime, 74, 31) -- ▶ 64000
+	touch(runtime, 56, 31) -- ◀ 32000
+	expect(terminal.line(31):find('32000 mB', 1, true) and screenText(terminal):find('set by hand', 1, true), 'arrows: ' .. terminal.line(31))
+	touch(runtime, 56, 33) -- Save
+	expect(calls[1] == 'assign drum_0 nil 32000', 'capacity not sent: ' .. tostring(calls[1]))
+
+	touch(runtime, 16, 17) -- tank_0: from its type
+	expect(screenText(terminal):find('from its type', 1, true) and terminal.line(31):find('auto 32000', 1, true), 'type capacity: ' .. terminal.line(31))
+	touch(runtime, 64, 33) -- Cancel
+
+	touch(runtime, 28, 17) -- drum_1: set by hand, back to auto with ◀ from the first step
+	expect(terminal.line(31):find('256000 mB', 1, true), 'hand-set capacity not shown: ' .. terminal.line(31))
+	for _ = 1, 4 do touch(runtime, 56, 31) end
+	expect(terminal.line(31):find('auto', 1, true), 'auto not reached: ' .. terminal.line(31))
+	touch(runtime, 56, 33) -- Save
+	expect(calls[2] == 'assign drum_1 nil', 'auto not sent: ' .. tostring(calls[2]))
 end)
 
 realPrint(('\n%d passed, %d failed'):format(passed, failed))

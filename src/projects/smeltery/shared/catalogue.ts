@@ -30,7 +30,27 @@ export interface Catalogue {
 	meltingTemperatures: FluidTemperature[];
 	/** Temperature each fuel gives. */
 	fuels: FluidTemperature[];
+	/**
+	 * Capacity of the reservoirs of a peripheral type (CC cannot read it). Only types whose blocks all
+	 * hold the same: the Mini Utilities drums share one type for every tier, so they are set by hand.
+	 */
+	reservoirCapacities: ReservoirCapacity[];
 }
+
+export interface ReservoirCapacity {
+	type: string;
+	capacity: number;
+}
+
+/** Measured in game (capacity-probe, 2026-11-20). */
+const DEFAULT_RESERVOIR_CAPACITIES: ReservoirCapacity[] = [
+	{type: 'mob_grinding_utils:tank', capacity: 32000},
+	{type: 'mob_grinding_utils:jumbo_tank', capacity: 1024000},
+	{type: 'evilcraft:dark_tank', capacity: 16000},
+	{type: 'industrialforegoing:common_black_hole_tank', capacity: 16000},
+	{type: 'industrialforegoing:pity_black_hole_tank', capacity: 64000},
+	{type: 'industrialforegoing:simple_black_hole_tank', capacity: 1024000},
+];
 
 export function defaultCatalogue(this: void): Catalogue {
 	return {
@@ -42,11 +62,33 @@ export function defaultCatalogue(this: void): Catalogue {
 
 		meltingTemperatures: DEFAULT_MELTING_TEMPERATURES,
 		fuels:               DEFAULT_FUELS,
+
+		reservoirCapacities: DEFAULT_RESERVOIR_CAPACITIES,
 	};
 }
 
 export function loadCatalogue(this: void, path = CATALOGUE_PATH): Catalogue {
 	return Config.load(path, defaultCatalogue());
+}
+
+/** Written back when the display adds, changes or deletes an alloy recipe. */
+export function saveCatalogue(this: void, catalogue: Catalogue, path = CATALOGUE_PATH): void {
+	Config.save(path, catalogue);
+}
+
+/** Every fluid the catalogue names (molten fluids, alloys and their ingredients, fuels), sorted. */
+export function catalogueFluids(this: void, catalogue: Catalogue): string[] {
+	const fluids = new Set<string>(catalogue.moltenFluids);
+	for (const ratio of catalogue.alloyRatios) {
+		fluids.add(ratio.result);
+		for (const input of ratio.inputs) fluids.add(input.fluid);
+	}
+	for (const alloy of catalogue.alloys) {
+		fluids.add(alloy.result);
+		for (const ingredient of alloy.ingredients) fluids.add(ingredient);
+	}
+	for (const fuel of catalogue.fuels) fluids.add(fuel.fluid);
+	return [...fluids].sort();
 }
 
 export function materialMapOf(this: void, catalogue: Catalogue): MaterialMap {
