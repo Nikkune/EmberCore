@@ -59,7 +59,7 @@ export interface ControllerConfig {
 	activeTickSeconds: number;
 	/** The state is broadcast on every change, and at least this often. */
 	heartbeatSeconds: number;
-	/** Log lines kept and sent to the display. */
+	/** Log lines kept and sent to the display (pages of 20 in the Log tab). */
 	logSize: number;
 }
 
@@ -84,12 +84,18 @@ export function defaultControllerConfig(this: void): ControllerConfig {
 		tickSeconds:      1,
 		activeTickSeconds: 0.25,
 		heartbeatSeconds: 5,
-		logSize:          20,
+		logSize:          100,
 	};
 }
 
+/** logSize of the first versions, written into every saved configuration: one page of the Log tab. */
+const OLD_LOG_SIZE = 20;
+
 export function loadControllerConfig(this: void, path = CONFIG_PATH): ControllerConfig {
-	return Config.load(path, defaultControllerConfig());
+	const config = Config.load(path, defaultControllerConfig());
+	// Saved with the old default, it would keep the Log tab to one page: the new default replaces it.
+	if (config.logSize === OLD_LOG_SIZE) config.logSize = defaultControllerConfig().logSize;
+	return config;
 }
 
 /** Written back when the display changes a setting (the auto formats). */

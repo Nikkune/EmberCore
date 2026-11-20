@@ -167,6 +167,55 @@ function discoverModules(options: DiscoverOptions): ComponentManifest[] {
 	return manifests;
 }
 
+/**
+ * Files of the project a role loads: its module and what it requires inside the project, followed file
+ * by file. main.lua is not followed: it requires each role only when it runs it.
+ */
+function roleFiles(distDir: string, projectName: string, roleModule: string): string[] {
+	const prefix  = `projects.${projectName}.`;
+	const pattern = /\brequire\(\s*["']([^"']+)["']\s*\)/g;
+	const seen    = new Set<string>();
+	const pending = [`${prefix}${roleModule.split('/').join('.')}`];
+
+	while (pending.length > 0) {
+		const moduleName = pending.pop()!;
+		if (seen.has(moduleName)) continue;
+
+		const file = `${moduleName.split('.').join('/')}.lua`;
+		if (!fs.existsSync(path.join(distDir, file))) {
+			throw new Error(`Role module '${moduleName}' of project '${projectName}' not found (${file})`);
+		}
+		seen.add(moduleName);
+
+		for (const match of fs.readFileSync(path.join(distDir, file), 'utf-8').matchAll(pattern)) {
+			if (match[1]?.startsWith(prefix)) pending.push(match[1]);
+		}
+	}
+
+	return [...seen].map((moduleName) => `${moduleName.split('.').join('/')}.lua`).sort();
+}
+
+function roleManifests(options: DiscoverOptions, projectName: string, meta: ProjectMeta, roles: Record<string, string>): ProjectManifest[] {
+	const entry = `projects/${projectName}/main.lua`;
+
+	return Object.keys(roles).sort().map((role) => {
+		const files = [entry, ...roleFiles(options.distDir, projectName, roles[role]!)];
+		const input: Omit<ProjectManifest, 'manifestVersion' | 'type'> = {
+			id:           `projects/${projectName}-${role}`,
+			name:         `${meta.name ?? capitalize(projectName)} (${role})`,
+			version:      meta.version ?? options.version,
+			entry,
+			files,
+			// Requires inside the project are files of this role, not a dependency on the whole project.
+			dependencies: mergeDependencies(meta.dependencies, collectLuaDependencies(options.distDir, files, `projects/${projectName}`)),
+		};
+
+		if (meta.install) input.install = meta.install;
+
+		return projectManifest(input);
+	});
+}
+
 function discoverProjects(options: DiscoverOptions): ProjectManifest[] {
 	const dir = path.join(options.distDir, 'projects');
 
@@ -190,6 +239,11 @@ function discoverProjects(options: DiscoverOptions): ProjectManifest[] {
 		const meta     = readJsonIfExists<ProjectMeta>(metaPath);
 
 		const id = `projects/${projectName}`;
+
+		if (meta?.roles) {
+			manifests.push(...roleManifests(options, projectName, meta, meta.roles));
+			continue;
+		}
 
 		const input: Omit<ProjectManifest, 'manifestVersion' | 'type'> = {
 			id,

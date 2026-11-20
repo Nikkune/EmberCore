@@ -1002,8 +1002,8 @@ export class SmelteryScreen {
 
 	private syncPicker(picker: boolean): void {
 		const options = this.alloyOptions();
-		this.alloyPages.setProps({visible: picker && options.length > ALLOYS_PER_PAGE, totalItems: options.length});
 		this.alloyPage = Math.min(this.alloyPage, Math.max(1, Math.ceil(options.length / ALLOYS_PER_PAGE)));
+		this.alloyPages.setProps({visible: picker && options.length > ALLOYS_PER_PAGE, totalItems: options.length, page: this.alloyPage});
 		const pageOptions = options.slice((this.alloyPage - 1) * ALLOYS_PER_PAGE, this.alloyPage * ALLOYS_PER_PAGE);
 		// The name of each alloy is its button (the ingredients under it are painted).
 		this.alloyButtons.forEach((button, row) => {
@@ -1028,8 +1028,9 @@ export class SmelteryScreen {
 		const panel    = overview && this.capacityDraft !== undefined;
 		const groups   = this.castGroups();
 
-		this.castPages.setProps({visible: overview && !panel && groups.length > CASTS_PER_PAGE, totalItems: groups.length});
 		this.castPage = Math.min(this.castPage, Math.max(1, Math.ceil(groups.length / CASTS_PER_PAGE)));
+		const castsPaged = overview && !panel && groups.length > CASTS_PER_PAGE;
+		this.castPages.setProps({visible: castsPaged, totalItems: groups.length, page: this.castPage});
 		const pageGroups = groups.slice((this.castPage - 1) * CASTS_PER_PAGE, this.castPage * CASTS_PER_PAGE);
 		this.autoButtons.forEach((button, row) => {
 			const group = pageGroups[row];
@@ -1051,8 +1052,8 @@ export class SmelteryScreen {
 	private syncStock(): void {
 		const stock = this.tab === 'stock' && this.state !== undefined;
 		const count = this.state?.reservoirs.length ?? 0;
-		this.stockPages.setProps({visible: stock && count > RESERVOIRS_PER_PAGE, totalItems: count});
 		this.stockPage = Math.min(this.stockPage, Math.max(1, Math.ceil(count / RESERVOIRS_PER_PAGE)));
+		this.stockPages.setProps({visible: stock && count > RESERVOIRS_PER_PAGE, totalItems: count, page: this.stockPage});
 
 		// The first line of the name of a reservoir is its button.
 		const page = this.pageReservoirs();
@@ -1072,12 +1073,14 @@ export class SmelteryScreen {
 		const state   = this.state;
 		const tab     = this.tab === 'manual' && state !== undefined;
 		const manual  = tab && state.mode === 'manual';
-		const items   = this.pageItems();
 		const count   = state?.inputItems.length ?? 0;
+		// The input may have shrunk: never a page past the last one.
+		this.itemPage = Math.min(this.itemPage, Math.max(1, Math.ceil(count / ITEMS_PER_PAGE)));
+		const items   = this.pageItems();
 		const groups  = this.castGroups();
 
 		this.neon(this.switchManual, tab && !manual, ' SWITCH TO MANUAL ', N.yellow, true);
-		this.itemPages.setProps({visible: tab && count > ITEMS_PER_PAGE, totalItems: count});
+		this.itemPages.setProps({visible: tab && count > ITEMS_PER_PAGE, totalItems: count, page: this.itemPage});
 		this.itemButtons.forEach((button, row) => {
 			const item = items[row];
 			if (!manual || item === undefined || item.status === 'unknown') this.show(button, false);
@@ -1109,8 +1112,9 @@ export class SmelteryScreen {
 		for (const [filter, label, color] of LOG_FILTERS) this.neon(this.filterButtons.get(filter)!, log, ` ${label} `, color, filter === this.logFilter);
 
 		const lines = this.logLines().length;
-		this.logPages.setProps({visible: log && lines > LOG_LINES, totalItems: lines});
 		this.logPage = Math.min(this.logPage, Math.max(1, Math.ceil(lines / LOG_LINES)));
+		// A filter goes back to page 1 itself: the pagination is given the page, not left on its own.
+		this.logPages.setProps({visible: log && lines > LOG_LINES, totalItems: lines, page: this.logPage});
 	}
 
 	/** The buttons of the recipe editor. */

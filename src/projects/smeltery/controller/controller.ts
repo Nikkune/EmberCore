@@ -30,6 +30,9 @@ type FluidCache = Map<string, string | false>;
 /** The pace of the input (SmelteryState.inputSeconds) is measured over this many seconds. */
 const INPUT_PACE_SECONDS = 300;
 
+/** Size from which the log file moves to <path>.old (about 300 lines). */
+const LOG_FILE_BYTES = 16 * 1024;
+
 interface Reading {
 	fluids: FluidStack[];
 	melting: ItemSummary[];
@@ -116,13 +119,34 @@ export class Controller {
 		this.state     = this.emptyState();
 	}
 
-	/** Also appends every log line to this file (the previous run's file is kept as <path>.old). */
+	/**
+	 * Also appends every log line to this file. It is kept under LOG_FILE_BYTES: the previous lines move to
+	 * <path>.old (on start too), so the log takes at most twice that on the disk.
+	 */
 	public setLogFile(path: string): void {
-		if (fs.exists(path)) {
-			if (fs.exists(`${path}.old`)) fs.delete(`${path}.old`);
-			fs.move(path, `${path}.old`);
-		}
 		this.logFile = path;
+		this.rotateLogFile();
+	}
+
+	/**
+	 * A full disk must not stop the Smeltery for a log: when the move fails (it fails with "Out of space"
+	 * on a full computer), the old lines are dropped instead.
+	 */
+	private rotateLogFile(): void {
+		const path = this.logFile;
+		if (path === undefined || !fs.exists(path)) return;
+
+		const old = `${path}.old`;
+		try {
+			if (fs.exists(old)) fs.delete(old);
+			fs.move(path, old);
+		} catch {
+			try {
+				fs.delete(path);
+			} catch {
+				// Nothing more to free: the next lines are only shown and sent.
+			}
+		}
 	}
 
 	/** Settings changed from the display (the auto formats) are written back to this file. */
@@ -1063,10 +1087,17 @@ export class Controller {
 		this.logLines.push(stamped);
 
 		if (this.logFile !== undefined) {
-			const file = fs.open(this.logFile, 'a') as WriteHandle | undefined;
-			if (file !== undefined) {
-				file.writeLine(stamped);
-				file.close();
+			const path = this.logFile;
+			if (fs.exists(path) && fs.getSize(path) >= LOG_FILE_BYTES) this.rotateLogFile();
+			// A full disk throws on write: the line is still shown and sent to the display.
+			try {
+				const file = fs.open(path, 'a') as WriteHandle | undefined;
+				if (file !== undefined) {
+					file.writeLine(stamped);
+					file.close();
+				}
+			} catch {
+				// Not written: shown and sent all the same.
 			}
 		}
 
