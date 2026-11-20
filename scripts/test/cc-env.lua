@@ -162,12 +162,16 @@ parallel = {
 	end,
 }
 
--- In-memory file system (FILES[path] = content).
+-- In-memory file system (FILES[path] = content). DISK_FULL = true: moving and writing fail like on a
+-- full computer ("Out of space"); deleting still works.
 fs = fs or {}
 FILES = {}
+DISK_FULL = false
 fs.exists = function(path) return FILES[path] ~= nil end
 fs.delete = function(path) FILES[path] = nil end
+fs.getSize = function(path) return #(FILES[path] or '') end
 fs.move = function(from, to)
+	if DISK_FULL then error('Out of space', 2) end
 	if FILES[to] ~= nil then error('File exists', 2) end
 	FILES[to], FILES[from] = FILES[from], nil
 end
@@ -176,10 +180,14 @@ fs.open = function(path, mode)
 		if FILES[path] == nil then return nil end
 		return { readAll = function() return FILES[path] end, close = function() end }
 	end
-	local buffer = {}
+	local buffer = { mode == 'a' and FILES[path] or '' }
 	return {
 		write = function(text) buffer[#buffer + 1] = text end,
-		close = function() FILES[path] = table.concat(buffer) end,
+		writeLine = function(text) buffer[#buffer + 1] = text .. '\n' end,
+		close = function()
+			if DISK_FULL then error('Out of space', 2) end
+			FILES[path] = table.concat(buffer)
+		end,
 	}
 end
 
