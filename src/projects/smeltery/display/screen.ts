@@ -145,6 +145,8 @@ const LOG_FILTERS: [LogFilter, string, number][] = [
 ];
 
 const CASTS_PER_PAGE  = 5;
+/** Manual tab, CAST: fluids and formats shown per page. */
+const MANUAL_ROWS     = 5;
 const ALLOYS_PER_PAGE = 10;
 /** mB of an ingot: the amounts of alloy mode are chosen in ingots. */
 const INGOT = 90;
@@ -217,6 +219,19 @@ const FULL_SCREEN: Rect = {x: 1, y: 1, width: SCREEN_WIDTH, height: SCREEN_HEIGH
  * paint components draw, EmberCore buttons and paginations take the touches. All coordinates are 1-based,
  * as on the monitor.
  */
+/** A fluid of the Manual tab: mB in the Smeltery, and in the reservoirs. */
+interface ManualFluid {
+	name: string;
+	amount: number;
+	stored: number;
+}
+
+/** "Iron 90 mB", "Iron 90 mB +4000 stored", "Cobalt 1440 mB stored" (only in the reservoirs). */
+function manualFluidLabel(this: void, fluid: ManualFluid): string {
+	if (fluid.amount === 0) return `${fluidLabel(fluid.name)} ${fluid.stored} mB stored`;
+	return `${fluidLabel(fluid.name)} ${fluid.amount} mB${fluid.stored > 0 ? ` +${fluid.stored} stored` : ''}`;
+}
+
 export class SmelteryScreen {
 	public readonly root = new AbsoluteLayout(SCREEN_WIDTH, SCREEN_HEIGHT);
 
@@ -225,6 +240,8 @@ export class SmelteryScreen {
 	private tab: Tab  = 'overview';
 	private castPage  = 1;
 	private itemPage  = 1;
+	private manualFluidPage  = 1;
+	private manualFormatPage = 1;
 	private stockPage = 1;
 	private logPage   = 1;
 	private logFilter: LogFilter = 'all';
@@ -280,6 +297,8 @@ export class SmelteryScreen {
 	private readonly selectButton: ButtonComponent;
 	private readonly closePicker: ButtonComponent;
 	private readonly itemPages: PaginationComponent;
+	private readonly manualFluidPages: PaginationComponent;
+	private readonly manualFormatPages: PaginationComponent;
 	private readonly stockPages: PaginationComponent;
 	private readonly reservoirButtons: ButtonComponent[] = [];
 	private readonly pickerButtons: ButtonComponent[] = [];
@@ -353,7 +372,15 @@ export class SmelteryScreen {
 		this.itemPages = this.pagination(ITEMS_PER_PAGE, {x: 6, y: 45, width: 11, height: 1}, (page) => {
 			this.itemPage = page;
 		});
-		for (let row = 0; row < 5; row++) {
+		this.manualFluidPages = this.pagination(MANUAL_ROWS, {x: 86, y: 12, width: 11, height: 1}, (page) => {
+			this.manualFluidPage = page;
+			this.sync();
+		});
+		this.manualFormatPages = this.pagination(MANUAL_ROWS, {x: 86, y: 25, width: 11, height: 1}, (page) => {
+			this.manualFormatPage = page;
+			this.sync();
+		});
+		for (let row = 0; row < MANUAL_ROWS; row++) {
 			const index = row;
 			this.fluidButtons.push(this.button('', {x: 69, y: 14 + index * 2, width: 28, height: 1}, () => this.pickFluid(index)));
 			this.formatButtons.push(this.button('', {x: 66, y: 27 + index * 2, width: 31, height: 1}, () => this.pickFormat(index)));
@@ -881,8 +908,38 @@ export class SmelteryScreen {
 		this.sync();
 	}
 
-	private fluids(): {name: string; amount: number}[] {
-		return (this.state?.fluids ?? []).slice(0, this.fluidButtons.length);
+	/**
+	 * Fluids a manual cast can use: those in the Smeltery, then those only in the reservoirs. `stored` is
+	 * what the reservoirs hold of each: the controller brings back what one casting lacks.
+	 */
+	private manualFluids(): ManualFluid[] {
+		const stored = new Map<string, number>();
+		for (const reservoir of this.state?.reservoirs ?? []) {
+			const fluid = reservoir.fluid;
+			if (fluid !== undefined && reservoir.amount > 0) stored.set(fluid, (stored.get(fluid) ?? 0) + reservoir.amount);
+		}
+
+		const list: ManualFluid[] = (this.state?.fluids ?? [])
+			.map((fluid) => ({name: fluid.name, amount: fluid.amount, stored: stored.get(fluid.name) ?? 0}));
+		const inside = new Set(list.map((fluid) => fluid.name));
+		const only: ManualFluid[] = [];
+		stored.forEach((amount, name) => {
+			if (!inside.has(name)) only.push({name, amount: 0, stored: amount});
+		});
+		only.sort((a, b) => b.stored - a.stored);
+		return [...list, ...only];
+	}
+
+	/** The page of manualFluids the CAST panel shows. */
+	private fluids(): ManualFluid[] {
+		const start = (this.manualFluidPage - 1) * MANUAL_ROWS;
+		return this.manualFluids().slice(start, start + MANUAL_ROWS);
+	}
+
+	/** The page of cast formats the CAST panel shows. */
+	private manualGroups(): CastGroup[] {
+		const start = (this.manualFormatPage - 1) * MANUAL_ROWS;
+		return this.castGroups().slice(start, start + MANUAL_ROWS);
 	}
 
 	private castGroups(): CastGroup[] {
@@ -895,7 +952,7 @@ export class SmelteryScreen {
 	}
 
 	private pickFormat(row: number): void {
-		this.format = this.castGroups()[row]?.format;
+		this.format = this.manualGroups()[row]?.format;
 		this.sync();
 	}
 
@@ -995,7 +1052,10 @@ export class SmelteryScreen {
 		for (const button of this.allButtons) {
 			if (button !== this.confirmYes && button !== this.confirmNo) button.setProps({disabled: modal});
 		}
-		const paginations = [this.castPages, this.itemPages, this.stockPages, this.alloyPages, this.choicePages, this.logPages];
+		const paginations = [
+			this.castPages, this.itemPages, this.manualFluidPages, this.manualFormatPages,
+			this.stockPages, this.alloyPages, this.choicePages, this.logPages,
+		];
 		for (const pages of paginations) pages.setProps({disabled: modal});
 		if (this.pickerOpen() && this.state !== undefined) this.hideUnderPicker();
 	}
@@ -1077,7 +1137,13 @@ export class SmelteryScreen {
 		// The input may have shrunk: never a page past the last one.
 		this.itemPage = Math.min(this.itemPage, Math.max(1, Math.ceil(count / ITEMS_PER_PAGE)));
 		const items   = this.pageItems();
-		const groups  = this.castGroups();
+		const fluidCount = this.manualFluids().length;
+		const groupCount = this.castGroups().length;
+		this.manualFluidPage  = Math.min(this.manualFluidPage, Math.max(1, Math.ceil(fluidCount / MANUAL_ROWS)));
+		this.manualFormatPage = Math.min(this.manualFormatPage, Math.max(1, Math.ceil(groupCount / MANUAL_ROWS)));
+		this.manualFluidPages.setProps({visible: tab && fluidCount > MANUAL_ROWS, totalItems: fluidCount, page: this.manualFluidPage});
+		this.manualFormatPages.setProps({visible: tab && groupCount > MANUAL_ROWS, totalItems: groupCount, page: this.manualFormatPage});
+		const groups  = this.manualGroups();
 
 		this.neon(this.switchManual, tab && !manual, ' SWITCH TO MANUAL ', N.yellow, true);
 		this.itemPages.setProps({visible: tab && count > ITEMS_PER_PAGE, totalItems: count, page: this.itemPage});
@@ -1091,7 +1157,7 @@ export class SmelteryScreen {
 		const fluids = this.fluids();
 		this.fluidButtons.forEach((button, row) => {
 			const fluid = fluids[row];
-			const label = fluid === undefined ? '' : fit(`${fluidLabel(fluid.name)} ${fluid.amount} mB`, 28);
+			const label = fluid === undefined ? '' : fit(manualFluidLabel(fluid), 28);
 			this.show(button, manual && fluid !== undefined, label.padEnd(28), fluid?.name === this.fluid ? N.text : N.soft, N.bg);
 		});
 
@@ -1194,7 +1260,9 @@ export class SmelteryScreen {
 		picker.add(this.pickerCancel);
 		for (const button of this.tabButtons.values()) picker.add(button);
 		for (const button of this.allButtons) if (!picker.has(button)) button.setProps({visible: false});
-		const under = [this.castPages, this.itemPages, this.stockPages, this.alloyPages, this.logPages];
+		const under = [
+			this.castPages, this.itemPages, this.manualFluidPages, this.manualFormatPages, this.stockPages, this.alloyPages, this.logPages,
+		];
 		for (const pages of under) pages.setProps({visible: false});
 	}
 
@@ -1688,11 +1756,10 @@ export class SmelteryScreen {
 			const y = 14 + row * 2;
 			if (fluid.name === this.fluid) p.text(64, y, Glyph.right, N.yellow);
 			p.fill(66, y, 2, 1, manual ? fluidColor(fluid.name) : N.dim);
-			if (!manual) p.text(69, y, fit(`${fluidLabel(fluid.name)} ${fluid.amount} mB`, 28), N.dim);
+			if (!manual) p.text(69, y, fit(manualFluidLabel(fluid), 28), N.dim);
 		});
 		p.text(66, 25, 'INTO', N.dim);
-		const groups = this.castGroups();
-		groups.slice(0, 5).forEach((group, row) => {
+		this.manualGroups().forEach((group, row) => {
 			const y = 27 + row * 2;
 			if (group.format === this.format) p.text(64, y, Glyph.right, N.yellow);
 			if (!manual) p.text(66, y, `${fit(formatLabel(group.format), 16).padEnd(17)}${group.free} free / ${group.free + group.casting + group.ready}`, N.dim);

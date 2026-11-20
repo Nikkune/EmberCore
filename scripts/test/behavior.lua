@@ -1093,6 +1093,12 @@ test('tinkers: MaterialMap finds the fluid from tags, refuses doubtful items', f
 		'a tag naming an unknown material does not hide the known one')
 	expect(fluidOf('mod:weird', { 'forge:ingots/iron', 'forge:ingots/gold' }) == nil, 'two materials must give nil')
 	expect(fluidOf('mod:nested', { 'forge:ores/iron/deepslate' }) == nil, 'nested tag must give nil')
+	local gems = new(tinkers.MaterialMap, { fluids = { 'tconstruct:molten_quartz', 'tconstruct:molten_diamond' } })
+	expect(gems:fluidOf({ name = 'minecraft:quartz', tags = { ['forge:gems/quartz'] = true, ['forge:gems'] = true } })
+		== 'tconstruct:molten_quartz', 'quartz is a gem: its tag names its material')
+	expect(gems:fluidOf({ name = 'minecraft:diamond', tags = { ['forge:gems/diamond'] = true } }) == 'tconstruct:molten_diamond', 'diamond')
+	expect(gems:fluidOf({ name = 'minecraft:lapis_lazuli', tags = { ['forge:gems/lapis'] = true } }) == nil,
+		'a gem without a molten fluid must give nil')
 	expect(map:fluidOf({ name = 'minecraft:dirt' }) == nil, 'item without tags')
 end)
 
@@ -1878,6 +1884,29 @@ test('controller: manual cast picks an idle caster of the asked format', functio
 	expect(log[#log]:find('%(block%)$'), 'the manual cast log must name the format: ' .. tostring(log[#log]))
 	local ok = pcall(function() quiet(function() c:cast({ fluid = IRON, format = 'block' }) end) end)
 	expect(not ok, 'no idle basin left and only 90 mB: the cast must be refused')
+end)
+
+test('controller: a manual cast of a stored fluid brings back what one casting lacks, never an alloy', function()
+	FILES = {}
+	local fake = fakeTinkers()
+	fake.smeltery({ { name = IRON, amount = 90 }, { name = COPPER, amount = 270 } })
+	local basin = fake.caster('tconstruct:basin_0', 810)
+	local drum  = fake.reservoir('drum_0', 4000, { { name = IRON, amount = 2000 } })
+	local tins  = fake.reservoir('drum_1', 4000, { { name = TIN, amount = 2000 } })
+	fake.chest('minecraft:chest_in', 27)
+	fake.chest('minecraft:chest_out', 27)
+	fake.install()
+
+	local c = controllerWith(fake, function(config) config.reservoirs = { 'drum_0', 'drum_1' } end)
+	quiet(function() c:setMode('manual'); c:tick() end)
+	expect(quiet(function() return c:cast({ fluid = IRON, format = 'block' }) end) == 810, 'stored iron not cast')
+	expect(basin.fluids.fluids[1] and basin.fluids.fluids[1].name == IRON, 'the basin got no iron')
+	expect(drum.fluids.fluids[1].amount == 2000 - 720, 'only the missing 720 mB must come back: ' .. drum.fluids.fluids[1].amount)
+
+	basin.fluids.fluids = {}
+	local ok, err = pcall(function() quiet(function() c:cast({ fluid = TIN, format = 'block' }) end) end)
+	expect(not ok and tostring(err.message or err):find('bronze', 1, true), 'tin with copper must be refused (bronze): ' .. tostring(err))
+	expect(tins.fluids.fluids[1].amount == 2000, 'the tin must stay in its reservoir')
 end)
 
 test('controller: drain empties the Smeltery into the reservoirs then idles; purge goes back to auto', function()
@@ -2831,6 +2860,44 @@ test('display: a pagination follows its list when it gets shorter', function()
 	show(screen, runtime, smelteryState({ mode = 'manual', inputItems = items(12) }))
 	expect(terminal.line(45):find('2/2', 1, true), 'pagination left behind its list: ' .. terminal.line(45))
 	expect(screenText(terminal):find('RAW IRON', 1, true), 'the page past the end shows no item')
+end)
+
+test('display: the Manual tab lists stored fluids and pages its fluids and casts', function()
+	local calls = {}
+	local screen, runtime, terminal = screenFor(calls)
+	local casters = {}
+	for i, format in ipairs({ 'block', 'ingot', 'nugget', 'gear', 'plate', 'rod', 'gem' }) do
+		casters[i] = { name = 'tconstruct:table_' .. i, kind = 'table', status = 'idle', format = format, amount = 0 }
+	end
+	local reservoirs = {
+		{ name = 'drum_0', fluid = IRON, amount = 4000 },
+		{ name = 'drum_1', fluid = 'tconstruct:molten_cobalt', amount = 1440 },
+		{ name = 'drum_2', fluid = 'tconstruct:molten_cobalt', amount = 60 },
+		{ name = 'drum_3', fluid = GOLD, amount = 2000 },
+		{ name = 'drum_4', fluid = TIN, amount = 500 },
+		{ name = 'drum_5', fluid = 'tconstruct:molten_quartz', amount = 800 },
+		{ name = 'drum_6', amount = 0 },
+	}
+	show(screen, runtime, smelteryState({
+		mode = 'manual', casters = casters, reservoirs = reservoirs,
+		fluids = { { name = COPPER, amount = 270 }, { name = IRON, amount = 90 } },
+	}))
+	tap(runtime, terminal, 'MANUAL')
+	local text = screenText(terminal)
+	expect(text:find('iron 90 mB +4000 stored', 1, true), 'iron must show its stock')
+	expect(text:find('cobalt 1500 mB stored', 1, true), 'cobalt (two reservoirs) must be listed as stored')
+	expect(terminal.line(12):find('1/2', 1, true), 'fluids: two pages: ' .. terminal.line(12))
+	expect(terminal.line(25):find('1/2', 1, true), 'casts: two pages: ' .. terminal.line(25))
+	expect(text:find('quartz 800 mB stored', 1, true) and not text:find('tin 500', 1, true), 'stored only, biggest first: tin is the 6th, on page 2')
+
+	tap(runtime, terminal, '>', 1, 12)
+	expect(screenText(terminal):find('tin 500 mB stored', 1, true), 'page 2 of the fluids')
+	tap(runtime, terminal, 'tin 500')
+	tap(runtime, terminal, '>', 1, 25)
+	expect(screenText(terminal):find('rod  ', 1, true), 'page 2 of the casts')
+	tap(runtime, terminal, 'rod  ')
+	tap(runtime, terminal, ' POUR ')
+	expect(calls[#calls]:find('molten_tin', 1, true) and calls[#calls]:find(' rod', 1, true), 'cast not asked: ' .. tostring(calls[#calls]))
 end)
 
 test('controller: the log keeps 100 lines; a configuration saved with the old 20 gets 100', function()
