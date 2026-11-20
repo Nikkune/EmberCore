@@ -3,7 +3,7 @@
   "type": "component",
   "id": "modules/tinkers",
   "name": "Tinkers",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "files": [
     "modules/tinkers/alloys.lua",
     "modules/tinkers/caster.lua",

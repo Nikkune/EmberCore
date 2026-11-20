@@ -505,33 +505,6 @@ local function __TS__ObjectAssign(target, ...)
     return target
 end
 
-local function __TS__StringPadEnd(self, maxLength, fillString)
-    if fillString == nil then
-        fillString = " "
-    end
-    if maxLength ~= maxLength then
-        maxLength = 0
-    end
-    if maxLength == -math.huge or maxLength == math.huge then
-        error("Invalid string length", 0)
-    end
-    if #self >= maxLength or #fillString == 0 then
-        return self
-    end
-    maxLength = maxLength - #self
-    if maxLength > #fillString then
-        fillString = fillString .. string.rep(
-            fillString,
-            math.floor(maxLength / #fillString)
-        )
-    end
-    return self .. string.sub(
-        fillString,
-        1,
-        math.floor(maxLength)
-    )
-end
-
 local Set
 do
     Set = __TS__Class()
@@ -740,6 +713,33 @@ end
 local function __TS__SparseArraySpread(sparseArray)
     local _unpack = unpack or table.unpack
     return _unpack(sparseArray, 1, sparseArray.sparseLength)
+end
+
+local function __TS__StringPadEnd(self, maxLength, fillString)
+    if fillString == nil then
+        fillString = " "
+    end
+    if maxLength ~= maxLength then
+        maxLength = 0
+    end
+    if maxLength == -math.huge or maxLength == math.huge then
+        error("Invalid string length", 0)
+    end
+    if #self >= maxLength or #fillString == 0 then
+        return self
+    end
+    maxLength = maxLength - #self
+    if maxLength > #fillString then
+        fillString = fillString .. string.rep(
+            fillString,
+            math.floor(maxLength / #fillString)
+        )
+    end
+    return self .. string.sub(
+        fillString,
+        1,
+        math.floor(maxLength)
+    )
 end
 
 local function __TS__ArrayReduce(self, callbackFn, ...)
@@ -956,6 +956,7 @@ local LOG_FILTERS = {
     {"alert", "ALERT", N.red}
 }
 local CASTS_PER_PAGE = 5
+local MANUAL_ROWS = 5
 local ALLOYS_PER_PAGE = 10
 local INGOT = 90
 local ITEMS_PER_PAGE = 8
@@ -1053,6 +1054,12 @@ local function reservoirLines(name, width)
     }
 end
 local FULL_SCREEN = {x = 1, y = 1, width = ____exports.SCREEN_WIDTH, height = ____exports.SCREEN_HEIGHT}
+local function manualFluidLabel(fluid)
+    if fluid.amount == 0 then
+        return ((fluidLabel(fluid.name) .. " ") .. tostring(fluid.stored)) .. " mB stored"
+    end
+    return (((fluidLabel(fluid.name) .. " ") .. tostring(fluid.amount)) .. " mB") .. (fluid.stored > 0 and (" +" .. tostring(fluid.stored)) .. " stored" or "")
+end
 ____exports.SmelteryScreen = __TS__Class()
 local SmelteryScreen = ____exports.SmelteryScreen
 SmelteryScreen.name = "SmelteryScreen"
@@ -1063,6 +1070,8 @@ function SmelteryScreen.prototype.____constructor(self, actions)
     self.tab = "overview"
     self.castPage = 1
     self.itemPage = 1
+    self.manualFluidPage = 1
+    self.manualFormatPage = 1
     self.stockPage = 1
     self.logPage = 1
     self.logFilter = "all"
@@ -1214,9 +1223,25 @@ function SmelteryScreen.prototype.____constructor(self, actions)
             self.itemPage = page
         end
     )
+    self.manualFluidPages = self:pagination(
+        MANUAL_ROWS,
+        {x = 86, y = 12, width = 11, height = 1},
+        function(____, page)
+            self.manualFluidPage = page
+            self:sync()
+        end
+    )
+    self.manualFormatPages = self:pagination(
+        MANUAL_ROWS,
+        {x = 86, y = 25, width = 11, height = 1},
+        function(____, page)
+            self.manualFormatPage = page
+            self:sync()
+        end
+    )
     do
         local row = 0
-        while row < 5 do
+        while row < MANUAL_ROWS do
             local index = row
             local ____self_fluidButtons_3 = self.fluidButtons
             ____self_fluidButtons_3[#____self_fluidButtons_3 + 1] = self:button(
@@ -2039,25 +2064,82 @@ function SmelteryScreen.prototype.cancelConfirm(self)
     self.confirm = nil
     self:sync()
 end
-function SmelteryScreen.prototype.fluids(self)
+function SmelteryScreen.prototype.manualFluids(self)
+    local stored = __TS__New(Map)
     local ____opt_42 = self.state
-    return __TS__ArraySlice(____opt_42 and ____opt_42.fluids or ({}), 0, #self.fluidButtons)
+    for ____, reservoir in ipairs(____opt_42 and ____opt_42.reservoirs or ({})) do
+        local fluid = reservoir.fluid
+        if fluid ~= nil and reservoir.amount > 0 then
+            stored:set(
+                fluid,
+                (stored:get(fluid) or 0) + reservoir.amount
+            )
+        end
+    end
+    local ____opt_44 = self.state
+    local list = __TS__ArrayMap(
+        ____opt_44 and ____opt_44.fluids or ({}),
+        function(____, fluid) return {
+            name = fluid.name,
+            amount = fluid.amount,
+            stored = stored:get(fluid.name) or 0
+        } end
+    )
+    local inside = __TS__New(
+        Set,
+        __TS__ArrayMap(
+            list,
+            function(____, fluid) return fluid.name end
+        )
+    )
+    local only = {}
+    stored:forEach(function(____, amount, name)
+        if not inside:has(name) then
+            only[#only + 1] = {name = name, amount = 0, stored = amount}
+        end
+    end)
+    __TS__ArraySort(
+        only,
+        function(____, a, b) return b.stored - a.stored end
+    )
+    local ____array_46 = __TS__SparseArrayNew(unpack(list))
+    __TS__SparseArrayPush(
+        ____array_46,
+        unpack(only)
+    )
+    return {__TS__SparseArraySpread(____array_46)}
+end
+function SmelteryScreen.prototype.fluids(self)
+    local start = (self.manualFluidPage - 1) * MANUAL_ROWS
+    return __TS__ArraySlice(
+        self:manualFluids(),
+        start,
+        start + MANUAL_ROWS
+    )
+end
+function SmelteryScreen.prototype.manualGroups(self)
+    local start = (self.manualFormatPage - 1) * MANUAL_ROWS
+    return __TS__ArraySlice(
+        self:castGroups(),
+        start,
+        start + MANUAL_ROWS
+    )
 end
 function SmelteryScreen.prototype.castGroups(self)
-    local ____groupCasters_49 = groupCasters
-    local ____opt_44 = self.state
-    local ____temp_48 = ____opt_44 and ____opt_44.casters or ({})
-    local ____opt_46 = self.state
-    return ____groupCasters_49(____temp_48, ____opt_46 and ____opt_46.autoFormats or ({}))
+    local ____groupCasters_52 = groupCasters
+    local ____opt_47 = self.state
+    local ____temp_51 = ____opt_47 and ____opt_47.casters or ({})
+    local ____opt_49 = self.state
+    return ____groupCasters_52(____temp_51, ____opt_49 and ____opt_49.autoFormats or ({}))
 end
 function SmelteryScreen.prototype.pickFluid(self, row)
-    local ____opt_50 = self:fluids()[row + 1]
-    self.fluid = ____opt_50 and ____opt_50.name
+    local ____opt_53 = self:fluids()[row + 1]
+    self.fluid = ____opt_53 and ____opt_53.name
     self:sync()
 end
 function SmelteryScreen.prototype.pickFormat(self, row)
-    local ____opt_52 = self:castGroups()[row + 1]
-    self.format = ____opt_52 and ____opt_52.format
+    local ____opt_55 = self:manualGroups()[row + 1]
+    self.format = ____opt_55 and ____opt_55.format
     self:sync()
 end
 function SmelteryScreen.prototype.toggleAuto(self, row)
@@ -2078,22 +2160,22 @@ function SmelteryScreen.prototype.setLogFilter(self, filter)
 end
 function SmelteryScreen.prototype.logLines(self)
     local lines = {}
-    local ____opt_54 = self.state
-    for ____, raw in ipairs(____opt_54 and ____opt_54.log or ({})) do
+    local ____opt_57 = self.state
+    for ____, raw in ipairs(____opt_57 and ____opt_57.log or ({})) do
         do
-            local __continue227
+            local __continue241
             repeat
                 if __TS__StringSubstring(raw, 8, 11) == "   " then
-                    __continue227 = true
+                    __continue241 = true
                     break
                 end
                 local line = parseLogLine(raw)
                 if keeps(self.logFilter, line.kind) then
                     lines[#lines + 1] = line
                 end
-                __continue227 = true
+                __continue241 = true
             until true
-            if not __continue227 then
+            if not __continue241 then
                 break
             end
         end
@@ -2120,8 +2202,8 @@ function SmelteryScreen.prototype.button(self, label, rect, onPress)
         }),
         rect
     )
-    local ____self_allButtons_56 = self.allButtons
-    ____self_allButtons_56[#____self_allButtons_56 + 1] = button
+    local ____self_allButtons_59 = self.allButtons
+    ____self_allButtons_59[#____self_allButtons_59 + 1] = button
     return button
 end
 function SmelteryScreen.prototype.pagination(self, pageSize, rect, onPageChange)
@@ -2226,6 +2308,8 @@ function SmelteryScreen.prototype.sync(self)
     local paginations = {
         self.castPages,
         self.itemPages,
+        self.manualFluidPages,
+        self.manualFormatPages,
         self.stockPages,
         self.alloyPages,
         self.choicePages,
@@ -2413,8 +2497,8 @@ function SmelteryScreen.prototype.syncOverview(self)
 end
 function SmelteryScreen.prototype.syncStock(self)
     local stock = self.tab == "stock" and self.state ~= nil
-    local ____opt_69 = self.state
-    local count = ____opt_69 and #____opt_69.reservoirs or 0
+    local ____opt_72 = self.state
+    local count = ____opt_72 and #____opt_72.reservoirs or 0
     self.stockPage = math.min(
         self.stockPage,
         math.max(
@@ -2437,9 +2521,9 @@ function SmelteryScreen.prototype.syncStock(self)
                 1,
                 1
             )
-            local ____reservoir_name_73 = reservoir.name
-            local ____opt_71 = self.assigning
-            local color = ____reservoir_name_73 == (____opt_71 and ____opt_71.reservoir) and N.yellow or (reservoir.fluid ~= nil and N.cyan or N.text)
+            local ____reservoir_name_76 = reservoir.name
+            local ____opt_74 = self.assigning
+            local color = ____reservoir_name_76 == (____opt_74 and ____opt_74.reservoir) and N.yellow or (reservoir.fluid ~= nil and N.cyan or N.text)
             self:show(
                 button,
                 true,
@@ -2463,7 +2547,25 @@ function SmelteryScreen.prototype.syncManual(self)
         )
     )
     local items = self:pageItems()
-    local groups = self:castGroups()
+    local fluidCount = #self:manualFluids()
+    local groupCount = #self:castGroups()
+    self.manualFluidPage = math.min(
+        self.manualFluidPage,
+        math.max(
+            1,
+            math.ceil(fluidCount / MANUAL_ROWS)
+        )
+    )
+    self.manualFormatPage = math.min(
+        self.manualFormatPage,
+        math.max(
+            1,
+            math.ceil(groupCount / MANUAL_ROWS)
+        )
+    )
+    self.manualFluidPages:setProps({visible = tab and fluidCount > MANUAL_ROWS, totalItems = fluidCount, page = self.manualFluidPage})
+    self.manualFormatPages:setProps({visible = tab and groupCount > MANUAL_ROWS, totalItems = groupCount, page = self.manualFormatPage})
+    local groups = self:manualGroups()
     self:neon(
         self.switchManual,
         tab and not manual,
@@ -2503,7 +2605,7 @@ function SmelteryScreen.prototype.syncManual(self)
         function(____, button, row)
             local fluid = fluids[row + 1]
             local label = fluid == nil and "" or fit(
-                ((fluidLabel(fluid.name) .. " ") .. tostring(fluid.amount)) .. " mB",
+                manualFluidLabel(fluid),
                 28
             )
             self:show(
@@ -2673,17 +2775,17 @@ function SmelteryScreen.prototype.syncChoices(self, editing)
         N.cyan,
         true
     )
-    local ____self_neon_100 = self.neon
-    local ____self_freeButton_98 = self.freeButton
-    local ____N_soft_99 = N.soft
-    local ____opt_96 = self.assigning
-    ____self_neon_100(
+    local ____self_neon_103 = self.neon
+    local ____self_freeButton_101 = self.freeButton
+    local ____N_soft_102 = N.soft
+    local ____opt_99 = self.assigning
+    ____self_neon_103(
         self,
-        ____self_freeButton_98,
+        ____self_freeButton_101,
         assigning,
         " FREE ",
-        ____N_soft_99,
-        (____opt_96 and ____opt_96.fluid) == nil
+        ____N_soft_102,
+        (____opt_99 and ____opt_99.fluid) == nil
     )
     self:neon(
         self.capacityLess,
@@ -2818,19 +2920,19 @@ function SmelteryScreen.prototype.syncChoices(self, editing)
     )
 end
 function SmelteryScreen.prototype.hideUnderPicker(self)
-    local ____Set_102 = Set
-    local ____array_101 = __TS__SparseArrayNew(unpack(self.pickerButtons))
+    local ____Set_105 = Set
+    local ____array_104 = __TS__SparseArrayNew(unpack(self.pickerButtons))
     __TS__SparseArrayPush(
-        ____array_101,
+        ____array_104,
         unpack(self.knownButtons)
     )
     __TS__SparseArrayPush(
-        ____array_101,
+        ____array_104,
         unpack(self.letterButtons)
     )
     local picker = __TS__New(
-        ____Set_102,
-        {__TS__SparseArraySpread(____array_101)}
+        ____Set_105,
+        {__TS__SparseArraySpread(____array_104)}
     )
     picker:add(self.pickerFree)
     picker:add(self.pickerCancel)
@@ -2845,6 +2947,8 @@ function SmelteryScreen.prototype.hideUnderPicker(self)
     local under = {
         self.castPages,
         self.itemPages,
+        self.manualFluidPages,
+        self.manualFormatPages,
         self.stockPages,
         self.alloyPages,
         self.logPages
@@ -2946,8 +3050,8 @@ function SmelteryScreen.prototype.paintHeader(self, p)
         end
         x = x + (#label + 4)
     end
-    local ____opt_103 = self.state
-    local mode = ____opt_103 and ____opt_103.mode
+    local ____opt_106 = self.state
+    local mode = ____opt_106 and ____opt_106.mode
     if mode ~= nil then
         p:text(
             84,
@@ -3066,9 +3170,9 @@ function SmelteryScreen.prototype.paintOverview(self, p, state)
         N.cyan,
         ("MOLTEN " .. Glyph.mid) .. " 10 MIN"
     )
-    local ____array_105 = __TS__SparseArrayNew(unpack(state.history or ({})))
-    __TS__SparseArrayPush(____array_105, total)
-    local points = {__TS__SparseArraySpread(____array_105)}
+    local ____array_108 = __TS__SparseArrayNew(unpack(state.history or ({})))
+    __TS__SparseArrayPush(____array_108, total)
+    local points = {__TS__SparseArraySpread(____array_108)}
     local scale = capacity or math.max(
         1,
         unpack(points)
@@ -3528,9 +3632,9 @@ function SmelteryScreen.prototype.paintModes(self, p, state)
         MODES,
         function(____, mode, index)
             local color = MODE_COLORS[mode]
-            local ____cardPlace_result_106 = cardPlace(index)
-            local x = ____cardPlace_result_106.x
-            local y = ____cardPlace_result_106.y
+            local ____cardPlace_result_109 = cardPlace(index)
+            local x = ____cardPlace_result_109.x
+            local y = ____cardPlace_result_109.y
             local active = state.mode == mode
             self:bracket(
                 p,
@@ -3932,9 +4036,9 @@ function SmelteryScreen.prototype.paintEditor(self, p, editor)
     end
     p:text(6, 25, "STEP", N.dim)
     p:text(31, 25, "mB", N.dim)
-    local ____temp_107 = self:editedRecipe()
-    local recipe = ____temp_107.recipe
-    local problem = ____temp_107.problem
+    local ____temp_110 = self:editedRecipe()
+    local recipe = ____temp_110.recipe
+    local problem = ____temp_110.problem
     if recipe ~= nil then
         local function amount(____, mB, fluid)
             return ((mB % INGOT == 0 and tostring(mB / INGOT) .. " ing" or tostring(mB) .. " mB") .. " ") .. fluidLabel(fluid)
@@ -4169,7 +4273,7 @@ function SmelteryScreen.prototype.paintManual(self, p, state)
                     69,
                     y,
                     fit(
-                        ((fluidLabel(fluid.name) .. " ") .. tostring(fluid.amount)) .. " mB",
+                        manualFluidLabel(fluid),
                         28
                     ),
                     N.dim
@@ -4178,9 +4282,8 @@ function SmelteryScreen.prototype.paintManual(self, p, state)
         end
     )
     p:text(66, 25, "INTO", N.dim)
-    local groups = self:castGroups()
     __TS__ArrayForEach(
-        __TS__ArraySlice(groups, 0, 5),
+        self:manualGroups(),
         function(____, group, row)
             local y = 27 + row * 2
             if group.format == self.format then
@@ -4218,17 +4321,17 @@ function SmelteryScreen.prototype.paintStock(self, p, state)
     local scale = 0
     for ____, reservoir in ipairs(reservoirs) do
         do
-            local __continue413
+            local __continue427
             repeat
                 if reservoir.capacity == nil then
-                    __continue413 = true
+                    __continue427 = true
                     break
                 end
                 known = known + 1
                 scale = math.max(scale, reservoir.capacity)
-                __continue413 = true
+                __continue427 = true
             until true
-            if not __continue413 then
+            if not __continue427 then
                 break
             end
         end
@@ -4239,9 +4342,9 @@ function SmelteryScreen.prototype.paintStock(self, p, state)
     __TS__ArrayForEach(
         self:pageReservoirs(),
         function(____, reservoir, index)
-            local ____temp_112 = ____exports.SmelteryScreen:reservoirPlace(index)
-            local x = ____temp_112.x
-            local y = ____temp_112.y
+            local ____temp_115 = ____exports.SmelteryScreen:reservoirPlace(index)
+            local x = ____temp_115.x
+            local y = ____temp_115.y
             local fluid = reservoir.fluid
             local color = fluid ~= nil and fluidColor(fluid) or N.dim
             local tube = __TS__New(
@@ -4292,9 +4395,9 @@ function SmelteryScreen.prototype.paintStock(self, p, state)
             if reservoir.capacity ~= nil and reservoir.amount >= reservoir.capacity then
                 p:text(x + 6, y, "FULL", N.yellow)
             end
-            local ____reservoir_name_115 = reservoir.name
-            local ____opt_113 = self.assigning
-            if ____reservoir_name_115 == (____opt_113 and ____opt_113.reservoir) then
+            local ____reservoir_name_118 = reservoir.name
+            local ____opt_116 = self.assigning
+            if ____reservoir_name_118 == (____opt_116 and ____opt_116.reservoir) then
                 p:text(x - 1, y + 6, Glyph.right, N.yellow)
             end
             local label
@@ -4351,10 +4454,10 @@ function SmelteryScreen.prototype.paintStock(self, p, state)
     local totals = {}
     for ____, reservoir in ipairs(reservoirs) do
         do
-            local __continue428
+            local __continue442
             repeat
                 if reservoir.fluid == nil then
-                    __continue428 = true
+                    __continue442 = true
                     break
                 end
                 local entry = __TS__ArrayFind(
@@ -4366,9 +4469,9 @@ function SmelteryScreen.prototype.paintStock(self, p, state)
                 else
                     totals[#totals + 1] = {fluid = reservoir.fluid, amount = reservoir.amount}
                 end
-                __continue428 = true
+                __continue442 = true
             until true
-            if not __continue428 then
+            if not __continue442 then
                 break
             end
         end
@@ -4377,8 +4480,8 @@ function SmelteryScreen.prototype.paintStock(self, p, state)
         totals,
         function(____, a, b) return b.amount - a.amount end
     )
-    local ____opt_116 = totals[1]
-    local biggest = ____opt_116 and ____opt_116.amount or 1
+    local ____opt_119 = totals[1]
+    local biggest = ____opt_119 and ____opt_119.amount or 1
     __TS__ArrayForEach(
         __TS__ArraySlice(totals, 0, 4),
         function(____, total, index)
@@ -4814,8 +4917,8 @@ function SmelteryScreen.prototype.paintDelete(self, p, option, step, deadline, x
         colors.pink
     )
     local state = self.state
-    local ____opt_128 = state and state.alloy
-    local last = (____opt_128 and ____opt_128.result) == option.result and not __TS__ArraySome(
+    local ____opt_131 = state and state.alloy
+    local last = (____opt_131 and ____opt_131.result) == option.result and not __TS__ArraySome(
         self:alloyOptions(),
         function(____, other) return other.index ~= option.index and other.result == option.result end
     )

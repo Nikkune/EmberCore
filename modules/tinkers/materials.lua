@@ -273,6 +273,7 @@ ____exports.DEFAULT_TAG_PREFIXES = {
     "forge:raw_materials/",
     "forge:ores/",
     "forge:dusts/",
+    "forge:gems/",
     "forge:plates/",
     "forge:gears/",
     "forge:rods/"

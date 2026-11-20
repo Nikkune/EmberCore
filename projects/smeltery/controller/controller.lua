@@ -1391,6 +1391,14 @@ function Controller.prototype.cast(self, request)
         )
     end
     for ____, caster in ipairs(candidates) do
+        local state = caster:read()
+        if state.status == "idle" then
+            self:bringBackForCast(
+                smeltery,
+                request.fluid,
+                caster:amountFor(state.format, request.fluid)
+            )
+        end
         local moved = caster:pour(smeltery, request.fluid)
         if moved > 0 then
             local ____opt_11 = self.lastRead
@@ -1414,6 +1422,40 @@ function Controller.prototype.cast(self, request)
         ),
         0
     )
+end
+function Controller.prototype.bringBackForCast(self, smeltery, fluid, need)
+    local pool = self.pool
+    if pool == nil or need == nil then
+        return
+    end
+    local inside = smeltery:amountOf(fluid)
+    local missing = need - inside
+    if missing <= 0 or pool:stored(fluid) < missing then
+        return
+    end
+    if inside == 0 then
+        local alloy = self.guard:wouldForm(
+            __TS__ArrayMap(
+                smeltery:fluids(),
+                function(____, stack) return stack.name end
+            ),
+            fluid
+        )
+        if alloy ~= nil then
+            error(
+                __TS__New(
+                    EmberError,
+                    ((____exports.Controller:shortName(fluid) .. " would form ") .. ____exports.Controller:shortName(alloy.result)) .. " with the Smeltery",
+                    "SMELTERY_ERROR"
+                ),
+                0
+            )
+        end
+    end
+    local taken = pool:take(smeltery.drain, fluid, missing)
+    if taken > 0 then
+        self:log(((("restored " .. tostring(taken)) .. " mB ") .. ____exports.Controller:shortName(fluid)) .. " to cast")
+    end
 end
 function Controller.prototype.serve(self, channel)
     channel:on(
@@ -1735,10 +1777,10 @@ function Controller.storedFluids(self, pool)
     local stored = {}
     for ____, view in ipairs(pool and pool:views() or ({})) do
         do
-            local __continue151
+            local __continue159
             repeat
                 if view.fluid == nil then
-                    __continue151 = true
+                    __continue159 = true
                     break
                 end
                 local entry = __TS__ArrayFind(
@@ -1750,9 +1792,9 @@ function Controller.storedFluids(self, pool)
                 else
                     stored[#stored + 1] = {fluid = view.fluid, amount = view.amount}
                 end
-                __continue151 = true
+                __continue159 = true
             until true
-            if not __continue151 then
+            if not __continue159 then
                 break
             end
         end
@@ -1841,9 +1883,9 @@ end
 function Controller.prototype.apply(self, action)
     local smeltery = self.smeltery
     repeat
-        local ____switch180 = action.kind
-        local ____cond180 = ____switch180 == "collect"
-        if ____cond180 then
+        local ____switch188 = action.kind
+        local ____cond188 = ____switch188 == "collect"
+        if ____cond188 then
             do
                 local caster = __TS__ArrayFind(
                     self.casters,
@@ -1873,8 +1915,8 @@ function Controller.prototype.apply(self, action)
                 return 0
             end
         end
-        ____cond180 = ____cond180 or ____switch180 == "pour"
-        if ____cond180 then
+        ____cond188 = ____cond188 or ____switch188 == "pour"
+        if ____cond188 then
             do
                 local caster = __TS__ArrayFind(
                     self.casters,
@@ -1907,8 +1949,8 @@ function Controller.prototype.apply(self, action)
                 return 0
             end
         end
-        ____cond180 = ____cond180 or ____switch180 == "reject"
-        if ____cond180 then
+        ____cond188 = ____cond188 or ____switch188 == "reject"
+        if ____cond188 then
             do
                 local ____temp_46
                 if action.reason == "heat" then
@@ -1931,8 +1973,8 @@ function Controller.prototype.apply(self, action)
                 return action.count - moved
             end
         end
-        ____cond180 = ____cond180 or ____switch180 == "store"
-        if ____cond180 then
+        ____cond188 = ____cond188 or ____switch188 == "store"
+        if ____cond188 then
             do
                 local pool = self.pool
                 if pool == nil then
@@ -1962,8 +2004,8 @@ function Controller.prototype.apply(self, action)
                 return 0
             end
         end
-        ____cond180 = ____cond180 or ____switch180 == "restore"
-        if ____cond180 then
+        ____cond188 = ____cond188 or ____switch188 == "restore"
+        if ____cond188 then
             do
                 local ____opt_47 = self.pool
                 local taken = ____opt_47 and ____opt_47:take(smeltery.drain, action.fluid, action.amount) or 0
@@ -2293,18 +2335,18 @@ function Controller.prototype.forecast(self, reading)
                 local format = ____value.format
                 local amount = ____value.amount
                 do
-                    local __continue269
+                    local __continue277
                     repeat
                         local count = math.floor(left / amount)
                         if count <= 0 then
-                            __continue269 = true
+                            __continue277 = true
                             break
                         end
                         casts[#casts + 1] = {format = format, count = count}
                         left = left - count * amount
-                        __continue269 = true
+                        __continue277 = true
                     until true
-                    if not __continue269 then
+                    if not __continue277 then
                         break
                     end
                 end
@@ -2479,18 +2521,18 @@ function ____exports.runController()
     local function listen()
         while true do
             do
-                local __continue308
+                local __continue316
                 repeat
                     local event = {os.pullEvent("rednet_message")}
                     if event[4] ~= PROTOCOL then
-                        __continue308 = true
+                        __continue316 = true
                         break
                     end
                     inbox[#inbox + 1] = event
                     os.queueEvent(WAKE_EVENT)
-                    __continue308 = true
+                    __continue316 = true
                 until true
-                if not __continue308 then
+                if not __continue316 then
                     break
                 end
             end
@@ -2502,7 +2544,7 @@ function ____exports.runController()
         local timer = os.startTimer(0)
         while true do
             do
-                local __continue311
+                local __continue319
                 repeat
                     local event = {os.pullEvent()}
                     while #inbox > 0 do
@@ -2510,7 +2552,7 @@ function ____exports.runController()
                     end
                     local timerDue = event[1] == "timer" and event[2] == timer
                     if not timerDue and not controller:wantsTick() then
-                        __continue311 = true
+                        __continue319 = true
                         break
                     end
                     if not timerDue then
@@ -2519,7 +2561,7 @@ function ____exports.runController()
                     local worked = controller:tick()
                     timer = os.startTimer(worked and config.activeTickSeconds or config.tickSeconds)
                     if not online then
-                        __continue311 = true
+                        __continue319 = true
                         break
                     end
                     local state = controller:getState()
@@ -2529,9 +2571,9 @@ function ____exports.runController()
                         lastSent = text
                         lastSentClock = os.clock()
                     end
-                    __continue311 = true
+                    __continue319 = true
                 until true
-                if not __continue311 then
+                if not __continue319 then
                     break
                 end
             end
