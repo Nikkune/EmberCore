@@ -47,7 +47,17 @@ export function runDisplay(this: void): void {
 
 	const redraw = (): void => ui.runtime?.invalidate({reason: 'state', kind: 'full'});
 
-	const request = (messageType: string, payload: unknown, done: string): void => {
+	/** Every fluid of the catalogue, for the fluid lists: asked once, and again after a recipe change. */
+	const loadFluids = (): void => {
+		if (controller === undefined) return;
+		channel.request(controller, Messages.getFluids, undefined, (result) => {
+			if (result.ok) screen.setFluids(result.value as string[]);
+			redraw();
+		});
+	};
+	let fluidsAsked = false;
+
+	const request = (messageType: string, payload: unknown, done: string, then?: () => void): void => {
 		if (controller === undefined) {
 			screen.notify('controller not found yet', colors.red);
 			redraw();
@@ -58,6 +68,7 @@ export function runDisplay(this: void): void {
 			if (result.ok) {
 				screen.setState(result.value as SmelteryState);
 				screen.notify(done, colors.lime);
+				then?.();
 			}
 			else {
 				screen.notify(result.error, colors.red);
@@ -72,11 +83,22 @@ export function runDisplay(this: void): void {
 		cast:    (cast) => request(Messages.cast, cast, 'cast'),
 		setFormat: (format) => request(Messages.setFormat, format, `${format.format}: ${format.auto ? 'auto' : 'off'}`),
 		setAlloy:  (alloy) => request(Messages.setAlloy, alloy, `alloy ${alloy.result.substring(alloy.result.indexOf(':') + 1)}`),
+		setReservoir: (settings) => request(Messages.setReservoir, settings, 'reservoir saved'),
+		saveRecipe:    (recipe, saved) => request(Messages.saveRecipe, recipe, 'recipe saved', () => {
+			saved();
+			loadFluids();
+		}),
+		deleteRecipe:  (recipe) => request(Messages.deleteRecipe, recipe, 'recipe deleted', loadFluids),
 	});
 
 	channel.on(Messages.state, (payload, from) => {
 		controller = from;
 		screen.setState(payload as SmelteryState);
+		// The controller was not found at start: the fluid lists come with its first broadcast.
+		if (!fluidsAsked) {
+			fluidsAsked = true;
+			loadFluids();
+		}
 	});
 
 	print('Looking for the Smeltery controller...');
@@ -97,6 +119,8 @@ export function runDisplay(this: void): void {
 			if (result.ok) screen.setState(result.value as SmelteryState);
 			redraw();
 		});
+		fluidsAsked = true;
+		loadFluids();
 	}
 
 	// Every second: the confirmation countdown and the online dot.

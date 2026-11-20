@@ -1,11 +1,13 @@
+import type {AlloyRatio}                     from '@modules/tinkers/index';
 import {ButtonComponent, PaginationComponent} from '@modules/ui/components';
 import type {Rect}                           from '@modules/ui/types';
 
-import type {AlloyOption, CastRequest, InputItemView, InsertRequest, Mode, SetAlloyRequest, SetFormatRequest, SmelteryState} from '../shared/protocol';
-import {MODES}                               from '../shared/protocol';
+import type {AlloyOption, CastRequest, DeleteRecipeRequest, InputItemView, InsertRequest, Mode, SaveRecipeRequest, SetAlloyRequest, SetReservoirRequest, SetFormatRequest, SmelteryState} from '../shared/protocol';
+import {MAX_INGREDIENTS, MODES}              from '../shared/protocol';
+import {recipeProblem}                       from '../shared/recipes';
 
-import {attentionLines, fluidColor, fluidLabel, formatLabel, Glyph, groupCasters, itemLabel, parseLogLine, textOn} from './model';
-import type {CastGroup, LogKind}             from './model';
+import {attentionLines, fluidChoices, fluidColor, fluidLabel, formatLabel, Glyph, groupCasters, itemLabel, knownFluids, parseLogLine, textOn} from './model';
+import type {CastGroup, FluidChoice, LogKind} from './model';
 import {AbsoluteLayout, PaintComponent}      from './widgets';
 import type {Painter}                        from './widgets';
 
@@ -21,13 +23,38 @@ export interface ScreenActions {
 	cast(request: CastRequest): void;
 	setFormat(request: SetFormatRequest): void;
 	setAlloy(request: SetAlloyRequest): void;
+	setReservoir(request: SetReservoirRequest): void;
+	/** `saved` runs once the controller accepted the recipe (the editor stays open otherwise). */
+	saveRecipe(request: SaveRecipeRequest, saved: () => void): void;
+	deleteRecipe(request: DeleteRecipeRequest): void;
 }
 
-interface Confirm {
-	item: InputItemView;
+/** A two-step confirmation: a forced insert, or deleting a recipe. */
+type Confirm = ({kind: 'force'; item: InputItemView} | {kind: 'delete'; option: AlloyOption}) & {
 	step: 1 | 2;
 	/** os.clock() after which the second step is cancelled. */
 	deadline: number;
+};
+
+/** Stock tab: the reservoir being reserved, and the fluid chosen for it (undefined: free). */
+interface Assigning {
+	reservoir: string;
+	fluid?: string | undefined;
+	/** Set by hand, in mB; undefined: auto (learnt, or given by its type). */
+	capacity?: number | undefined;
+}
+
+/** A recipe being written in the editor; a fluid is undefined until chosen. */
+interface EditorState {
+	/** Recipe replaced on save; undefined: a new one. */
+	index?: number | undefined;
+	expected?: string | undefined;
+	result?: string | undefined;
+	amount: number;
+	inputs: {fluid?: string | undefined; amount: number}[];
+	/** What the fluid list fills: the result, an ingredient (0-based), or nothing yet. */
+	slot?: 'result' | number | undefined;
+	step: number;
 }
 
 const TABS: [Tab, string][] = [['overview', 'Overview'], ['modes', 'Modes'], ['manual', 'Manual'], ['stock', 'Stock'], ['log', 'Log']];
@@ -63,6 +90,14 @@ const ALLOYS_PER_PAGE = 8;
 const INGOT = 90;
 const ITEMS_PER_PAGE  = 6;
 const RESERVOIRS_PER_PAGE = 8;
+/** Rows of the fluid lists (Stock: reserve a reservoir; recipe editor: choose a fluid). */
+const CHOICE_ROWS = 14;
+/** Steps of the recipe editor's - and + (mB). */
+const STEPS = [10, 90, 1000];
+/** Smallest amount of a recipe line. */
+const MIN_AMOUNT = 10;
+/** Capacities ◀ ▶ go through on the Stock tab (the reservoirs of the modpack); before them, auto. */
+const CAPACITIES = [16000, 32000, 64000, 256000, 1024000, 4096000];
 /** Level of a reservoir whose capacity is not known yet: the biggest known one, or this. */
 const DEFAULT_CAPACITY = 16000;
 const LOG_LINES       = 13;
@@ -92,7 +127,13 @@ export class SmelteryScreen {
 	/** Modes tab: the alloy picker is open instead of the cards. */
 	private picking   = false;
 	private alloyPage = 1;
-	private picked?: string | undefined;
+	/** Recipe picked in the list (AlloyOption.index). */
+	private picked?: number | undefined;
+	private editor?: EditorState | undefined;
+	private assigning?: Assigning | undefined;
+	private choicePage = 1;
+	/** Every fluid of the catalogue (sorted), once the controller sent it. */
+	private allFluids?: string[] | undefined;
 	private pickIngots = 16;
 	private nonstop    = false;
 	private logOffset = 0;
@@ -124,6 +165,25 @@ export class SmelteryScreen {
 	private readonly closePicker: ButtonComponent;
 	private readonly itemPages: PaginationComponent;
 	private readonly stockPages: PaginationComponent;
+	private readonly reservoirButtons: ButtonComponent[] = [];
+	private readonly choiceButtons: ButtonComponent[] = [];
+	private readonly choicePages: PaginationComponent;
+	private readonly capacityLess: ButtonComponent;
+	private readonly capacityMore: ButtonComponent;
+	private readonly panelSave: ButtonComponent;
+	private readonly panelCancel: ButtonComponent;
+	private readonly editButton: ButtonComponent;
+	private readonly newButton: ButtonComponent;
+	private readonly deleteButton: ButtonComponent;
+	private readonly resultButton: ButtonComponent;
+	private readonly resultLess: ButtonComponent;
+	private readonly resultMore: ButtonComponent;
+	private readonly inputButtons: ButtonComponent[] = [];
+	private readonly inputLess: ButtonComponent[] = [];
+	private readonly inputMore: ButtonComponent[] = [];
+	private readonly inputRemove: ButtonComponent[] = [];
+	private readonly addInput: ButtonComponent;
+	private readonly stepButtons: ButtonComponent[] = [];
 
 	public constructor(private readonly actions: ScreenActions) {
 		this.root.place(new PaintComponent({paint: (painter) => this.paint(painter)}), FULL_SCREEN);
@@ -200,6 +260,54 @@ export class SmelteryScreen {
 		this.selectButton  = this.button('', {x: 53, y: 30, width: 21, height: 1}, () => this.selectAlloy());
 		this.closePicker   = this.button(' Cancel ', {x: 53, y: 32, width: 8, height: 1}, () => this.cancelPicker());
 
+		// Stock: the name of each reservoir is its button (touch it to reserve the reservoir).
+		for (let slot = 0; slot < RESERVOIRS_PER_PAGE; slot++) {
+			const index = slot;
+			const place = SmelteryScreen.reservoirPlace(index);
+			this.reservoirButtons.push(this.button('', {x: place.x, y: place.y + 10, width: 11, height: 1}, () => this.pressReservoir(index)));
+		}
+
+		// The fluid list, on the right: Stock (reserve a reservoir) and the recipe editor.
+		for (let row = 0; row < CHOICE_ROWS; row++) {
+			const index = row;
+			this.choiceButtons.push(this.button('', {x: 59, y: 10 + index, width: 20, height: 1}, () => this.pressChoice(index)));
+		}
+		this.choicePages = this.root.place(new PaginationComponent({
+			page: 1, pageSize: CHOICE_ROWS, totalItems: 0, foregroundColor: colors.lightGray, backgroundColor: colors.black,
+			onPageChange: (page) => {
+				this.choicePage = page;
+			},
+		}), {x: 55, y: 25, width: 11, height: 1});
+		this.capacityLess = this.button(` ${Glyph.left} `, {x: 55, y: 31, width: 3, height: 1}, () => this.stepCapacity(-1));
+		this.capacityMore = this.button(` ${Glyph.right} `, {x: 73, y: 31, width: 3, height: 1}, () => this.stepCapacity(1));
+		this.panelSave   = this.button(' Save ', {x: 55, y: 33, width: 6, height: 1}, () => this.savePanel());
+		this.panelCancel = this.button(' Cancel ', {x: 63, y: 33, width: 8, height: 1}, () => this.cancelPanel());
+
+		// The alloy picker: edit, add or delete the recipe picked.
+		this.editButton   = this.button(' Edit ', {x: 53, y: 34, width: 6, height: 1}, () => this.openEditor(this.pickedOption()));
+		this.newButton    = this.button(' New ', {x: 60, y: 34, width: 5, height: 1}, () => this.openEditor(undefined));
+		this.deleteButton = this.button(' Delete ', {x: 66, y: 34, width: 8, height: 1}, () => this.askDelete());
+
+		// The recipe editor.
+		this.resultButton = this.button('', {x: 6, y: 9, width: 18, height: 1}, () => this.pickSlot('result'));
+		this.resultLess   = this.button(' - ', {x: 25, y: 9, width: 3, height: 1}, () => this.stepAmount('result', -1));
+		this.resultMore   = this.button(' + ', {x: 38, y: 9, width: 3, height: 1}, () => this.stepAmount('result', 1));
+		for (let row = 0; row < MAX_INGREDIENTS; row++) {
+			const index = row;
+			const y     = 14 + index * 2;
+			this.inputButtons.push(this.button('', {x: 6, y, width: 18, height: 1}, () => this.pickSlot(index)));
+			this.inputLess.push(this.button(' - ', {x: 25, y, width: 3, height: 1}, () => this.stepAmount(index, -1)));
+			this.inputMore.push(this.button(' + ', {x: 38, y, width: 3, height: 1}, () => this.stepAmount(index, 1)));
+			this.inputRemove.push(this.button(' x ', {x: 43, y, width: 3, height: 1}, () => this.removeInput(index)));
+		}
+		this.addInput = this.button(' + ingredient ', {x: 3, y: 22, width: 14, height: 1}, () => this.addIngredient());
+		let stepX = 9;
+		for (const step of STEPS) {
+			const label = ` ${step} `;
+			this.stepButtons.push(this.button(label, {x: stepX, y: 25, width: label.length, height: 1}, () => this.setStep(step)));
+			stepX += label.length + 1;
+		}
+
 		// Added last: drawn and hit above everything else.
 		this.root.place(new PaintComponent({paint: (painter) => this.paintConfirm(painter)}), FULL_SCREEN);
 		this.confirmYes = this.button('', {x: 18, y: 22, width: 16, height: 1}, () => this.confirmStep());
@@ -222,8 +330,8 @@ export class SmelteryScreen {
 	/** Called every second: countdowns and the online dot. */
 	public tick(): void {
 		if (this.confirm !== undefined && this.confirm.step === 2 && os.clock() > this.confirm.deadline) {
+			this.notify(`${this.confirm.kind === 'force' ? 'force' : 'delete'} cancelled: not confirmed in time`);
 			this.confirm = undefined;
-			this.notify('force cancelled: not confirmed in time');
 		}
 		this.sync();
 	}
@@ -231,8 +339,220 @@ export class SmelteryScreen {
 	// ------------------------------------------------------------------ actions
 
 	private showTab(tab: Tab): void {
-		this.tab     = tab;
-		this.picking = false;
+		this.tab       = tab;
+		this.picking   = false;
+		this.editor    = undefined;
+		this.assigning = undefined;
+		this.sync();
+	}
+
+	/** Every fluid of the catalogue, from the controller (asked at start and after a recipe change). */
+	public setFluids(fluids: string[]): void {
+		this.allFluids = fluids;
+		this.sync();
+	}
+
+	/** Stock tab: the top-left corner of the frame of the `index`-th reservoir of the page. */
+	private static reservoirPlace(index: number): {x: number; y: number} {
+		return {x: 3 + (index % 4) * 12, y: 7 + Math.floor(index / 4) * 14};
+	}
+
+	private pageReservoirs(): SmelteryState['reservoirs'] {
+		const start = (this.stockPage - 1) * RESERVOIRS_PER_PAGE;
+		return (this.state?.reservoirs ?? []).slice(start, start + RESERVOIRS_PER_PAGE);
+	}
+
+	private pressReservoir(slot: number): void {
+		const reservoir = this.pageReservoirs()[slot];
+		if (reservoir === undefined) return;
+		this.assigning  = {
+			reservoir: reservoir.name,
+			fluid:     reservoir.assigned,
+			capacity:  reservoir.capacitySource === 'set' ? reservoir.capacity : undefined,
+		};
+		this.choicePage = 1;
+		this.sync();
+	}
+
+	/** Rows of the fluid list shown now: for a reservoir (with "free"), or for the slot of the editor. */
+	private choices(): FluidChoice[] {
+		const state = this.state;
+		if (state === undefined) return [];
+
+		if (this.tab === 'stock' && this.assigning !== undefined) return fluidChoices(knownFluids(state), this.allFluids, true);
+
+		const editor = this.editor;
+		if (this.tab === 'modes' && editor !== undefined && editor.slot !== undefined) {
+			const extra = [editor.result, ...editor.inputs.map((input) => input.fluid)];
+			return fluidChoices(knownFluids(state, extra), this.allFluids, false);
+		}
+		return [];
+	}
+
+	private pageChoices(): FluidChoice[] {
+		const start = (this.choicePage - 1) * CHOICE_ROWS;
+		return this.choices().slice(start, start + CHOICE_ROWS);
+	}
+
+	/** The fluid now chosen for what the list fills (undefined: free, or nothing chosen). */
+	private chosenFluid(): string | undefined {
+		if (this.assigning !== undefined) return this.assigning.fluid;
+		const editor = this.editor;
+		if (editor === undefined || editor.slot === undefined) return undefined;
+		return editor.slot === 'result' ? editor.result : editor.inputs[editor.slot]?.fluid;
+	}
+
+	private pressChoice(row: number): void {
+		const choice = this.pageChoices()[row];
+		if (choice === undefined || choice.kind === 'header') return;
+
+		const fluid = choice.kind === 'fluid' ? choice.fluid : undefined;
+		const editor = this.editor;
+		if (this.assigning !== undefined) {
+			this.assigning.fluid = fluid;
+		}
+		else if (editor !== undefined && fluid !== undefined) {
+			if (editor.slot === 'result') editor.result = fluid;
+			else if (editor.slot !== undefined && editor.inputs[editor.slot] !== undefined) editor.inputs[editor.slot]!.fluid = fluid;
+		}
+		this.sync();
+	}
+
+	private savePanel(): void {
+		const assigning = this.assigning;
+		if (assigning !== undefined) {
+			const request: SetReservoirRequest = {reservoir: assigning.reservoir};
+			if (assigning.fluid !== undefined) request.fluid = assigning.fluid;
+			if (assigning.capacity !== undefined) request.capacity = assigning.capacity;
+			this.actions.setReservoir(request);
+			this.assigning = undefined;
+		}
+		else if (this.editor !== undefined) {
+			this.saveEditor();
+		}
+		this.sync();
+	}
+
+	/** Stock tab: ◀ ▶ through auto and the capacities of the modpack's reservoirs. */
+	private stepCapacity(direction: number): void {
+		const assigning = this.assigning;
+		if (assigning === undefined) return;
+
+		const current = assigning.capacity;
+		if (direction > 0) {
+			assigning.capacity = current === undefined ? CAPACITIES[0] : CAPACITIES.find((capacity) => capacity > current) ?? current;
+		}
+		else if (current !== undefined) {
+			const smaller = CAPACITIES.filter((capacity) => capacity < current);
+			assigning.capacity = smaller[smaller.length - 1];
+		}
+		this.sync();
+	}
+
+	private cancelPanel(): void {
+		this.assigning = undefined;
+		this.editor    = undefined;
+		this.sync();
+	}
+
+	// --------------------------------------------------------- recipe editor
+
+	private pickedOption(): AlloyOption | undefined {
+		return this.alloyOptions().find((option) => option.index === this.picked);
+	}
+
+	/** Edits a copy of `option`, or starts a new recipe (two ingredients of an ingot each). */
+	private openEditor(option: AlloyOption | undefined): void {
+		this.editor = option !== undefined
+		              ? {
+				index: option.index, expected: option.result, result: option.result, amount: option.amount,
+				inputs: option.inputs.map((input) => ({fluid: input.fluid, amount: input.amount})), step: INGOT,
+			}
+		              : {amount: INGOT, inputs: [{amount: INGOT}, {amount: INGOT}], slot: 'result', step: INGOT};
+		this.choicePage = 1;
+		this.sync();
+	}
+
+	private pickSlot(slot: 'result' | number): void {
+		if (this.editor === undefined) return;
+		this.editor.slot = slot;
+		this.choicePage  = 1;
+		this.sync();
+	}
+
+	private stepAmount(slot: 'result' | number, direction: number): void {
+		const editor = this.editor;
+		if (editor === undefined) return;
+		const line = slot === 'result' ? editor : editor.inputs[slot];
+		if (line === undefined) return;
+		line.amount = Math.max(MIN_AMOUNT, line.amount + direction * editor.step);
+		this.sync();
+	}
+
+	private removeInput(index: number): void {
+		const editor = this.editor;
+		if (editor === undefined) return;
+		editor.inputs.splice(index, 1);
+		if (editor.slot === index) editor.slot = undefined;
+		else if (typeof editor.slot === 'number' && editor.slot > index) editor.slot--;
+		this.sync();
+	}
+
+	private addIngredient(): void {
+		const editor = this.editor;
+		if (editor === undefined || editor.inputs.length >= MAX_INGREDIENTS) return;
+		editor.inputs.push({amount: INGOT});
+		editor.slot     = editor.inputs.length - 1;
+		this.choicePage = 1;
+		this.sync();
+	}
+
+	private setStep(step: number): void {
+		if (this.editor !== undefined) this.editor.step = step;
+		this.sync();
+	}
+
+	/** The recipe written in the editor, or why it cannot be saved. */
+	private editedRecipe(): {recipe?: AlloyRatio; problem?: string} {
+		const editor = this.editor;
+		if (editor === undefined) return {problem: 'no recipe'};
+		if (editor.result === undefined) return {problem: 'choose the result'};
+
+		const inputs: {fluid: string; amount: number}[] = [];
+		for (const input of editor.inputs) {
+			if (input.fluid === undefined) return {problem: 'choose every ingredient'};
+			inputs.push({fluid: input.fluid, amount: input.amount});
+		}
+		const recipe: AlloyRatio = {result: editor.result, amount: editor.amount, inputs};
+		const problem = recipeProblem(recipe);
+		return problem !== undefined ? {problem} : {recipe};
+	}
+
+	private saveEditor(): void {
+		const editor = this.editor;
+		const {recipe, problem} = this.editedRecipe();
+		if (editor === undefined || recipe === undefined) {
+			this.notify(problem ?? 'cannot save', colors.red);
+			return;
+		}
+
+		const request: SaveRecipeRequest = {recipe};
+		if (editor.index !== undefined) {
+			request.index = editor.index;
+			if (editor.expected !== undefined) request.expected = editor.expected;
+		}
+		// A new recipe goes at the end of the catalogue.
+		const index = editor.index ?? this.alloyOptions().length;
+		this.actions.saveRecipe(request, () => {
+			this.editor = undefined;
+			this.picked = index;
+			this.sync();
+		});
+	}
+
+	private askDelete(): void {
+		const option = this.pickedOption();
+		if (option !== undefined) this.confirm = {kind: 'delete', option, step: 1, deadline: 0};
 		this.sync();
 	}
 
@@ -242,8 +562,9 @@ export class SmelteryScreen {
 
 	private openPicker(): void {
 		const alloy  = this.state?.alloy;
+		const options = this.alloyOptions();
 		this.picking = true;
-		this.picked  = alloy?.result ?? this.alloyOptions()[0]?.result;
+		this.picked  = (options.find((option) => option.result === alloy?.result) ?? options[0])?.index;
 		this.nonstop = alloy !== undefined && alloy.target === undefined;
 		if (alloy?.target !== undefined) this.pickIngots = Math.max(1, Math.round(alloy.target / INGOT));
 		this.sync();
@@ -256,7 +577,7 @@ export class SmelteryScreen {
 
 	private pickAlloy(row: number): void {
 		const option = this.alloyOptions()[(this.alloyPage - 1) * ALLOYS_PER_PAGE + row];
-		if (option !== undefined) this.picked = option.result;
+		if (option !== undefined) this.picked = option.index;
 		this.sync();
 	}
 
@@ -274,7 +595,7 @@ export class SmelteryScreen {
 	}
 
 	private selectAlloy(): void {
-		const result = this.picked;
+		const result = this.pickedOption()?.result;
 		if (result === undefined) return;
 		const request: SetAlloyRequest = {result, activate: true};
 		if (!this.nonstop) request.target = this.pickIngots * INGOT;
@@ -294,7 +615,7 @@ export class SmelteryScreen {
 		if (item === undefined) return;
 
 		if (item.status === 'ok') this.actions.insert({slot: item.slot});
-		else if (item.status === 'alloy' || item.status === 'heat') this.confirm = {item, step: 1, deadline: 0};
+		else if (item.status === 'alloy' || item.status === 'heat') this.confirm = {kind: 'force', item, step: 1, deadline: 0};
 		this.sync();
 	}
 
@@ -303,11 +624,16 @@ export class SmelteryScreen {
 		if (confirm === undefined) return;
 
 		if (confirm.step === 1) {
-			this.confirm = {item: confirm.item, step: 2, deadline: os.clock() + CONFIRM_SECONDS};
+			this.confirm = {...confirm, step: 2, deadline: os.clock() + CONFIRM_SECONDS};
+		}
+		else if (confirm.kind === 'force') {
+			this.confirm = undefined;
+			this.actions.insert({slot: confirm.item.slot, force: true});
 		}
 		else {
 			this.confirm = undefined;
-			this.actions.insert({slot: confirm.item.slot, force: true});
+			this.picked  = undefined;
+			this.actions.deleteRecipe({index: confirm.option.index, expected: confirm.option.result});
 		}
 		this.sync();
 	}
@@ -376,8 +702,9 @@ export class SmelteryScreen {
 
 		for (const [tab, button] of this.tabButtons) this.show(button, true, undefined, tab === this.tab ? colors.white : colors.gray);
 
-		const cards  = this.tab === 'modes' && state !== undefined && !this.picking;
-		const picker = this.tab === 'modes' && state !== undefined && this.picking;
+		const editing = this.tab === 'modes' && state !== undefined && this.editor !== undefined;
+		const cards   = this.tab === 'modes' && state !== undefined && !this.picking && !editing;
+		const picker  = this.tab === 'modes' && state !== undefined && this.picking && !editing;
 		for (const [mode, button] of this.modeButtons) {
 			this.show(button, cards && state.mode !== mode, ' Activate ', colors.black, MODE_CARDS[mode].color);
 		}
@@ -391,15 +718,22 @@ export class SmelteryScreen {
 		this.alloyButtons.forEach((button, row) => {
 			const option = pageOptions[row];
 			const label  = option !== undefined ? fluidLabel(option.result).substring(0, 24).padEnd(24) : '';
-			const color  = option?.result === this.picked ? colors.white : colors.lightGray;
+			const color  = option !== undefined && option.index === this.picked ? colors.white : colors.lightGray;
 			this.show(button, picker && option !== undefined, label, color, colors.black);
 		});
 		this.show(this.lessButton, picker, ' - ', colors.white, colors.gray);
 		this.show(this.moreButton, picker, ' + ', colors.white, colors.gray);
 		this.show(this.nonstopButton, picker, ' Until stopped ', this.nonstop ? colors.black : colors.lightGray, this.nonstop ? colors.magenta : colors.gray);
-		const pickedLabel = this.picked !== undefined ? fluidLabel(this.picked) : '';
-		this.show(this.selectButton, picker && this.picked !== undefined, ` Select ${pickedLabel}`.substring(0, 21).padEnd(21), colors.black, colors.magenta);
+		const pickedOption = this.pickedOption();
+		const pickedLabel  = pickedOption !== undefined ? fluidLabel(pickedOption.result) : '';
+		this.show(this.selectButton, picker && pickedOption !== undefined, ` Select ${pickedLabel}`.substring(0, 21).padEnd(21), colors.black, colors.magenta);
 		this.show(this.closePicker, picker, ' Cancel ', colors.black, colors.lightGray);
+		this.show(this.editButton, picker && pickedOption !== undefined, ' Edit ', colors.white, colors.cyan);
+		this.show(this.newButton, picker, ' New ', colors.white, colors.cyan);
+		this.show(this.deleteButton, picker && pickedOption !== undefined, ' Delete ', colors.white, colors.red);
+
+		this.syncEditor(editing);
+		this.syncChoices(editing);
 
 		const groups = this.castGroups();
 		this.castPages.setProps({visible: this.tab === 'overview' && groups.length > CASTS_PER_PAGE, totalItems: groups.length});
@@ -416,6 +750,20 @@ export class SmelteryScreen {
 		const reservoirCount = state?.reservoirs.length ?? 0;
 		this.stockPages.setProps({visible: this.tab === 'stock' && reservoirCount > RESERVOIRS_PER_PAGE, totalItems: reservoirCount});
 		this.stockPage = Math.min(this.stockPage, Math.max(1, Math.ceil(reservoirCount / RESERVOIRS_PER_PAGE)));
+
+		// The label of a reservoir: its fluid, what it is reserved for, or free.
+		const pageReservoirs = this.pageReservoirs();
+		this.reservoirButtons.forEach((button, slot) => {
+			const reservoir = pageReservoirs[slot];
+			if (this.tab !== 'stock' || reservoir === undefined) {
+				this.show(button, false);
+				return;
+			}
+			const fluid = reservoir.fluid;
+			const label = fluid !== undefined ? fluidLabel(fluid) : reservoir.assigned !== undefined ? `for ${fluidLabel(reservoir.assigned)}` : 'free';
+			const color = reservoir.name === this.assigning?.reservoir ? colors.yellow : fluid !== undefined ? colors.white : colors.gray;
+			this.show(button, true, label.substring(0, 11).padEnd(11), color, colors.black);
+		});
 
 		const manual = this.tab === 'manual';
 		const items  = this.pageItems();
@@ -452,7 +800,8 @@ export class SmelteryScreen {
 		this.show(this.logDown, this.tab === 'log', undefined, colors.lightGray, colors.gray);
 
 		const confirm = this.confirm;
-		this.show(this.confirmYes, modal, confirm?.step === 2 ? ' Force insert ' : ' Continue ', colors.white, confirm?.step === 2 ? colors.red : colors.orange);
+		const yes = confirm?.kind === 'delete' ? (confirm.step === 2 ? ' Delete ' : ' Continue ') : (confirm?.step === 2 ? ' Force insert ' : ' Continue ');
+		this.show(this.confirmYes, modal, yes, colors.white, confirm?.step === 2 ? colors.red : colors.orange);
 		this.show(this.confirmNo, modal, ' Cancel ', colors.black, colors.lightGray);
 
 		// Under the dialog, nothing else can be pressed.
@@ -463,6 +812,73 @@ export class SmelteryScreen {
 		this.itemPages.setProps({disabled: modal});
 		this.stockPages.setProps({disabled: modal});
 		this.alloyPages.setProps({disabled: modal});
+		this.choicePages.setProps({disabled: modal});
+	}
+
+	/** The buttons of the recipe editor. */
+	private syncEditor(editing: boolean): void {
+		const editor = this.editor;
+		const shown  = editing && editor !== undefined;
+		const slotColor = (slot: 'result' | number): number => (editor?.slot === slot ? colors.yellow : colors.white);
+
+		const result = editor?.result !== undefined ? fluidLabel(editor.result) : 'choose...';
+		this.show(this.resultButton, shown, result.substring(0, 18).padEnd(18), editor?.result !== undefined ? slotColor('result') : colors.gray, colors.black);
+		this.show(this.resultLess, shown, ' - ', colors.white, colors.gray);
+		this.show(this.resultMore, shown, ' + ', colors.white, colors.gray);
+
+		for (let row = 0; row < MAX_INGREDIENTS; row++) {
+			const input = editor?.inputs[row];
+			const visible = shown && input !== undefined;
+			const label = input?.fluid !== undefined ? fluidLabel(input.fluid) : 'choose...';
+			const color = input?.fluid !== undefined ? slotColor(row) : colors.gray;
+			this.show(this.inputButtons[row]!, visible, label.substring(0, 18).padEnd(18), color, colors.black);
+			this.show(this.inputLess[row]!, visible, ' - ', colors.white, colors.gray);
+			this.show(this.inputMore[row]!, visible, ' + ', colors.white, colors.gray);
+			this.show(this.inputRemove[row]!, visible, ' x ', colors.white, colors.red);
+		}
+		this.show(this.addInput, shown && (editor?.inputs.length ?? 0) < MAX_INGREDIENTS, ' + ingredient ', colors.white, colors.gray);
+
+		this.stepButtons.forEach((button, index) => {
+			const on = editor?.step === STEPS[index];
+			this.show(button, shown, undefined, on ? colors.black : colors.white, on ? colors.lime : colors.gray);
+		});
+	}
+
+	/** The fluid list on the right (Stock or editor), its pages, and Save / Cancel. */
+	private syncChoices(editing: boolean): void {
+		const assigning = this.tab === 'stock' && this.assigning !== undefined && this.state !== undefined;
+		const choices   = this.choices();
+		const listed    = assigning || (editing && this.editor?.slot !== undefined);
+
+		this.choicePages.setProps({visible: listed && choices.length > CHOICE_ROWS, totalItems: choices.length});
+		this.choicePage = Math.min(this.choicePage, Math.max(1, Math.ceil(choices.length / CHOICE_ROWS)));
+
+		const page   = this.pageChoices();
+		const chosen = this.chosenFluid();
+		this.choiceButtons.forEach((button, row) => {
+			const choice = page[row];
+			if (!listed || choice === undefined) {
+				this.show(button, false);
+			}
+			else if (choice.kind === 'header') {
+				this.show(button, true, choice.text.padEnd(20), colors.gray, colors.black);
+			}
+			else if (choice.kind === 'free') {
+				this.show(button, true, 'free (no fluid)'.padEnd(20), chosen === undefined ? colors.white : colors.lightGray, colors.black);
+			}
+			else {
+				const color = choice.fluid === chosen ? colors.white : colors.lightGray;
+				this.show(button, true, fluidLabel(choice.fluid).substring(0, 20).padEnd(20), color, colors.black);
+			}
+		});
+
+		this.show(this.capacityLess, assigning, undefined, colors.white, colors.gray);
+		this.show(this.capacityMore, assigning, undefined, colors.white, colors.gray);
+
+		const panel = assigning || editing;
+		const ready = assigning || this.editedRecipe().recipe !== undefined;
+		this.show(this.panelSave, panel, ' Save ', ready ? colors.black : colors.lightGray, ready ? colors.lime : colors.gray);
+		this.show(this.panelCancel, panel, ' Cancel ', colors.black, colors.lightGray);
 	}
 
 	// ------------------------------------------------------------------ drawing
@@ -619,6 +1035,10 @@ export class SmelteryScreen {
 	}
 
 	private paintModes(p: Painter, state: SmelteryState): void {
+		if (this.editor !== undefined) {
+			this.paintEditor(p, this.editor);
+			return;
+		}
 		if (this.picking) {
 			this.paintPicker(p, state);
 			return;
@@ -659,7 +1079,7 @@ export class SmelteryScreen {
 
 		options.slice(start, start + ALLOYS_PER_PAGE).forEach((option, index) => {
 			const y      = 7 + index * 3;
-			const picked = option.result === this.picked;
+			const picked = option.index === this.picked;
 			if (picked) p.text(3, y, Glyph.right, colors.white);
 			p.fill(5, y, 2, 1, fluidColor(option.result));
 
@@ -670,7 +1090,7 @@ export class SmelteryScreen {
 		if (options.length === 0) p.text(3, 7, 'No alloy in the catalogue.', colors.gray);
 		if (options.length > ALLOYS_PER_PAGE) p.text(15, 32, 'ready first', colors.gray);
 
-		const option = options.find((candidate) => candidate.result === this.picked);
+		const option = this.pickedOption();
 		if (option === undefined) return;
 
 		const label = fluidLabel(option.result);
@@ -742,7 +1162,7 @@ export class SmelteryScreen {
 	private paintStock(p: Painter, state: SmelteryState): void {
 		const reservoirs = state.reservoirs;
 
-		// Reservoirs: a small tank each, filled to its capacity once known (learnt when one fills up).
+		// Reservoirs: a small tank each, filled to its capacity once known (type, set by hand, or learnt).
 		this.title(p, 3, 5, 'RESERVOIRS', 48);
 		let known = 0;
 		let scale = 0;
@@ -753,10 +1173,11 @@ export class SmelteryScreen {
 		}
 		if (scale === 0) scale = DEFAULT_CAPACITY;
 
-		const start = (this.stockPage - 1) * RESERVOIRS_PER_PAGE;
-		reservoirs.slice(start, start + RESERVOIRS_PER_PAGE).forEach((reservoir, index) => {
-			const x = 3 + (index % 4) * 12, y = 7 + Math.floor(index / 4) * 14, height = 7;
+		this.pageReservoirs().forEach((reservoir, index) => {
+			const {x, y} = SmelteryScreen.reservoirPlace(index);
+			const height = 7;
 			this.frame(p, x, y, 6, height);
+			if (reservoir.name === this.assigning?.reservoir) p.text(x - 1 < 1 ? 1 : x - 1, y + height + 3, Glyph.right, colors.yellow);
 
 			const fluid = reservoir.fluid;
 			if (fluid !== undefined) {
@@ -765,13 +1186,22 @@ export class SmelteryScreen {
 			}
 			if (reservoir.capacity !== undefined && reservoir.amount >= reservoir.capacity) p.text(x + 1, y + 1, ' FULL ', colors.black, colors.white);
 
-			const label = fluid !== undefined ? fluidLabel(fluid) : reservoir.assigned !== undefined ? `for ${fluidLabel(reservoir.assigned)}` : 'free';
-			p.text(x, y + height + 3, label.substring(0, 11), fluid !== undefined ? colors.white : colors.gray);
-			if (fluid !== undefined) p.text(x, y + height + 4, `${reservoir.amount} mB`, colors.lightGray);
+			// The label (line y + height + 3) is the reservoir's button. Reserved for another fluid than the
+			// one it holds: it says so, in place of the amount.
+			if (fluid !== undefined && reservoir.assigned !== undefined && reservoir.assigned !== fluid) {
+				p.text(x, y + height + 4, `for ${fluidLabel(reservoir.assigned)}`.substring(0, 11), colors.orange);
+			}
+			else if (fluid !== undefined) p.text(x, y + height + 4, `${reservoir.amount} mB`, colors.lightGray);
 			else if (reservoir.assigned !== undefined) p.text(x, y + height + 4, 'assigned', colors.gray);
 			p.text(x, y + height + 5, itemLabel(reservoir.name).split('_').join(' ').substring(0, 11), colors.gray);
 		});
 		if (reservoirs.length === 0) p.text(3, 7, 'No reservoir found.', colors.gray);
+		else p.text(15, 35, 'touch a name to reserve it', colors.gray);
+
+		if (this.assigning !== undefined) {
+			this.paintAssign(p, state, this.assigning);
+			return;
+		}
 
 		// Totals by fluid, biggest first.
 		this.title(p, 55, 5, 'TOTALS', 23);
@@ -801,7 +1231,7 @@ export class SmelteryScreen {
 		if (assigned.length === 1) p.text(56 + `${free} free`.length, 25, `+ 1 for ${fluidLabel(assigned[0]!.assigned!)}`.substring(0, 16), colors.gray);
 		else if (assigned.length > 1) p.text(56 + `${free} free`.length, 25, `+ ${assigned.length} assigned`, colors.gray);
 		p.text(55, 27, `capacity known for ${known}/${reservoirs.length}`, colors.gray);
-		p.text(55, 28, '(learnt when one fills)', colors.gray);
+		p.text(55, 28, '(touch a name to set it)', colors.gray);
 
 		// What the stock is waiting for: no room for a fluid, or a stock too small to cast.
 		const alerts = state.alerts.filter((alert) => alert.startsWith('no reservoir') || alert.startsWith('stock of'));
@@ -814,6 +1244,110 @@ export class SmelteryScreen {
 				p.text(57, 34, line.detail.substring(0, 21), colors.gray);
 			}
 			if (alerts.length > 1) p.text(57, 35, `+ ${alerts.length - 1} more`, colors.gray);
+		}
+	}
+
+	/** Stock tab, a reservoir touched: what it holds, and the list of fluids to reserve it for. */
+	private paintAssign(p: Painter, state: SmelteryState, assigning: Assigning): void {
+		const reservoir = state.reservoirs.find((candidate) => candidate.name === assigning.reservoir);
+		this.title(p, 55, 5, 'ASSIGN RESERVOIR', 24);
+		p.text(55, 6, itemLabel(assigning.reservoir).split('_').join(' ').substring(0, 24), colors.white);
+		if (reservoir?.fluid !== undefined) p.text(55, 7, `holds ${fluidLabel(reservoir.fluid)} ${reservoir.amount} mB`.substring(0, 24), colors.lightGray);
+		else p.text(55, 7, 'empty', colors.gray);
+		const now = reservoir?.assigned !== undefined ? `for ${fluidLabel(reservoir.assigned)}` : 'free';
+		p.text(55, 8, `now: ${now}`.substring(0, 24), colors.gray);
+
+		this.paintChoices(p);
+
+		const holds = reservoir?.fluid;
+		if (holds !== undefined && assigning.fluid !== undefined && assigning.fluid !== holds) {
+			p.text(55, 27, `Keeps its ${fluidLabel(holds)}, no more;`.substring(0, 24), colors.orange);
+			p.text(55, 28, `${fluidLabel(assigning.fluid)} once empty.`.substring(0, 24), colors.gray);
+		}
+		else {
+			p.text(55, 27, 'Reserved: only that fluid.', colors.gray);
+			p.text(55, 28, 'Free: any, when empty.', colors.gray);
+		}
+
+		// Capacity: set by hand, or auto (learnt when it refused fluid, or given by its type).
+		p.text(55, 30, 'CAPACITY', colors.gray);
+		const source = reservoir?.capacitySource;
+		let value: string;
+		if (assigning.capacity !== undefined) {
+			p.text(64, 30, 'set by hand', colors.white);
+			value = `${assigning.capacity} mB`;
+		}
+		else if (reservoir?.capacity !== undefined && source !== 'set') {
+			p.text(64, 30, source === 'learnt' ? 'learnt' : 'from its type', colors.gray);
+			value = `auto ${reservoir.capacity}`;
+		}
+		else if (source === 'set') {
+			p.text(64, 30, 'type or learnt', colors.gray);
+			value = 'auto';
+		}
+		else {
+			p.text(64, 30, 'unknown: set it', colors.orange);
+			value = 'auto ?';
+		}
+		p.text(59, 31, value.padStart(13), colors.white);
+	}
+
+	/** The fluid list on the right: a mark on the chosen one, the color of each fluid. */
+	private paintChoices(p: Painter): void {
+		const chosen = this.chosenFluid();
+		this.pageChoices().forEach((choice, row) => {
+			const y = 10 + row;
+			if (choice.kind === 'fluid') {
+				p.fill(56, y, 2, 1, fluidColor(choice.fluid));
+				if (choice.fluid === chosen) p.text(55, y, Glyph.right, colors.yellow);
+			}
+			else if (choice.kind === 'free' && chosen === undefined) {
+				p.text(55, y, Glyph.right, colors.yellow);
+			}
+		});
+	}
+
+	/** Modes tab, Edit or New: the recipe on the left, the fluid list on the right. */
+	private paintEditor(p: Painter, editor: EditorState): void {
+		this.title(p, 3, 5, editor.index !== undefined ? 'EDIT RECIPE' : 'NEW RECIPE', 48);
+
+		p.text(3, 7, 'RESULT', colors.gray);
+		if (editor.slot === 'result') p.text(1, 9, Glyph.right, colors.yellow);
+		if (editor.result !== undefined) p.fill(3, 9, 2, 1, fluidColor(editor.result));
+		p.text(29, 9, `${editor.amount} mB`.padStart(8), colors.white);
+
+		p.text(3, 12, 'INGREDIENTS', colors.gray);
+		editor.inputs.forEach((input, row) => {
+			const y = 14 + row * 2;
+			if (editor.slot === row) p.text(1, y, Glyph.right, colors.yellow);
+			if (input.fluid !== undefined) p.fill(3, y, 2, 1, fluidColor(input.fluid));
+			p.text(29, y, `${input.amount} mB`.padStart(8), colors.white);
+		});
+		if (editor.inputs.length < MAX_INGREDIENTS) p.text(18, 22, `(up to ${MAX_INGREDIENTS})`, colors.gray);
+
+		p.text(3, 25, 'step', colors.gray);
+		p.text(26, 25, 'mB', colors.gray);
+
+		const {recipe, problem} = this.editedRecipe();
+		if (recipe !== undefined) {
+			const amount = (mB: number, fluid: string): string => `${mB % INGOT === 0 ? `${mB / INGOT} ing` : `${mB} mB`} ${fluidLabel(fluid)}`;
+			p.text(3, 28, 'ready to save', colors.lime);
+			p.text(3, 30, recipe.inputs.map((input) => amount(input.amount, input.fluid)).join(' + ').substring(0, 48), colors.lightGray);
+			p.text(3, 31, `makes ${amount(recipe.amount, recipe.result)}`.substring(0, 48), colors.pink);
+		}
+		else {
+			p.text(3, 28, `cannot save: ${problem ?? '?'}`.substring(0, 48), colors.red);
+		}
+
+		this.title(p, 55, 5, 'CHOOSE FLUID', 24);
+		const slot = editor.slot;
+		if (slot === undefined) {
+			p.text(55, 7, 'Touch the result or an', colors.gray);
+			p.text(55, 8, 'ingredient to choose it.', colors.gray);
+		}
+		else {
+			p.text(55, 6, slot === 'result' ? 'for: the result' : `for: ingredient ${slot + 1}`, colors.lightGray);
+			this.paintChoices(p);
 		}
 	}
 
@@ -859,6 +1393,11 @@ export class SmelteryScreen {
 		p.fill(x + width + 1, y + 1, 1, height, color);
 		p.fill(x + 1, y + 1, width, height, colors.black);
 
+		if (confirm.kind === 'delete') {
+			this.paintDelete(p, confirm.option, confirm.step, confirm.deadline, x, y, color);
+			return;
+		}
+
 		const item = confirm.item;
 		const what = item.status === 'alloy'
 		             ? `will form ${fluidLabel(item.alloy ?? 'an alloy')}.`
@@ -876,5 +1415,32 @@ export class SmelteryScreen {
 			p.text(x + 3, y + 7, item.status === 'alloy' ? 'An alloy cannot be undone.' : 'It stays in the Smeltery until hot enough.', colors.gray);
 			p.text(x + 21, y + 10, `${Math.max(0, Math.ceil(confirm.deadline - os.clock()))} s`, colors.gray);
 		}
+	}
+
+	/** Inside the confirmation frame: the recipe to delete, and what happens to alloy mode. */
+	private paintDelete(p: Painter, option: AlloyOption, step: 1 | 2, deadline: number, x: number, y: number, color: number): void {
+		p.text(x + 3, y + 2, 'DELETE RECIPE', color);
+		p.text(x + 17, y + 2, `step ${step} of 2`, colors.gray);
+		const inputs = option.inputs.map((input) => `${input.amount} ${fluidLabel(input.fluid)}`).join(' + ');
+		p.text(x + 3, y + 4, `${inputs}`.substring(0, 45), colors.white);
+		p.text(x + 3, y + 5, `makes ${option.amount} mB ${fluidLabel(option.result)}`.substring(0, 45), colors.pink);
+
+		// The last recipe of the chosen alloy: alloy mode has nothing left to make.
+		const state = this.state;
+		const last  = state?.alloy?.result === option.result
+		              && !this.alloyOptions().some((other) => other.index !== option.index && other.result === option.result);
+		if (last && state?.mode === 'alloy') {
+			p.text(x + 3, y + 7, 'It is the alloy being made: alloy mode', colors.orange);
+			p.text(x + 3, y + 8, 'stops and goes back to the previous mode.', colors.orange);
+		}
+		else if (last) {
+			p.text(x + 3, y + 7, 'It is the alloy chosen for alloy mode:', colors.orange);
+			p.text(x + 3, y + 8, 'none will be chosen any more.', colors.orange);
+		}
+		else {
+			p.text(x + 3, y + 7, step === 1 ? 'Check the recipe before going on.' : 'It cannot be undone.', colors.gray);
+		}
+
+		if (step === 2) p.text(x + 21, y + 10, `${Math.max(0, Math.ceil(deadline - os.clock()))} s`, colors.gray);
 	}
 }

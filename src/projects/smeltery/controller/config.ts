@@ -34,6 +34,8 @@ export interface ControllerConfig {
 	reservoirs: string[];
 	/** Manual assignments, kept first: such a reservoir only ever takes its fluid. */
 	assignments: {reservoir: string; fluid: string}[];
+	/** Capacities set by hand (from the display), used when none was learnt; before the type ones. */
+	capacities: {reservoir: string; capacity: number}[];
 	/**
 	 * Formats auto mode casts, biggest first; casters with another cast are left to the other modes.
 	 * Also set from the display (Overview, CASTING: AUTO / off).
@@ -65,6 +67,7 @@ export function defaultControllerConfig(this: void): ControllerConfig {
 		fuel:             'minecraft:lava',
 		reservoirs:       [],
 		assignments:      [],
+		capacities:       [],
 		formatPriority:   ['block', 'ingot', 'nugget'],
 		idleSeconds:      30,
 		tickSeconds:      1,
@@ -125,6 +128,11 @@ export function loadAlloy(this: void, path = ALLOY_PATH): AlloyView | undefined 
 
 export function saveAlloy(this: void, alloy: AlloyView, path = ALLOY_PATH): void {
 	Config.save<AlloyFile>(path, {result: alloy.result, target: alloy.target ?? 0, made: alloy.made});
+}
+
+/** No alloy chosen any more (its last recipe was deleted). */
+export function clearAlloy(this: void, path = ALLOY_PATH): void {
+	Config.save<AlloyFile>(path, {result: '', target: 0, made: 0});
 }
 
 interface ReservoirsFile {
