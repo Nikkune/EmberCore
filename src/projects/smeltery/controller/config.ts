@@ -55,6 +55,8 @@ export interface ControllerConfig {
 	idleSeconds: number;
 	/** Seconds between two readings of the Smeltery. */
 	tickSeconds: number;
+	/** Seconds to the next reading after a tick that moved something (cast, collect, insert...). */
+	activeTickSeconds: number;
 	/** The state is broadcast on every change, and at least this often. */
 	heartbeatSeconds: number;
 	/** Log lines kept and sent to the display. */
@@ -80,6 +82,7 @@ export function defaultControllerConfig(this: void): ControllerConfig {
 		formatPriority:   ['block', 'ingot', 'nugget'],
 		idleSeconds:      30,
 		tickSeconds:      1,
+		activeTickSeconds: 0.25,
 		heartbeatSeconds: 5,
 		logSize:          20,
 	};

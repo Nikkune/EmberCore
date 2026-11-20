@@ -178,6 +178,11 @@ function pourAll(this: void, snapshot: Snapshot, context: PlanContext, plan: Pla
 	}
 
 	const used = new Set<string>();
+	// A caster collected this tick (just before the pours) is free again: it is cast into at once.
+	const collected = new Set<string>();
+	for (const action of plan.actions) if (action.kind === 'collect') collected.add(action.caster);
+	const free = (caster: {name: string; state: CasterState}): boolean =>
+		caster.state.status === 'idle' || (caster.state.status === 'blocked' && collected.has(caster.name));
 
 	for (const fluid of snapshot.fluids) {
 		if (skip.has(fluid.name)) continue;
@@ -192,7 +197,7 @@ function pourAll(this: void, snapshot: Snapshot, context: PlanContext, plan: Pla
 			// The biggest format this fluid fills: use its idle casters, never a smaller format meanwhile.
 			for (const caster of casters) {
 				if (left < amount) break;
-				if (used.has(caster.name) || caster.state.status !== 'idle') continue;
+				if (used.has(caster.name) || !free(caster)) continue;
 
 				plan.actions.push({kind: 'pour', caster: caster.name, fluid: fluid.name, amount});
 				used.add(caster.name);
