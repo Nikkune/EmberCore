@@ -3,7 +3,7 @@
   "type": "project",
   "id": "projects/smeltery",
   "name": "Smeltery",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "entry": "projects/smeltery/main.lua",
   "files": [
     "projects/smeltery/controller/config.lua",
@@ -19,6 +19,7 @@
     "projects/smeltery/shared/catalogue.lua",
     "projects/smeltery/shared/catalogueData.lua",
     "projects/smeltery/shared/protocol.lua",
+    "projects/smeltery/shared/recipes.lua",
     "projects/smeltery/shared/temperaturesData.lua"
   ],
   "dependencies": [

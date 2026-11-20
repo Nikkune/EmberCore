@@ -10,6 +10,16 @@ local function __TS__StringIncludes(self, searchString, position)
     return index ~= nil
 end
 
+local function __TS__StringCharCodeAt(self, index)
+    if index ~= index then
+        index = 0
+    end
+    if index < 0 then
+        return 0 / 0
+    end
+    return string.byte(self, index + 1) or 0 / 0
+end
+
 local function __TS__ArrayIncludes(self, searchElement, fromIndex)
     if fromIndex == nil then
         fromIndex = 0
@@ -317,31 +327,6 @@ local function __TS__ArraySort(self, compareFn)
     return self
 end
 
-local function __TS__CountVarargs(...)
-    return select("#", ...)
-end
-
-local function __TS__SparseArrayNew(...)
-    local sparseArray = {...}
-    sparseArray.sparseLength = __TS__CountVarargs(...)
-    return sparseArray
-end
-
-local function __TS__SparseArrayPush(sparseArray, ...)
-    local args = {...}
-    local argsLen = __TS__CountVarargs(...)
-    local listLen = sparseArray.sparseLength
-    for i = 1, argsLen do
-        sparseArray[listLen + i] = args[i]
-    end
-    sparseArray.sparseLength = listLen + argsLen
-end
-
-local function __TS__SparseArraySpread(sparseArray)
-    local _unpack = unpack or table.unpack
-    return _unpack(sparseArray, 1, sparseArray.sparseLength)
-end
-
 local function __TS__StringTrim(self)
     local result = string.gsub(self, "^[%s ﻿]*(.-)[%s ﻿]*$", "%1")
     return result
@@ -352,6 +337,42 @@ local function __TS__StringEndsWith(self, searchString, endPosition)
         endPosition = #self
     end
     return string.sub(self, endPosition - #searchString + 1, endPosition) == searchString
+end
+
+local function __TS__ArraySlice(self, first, last)
+    local len = #self
+    first = first or 0
+    if first < 0 then
+        first = len + first
+        if first < 0 then
+            first = 0
+        end
+    else
+        if first > len then
+            first = len
+        end
+    end
+    last = last or len
+    if last < 0 then
+        last = len + last
+        if last < 0 then
+            last = 0
+        end
+    else
+        if last > len then
+            last = len
+        end
+    end
+    local out = {}
+    first = first + 1
+    last = last + 1
+    local n = 1
+    while first < last do
+        out[n] = self[first]
+        first = first + 1
+        n = n + 1
+    end
+    return out
 end
 -- End of Lua Library inline imports
 local ____exports = {}
@@ -364,6 +385,7 @@ ____exports.Glyph = {
     right = string.char(16),
     left = string.char(17),
     dot = string.char(7),
+    mid = string.char(183),
     rule = string.char(128 + 4 + 8),
     underline = string.char(128 + 1 + 2)
 }
@@ -417,6 +439,16 @@ local DARK_COLORS = {
     colors.red,
     colors.black
 }
+local OTHER_COLORS = {
+    colors.lightBlue,
+    colors.brown,
+    colors.blue,
+    colors.purple,
+    colors.orange,
+    colors.lime,
+    colors.cyan,
+    colors.pink
+}
 function ____exports.fluidColor(fluid)
     for ____, ____value in ipairs(FLUID_COLORS) do
         local keyword = ____value[1]
@@ -425,7 +457,15 @@ function ____exports.fluidColor(fluid)
             return color
         end
     end
-    return colors.magenta
+    local hash = 0
+    do
+        local index = 0
+        while index < #fluid do
+            hash = (hash * 31 + __TS__StringCharCodeAt(fluid, index)) % 9973
+            index = index + 1
+        end
+    end
+    return OTHER_COLORS[hash % #OTHER_COLORS + 1]
 end
 function ____exports.textOn(background)
     return __TS__ArrayIncludes(DARK_COLORS, background) and colors.white or colors.black
@@ -475,29 +515,18 @@ function ____exports.groupCasters(casters, autoFormats)
         end
     end
     local list = {}
-    for ____, format in ipairs(autoFormats) do
-        local group = groups:get(format)
-        if group ~= nil then
-            list[#list + 1] = group
-        end
-    end
-    local others = {}
     for ____, ____value in __TS__Iterator(groups) do
         local group = ____value[2]
-        if not group.auto then
-            others[#others + 1] = group
-        end
+        list[#list + 1] = group
+    end
+    local function key(____, group)
+        return group.format == "no cast" and "~" or group.format
     end
     __TS__ArraySort(
-        others,
-        function(____, a, b) return a.format < b.format and -1 or (a.format > b.format and 1 or 0) end
+        list,
+        function(____, a, b) return key(nil, a) < key(nil, b) and -1 or (key(nil, a) > key(nil, b) and 1 or 0) end
     )
-    local ____array_0 = __TS__SparseArrayNew(unpack(list))
-    __TS__SparseArrayPush(
-        ____array_0,
-        unpack(others)
-    )
-    return {__TS__SparseArraySpread(____array_0)}
+    return list
 end
 function ____exports.attentionLines(state)
     local lines = {}
@@ -531,6 +560,31 @@ function ____exports.attentionLines(state)
     end
     return lines
 end
+function ____exports.placeLabel(name)
+    return table.concat(
+        __TS__StringSplit(
+            ____exports.itemLabel(name),
+            "_"
+        ),
+        " "
+    )
+end
+local function reasonOf(body)
+    local open = -1
+    do
+        local index = (string.find(body, "(", nil, true) or 0) - 1
+        while index >= 0 do
+            open = index
+            index = (string.find(
+                body,
+                "(",
+                math.max(index + 1 + 1, 1),
+                true
+            ) or 0) - 1
+        end
+    end
+    return open >= 0 and __TS__StringEndsWith(body, ")") and __TS__StringSubstring(body, open + 1, #body - 1) or ""
+end
 function ____exports.parseLogLine(line)
     local time = __TS__StringSubstring(line, 0, 8)
     local body = __TS__StringSubstring(line, 9)
@@ -539,58 +593,164 @@ function ____exports.parseLogLine(line)
         return words[index + 1] or ""
     end
     repeat
-        local ____switch36 = word(nil, 0)
-        local ____cond36 = ____switch36 == "inserted"
-        if ____cond36 then
+        local ____switch39 = word(nil, 0)
+        local ____cond39 = ____switch39 == "inserted"
+        if ____cond39 then
             return {
                 time = time,
                 kind = "in",
-                text = (____exports.itemLabel(word(nil, 2)) .. " ") .. word(nil, 1)
+                text = (____exports.placeLabel(word(nil, 2)) .. " x") .. word(nil, 1)
             }
         end
-        ____cond36 = ____cond36 or ____switch36 == "poured"
-        if ____cond36 then
-            return {
-                time = time,
-                kind = "cast",
-                text = (((____exports.fluidLabel(word(nil, 3)) .. " ") .. word(nil, 1)) .. " > ") .. ____exports.itemLabel(word(nil, 5))
-            }
-        end
-        ____cond36 = ____cond36 or ____switch36 == "collected"
-        if ____cond36 then
-            return {
-                time = time,
-                kind = "out",
-                text = (word(nil, 1) .. " from ") .. ____exports.itemLabel(word(nil, 3))
-            }
-        end
-        ____cond36 = ____cond36 or ____switch36 == "moved"
-        if ____cond36 then
+        ____cond39 = ____cond39 or ____switch39 == "poured"
+        if ____cond39 then
             do
-                local open = (string.find(body, "(", nil, true) or 0) - 1
-                local why = open >= 0 and __TS__StringEndsWith(body, ")") and __TS__StringSubstring(body, open + 1, #body - 1) or ""
+                local format = __TS__StringEndsWith(body, ")") and (" (" .. reasonOf(body)) .. ")" or ""
                 return {
                     time = time,
-                    kind = "reject",
-                    text = (((____exports.itemLabel(word(nil, 2)) .. " ") .. word(nil, 1)) .. " > ") .. why
+                    kind = "cast",
+                    text = ((((____exports.fluidLabel(word(nil, 3)) .. " ") .. word(nil, 1)) .. " mB > ") .. ____exports.placeLabel(word(nil, 5))) .. format
                 }
             end
         end
-        ____cond36 = ____cond36 or ____switch36 == "FORCED"
-        if ____cond36 then
+        ____cond39 = ____cond39 or ____switch39 == "collected"
+        if ____cond39 then
+            return word(nil, 2) == "from" and ({
+                time = time,
+                kind = "out",
+                text = (("x" .. word(nil, 1)) .. " from ") .. ____exports.placeLabel(word(nil, 3))
+            }) or ({
+                time = time,
+                kind = "out",
+                text = (((____exports.placeLabel(word(nil, 2)) .. " x") .. word(nil, 1)) .. " from ") .. ____exports.placeLabel(word(nil, 4))
+            })
+        end
+        ____cond39 = ____cond39 or ____switch39 == "moved"
+        if ____cond39 then
+            return {
+                time = time,
+                kind = "held",
+                text = ((((((____exports.placeLabel(word(nil, 2)) .. " x") .. word(nil, 1)) .. " > ") .. ____exports.placeLabel(word(nil, 4))) .. " (") .. reasonOf(body)) .. ")"
+            }
+        end
+        ____cond39 = ____cond39 or ____switch39 == "stored"
+        if ____cond39 then
+            return {
+                time = time,
+                kind = "store",
+                text = ((((____exports.fluidLabel(word(nil, 3)) .. " ") .. word(nil, 1)) .. " mB > reservoirs (") .. reasonOf(body)) .. ")"
+            }
+        end
+        ____cond39 = ____cond39 or ____switch39 == "restored"
+        if ____cond39 then
+            return {
+                time = time,
+                kind = "stock",
+                text = (((____exports.fluidLabel(word(nil, 3)) .. " ") .. word(nil, 1)) .. " mB back ") .. table.concat(
+                    __TS__ArraySlice(words, 4),
+                    " "
+                )
+            }
+        end
+        ____cond39 = ____cond39 or ____switch39 == "FORCED"
+        if ____cond39 then
             return {
                 time = time,
                 kind = "forced",
                 text = __TS__StringSubstring(body, #"FORCED ")
             }
         end
-        ____cond36 = ____cond36 or ____switch36 == "mode"
-        if ____cond36 then
-            return {time = time, kind = "mode", text = body}
+        ____cond39 = ____cond39 or ____switch39 == "mode"
+        if ____cond39 then
+            return {
+                time = time,
+                kind = "mode",
+                text = __TS__StringSubstring(body, #"mode ")
+            }
+        end
+        ____cond39 = ____cond39 or ____switch39 == "alerts:"
+        if ____cond39 then
+            return {
+                time = time,
+                kind = "alert",
+                text = __TS__StringSubstring(body, #"alerts: ")
+            }
+        end
+        ____cond39 = ____cond39 or ____switch39 == "no"
+        if ____cond39 then
+            return word(nil, 1) == "room" and ({time = time, kind = "alert", text = body}) or ({time = time, kind = "other", text = body})
         end
         do
             return {time = time, kind = "other", text = body}
         end
     until true
+end
+local ABBREVIATIONS = {
+    nugget = "nug.",
+    nuggets = "nug.",
+    ingot = "ing.",
+    ingots = "ing.",
+    block = "blk.",
+    blocks = "blk.",
+    utilities = "util.",
+    grinding = "grind.",
+    reservoirs = "res.",
+    reservoir = "res.",
+    advanced = "adv.",
+    industrial = "ind.",
+    storage = "stor.",
+    smeltery = "smelt."
+}
+function ____exports.fit(text, width)
+    if #text <= width then
+        return text
+    end
+    local words = __TS__StringSplit(text, " ")
+    do
+        local index = #words - 1
+        while index >= 0 and #table.concat(words, " ") > width do
+            local short = ABBREVIATIONS[words[index + 1]]
+            if short ~= nil then
+                words[index + 1] = short
+            end
+            index = index - 1
+        end
+    end
+    local fitted = table.concat(words, " ")
+    if #fitted <= width then
+        return fitted
+    end
+    return width <= 1 and __TS__StringSubstring(fitted, 0, width) or __TS__StringSubstring(fitted, 0, width - 1) .. "."
+end
+function ____exports.itemAmount(name)
+    if __TS__StringIncludes(name, "block") then
+        return 810
+    end
+    if __TS__StringIncludes(name, "nugget") then
+        return 10
+    end
+    return 90
+end
+function ____exports.knownFluids(state, extra)
+    if extra == nil then
+        extra = {}
+    end
+    local known = {}
+    local function add(____, fluid)
+        if fluid ~= nil and fluid ~= "" and not __TS__ArrayIncludes(known, fluid) then
+            known[#known + 1] = fluid
+        end
+    end
+    for ____, fluid in ipairs(state.fluids) do
+        add(nil, fluid.name)
+    end
+    for ____, reservoir in ipairs(state.reservoirs) do
+        add(nil, reservoir.fluid)
+        add(nil, reservoir.assigned)
+    end
+    for ____, fluid in ipairs(extra) do
+        add(nil, fluid)
+    end
+    return known
 end
 return ____exports

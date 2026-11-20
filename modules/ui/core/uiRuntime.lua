@@ -431,13 +431,19 @@ function UIRuntime.prototype.run(self, options)
     end
     self.running = true
     self:forceRender()
+    local ____this_4
+    ____this_4 = options
+    local ____opt_3 = ____this_4.afterRender
+    if ____opt_3 ~= nil then
+        ____opt_3(____this_4)
+    end
     while self.running do
         local raw = {os.pullEvent()}
-        local ____this_4
-        ____this_4 = options
-        local ____opt_3 = ____this_4.onEvent
-        if ____opt_3 ~= nil then
-            ____opt_3(____this_4, raw)
+        local ____this_6
+        ____this_6 = options
+        local ____opt_5 = ____this_6.onEvent
+        if ____opt_5 ~= nil then
+            ____opt_5(____this_6, raw)
         end
         if not self.running then
             break
@@ -450,7 +456,14 @@ function UIRuntime.prototype.run(self, options)
         if event then
             self:dispatch(event)
         end
-        self:render()
+        if self:render().rendered then
+            local ____this_8
+            ____this_8 = options
+            local ____opt_7 = ____this_8.afterRender
+            if ____opt_7 ~= nil then
+                ____opt_7(____this_8)
+            end
+        end
     end
 end
 function UIRuntime.prototype.schedule(self, delaySeconds, callback)
@@ -548,15 +561,15 @@ function UIRuntime.prototype.createRenderContext(self)
     return {theme = self.theme, surface = self.surfaceKind, tick = self.tick, draw = self.surface}
 end
 function UIRuntime.prototype.createRootConstraints(self)
-    local ____temp_5 = self.surface:getSize()
-    local width = ____temp_5.width
-    local height = ____temp_5.height
+    local ____temp_9 = self.surface:getSize()
+    local width = ____temp_9.width
+    local height = ____temp_9.height
     return {minWidth = 0, minHeight = 0, maxWidth = width, maxHeight = height}
 end
 function UIRuntime.prototype.createRootRect(self)
-    local ____temp_6 = self.surface:getSize()
-    local width = ____temp_6.width
-    local height = ____temp_6.height
+    local ____temp_10 = self.surface:getSize()
+    local width = ____temp_10.width
+    local height = ____temp_10.height
     return {x = 1, y = 1, width = width, height = height}
 end
 function UIRuntime.prototype.clearSurface(self)
@@ -566,11 +579,11 @@ function UIRuntime.prototype.clearSurface(self)
 end
 function UIRuntime.prototype.renderDirtyRegions(self, baseContext, regions)
     for ____, region in ipairs(regions) do
-        local ____this_8
-        ____this_8 = self.surface
-        local ____opt_7 = ____this_8.fillRect
-        if ____opt_7 ~= nil then
-            ____opt_7(____this_8, region, " ", self.theme.palette.backgroundColor)
+        local ____this_12
+        ____this_12 = self.surface
+        local ____opt_11 = ____this_12.fillRect
+        if ____opt_11 ~= nil then
+            ____opt_11(____this_12, region, " ", self.theme.palette.backgroundColor)
         end
         self.root:render(__TS__ObjectAssign({}, baseContext, {clipRect = region}))
     end
@@ -585,9 +598,9 @@ function UIRuntime.prototype.shouldFullRedraw(self, regions)
     if #regions >= self.maxDirtyRegionsBeforeFullRedraw then
         return true
     end
-    local ____temp_9 = self.surface:getSize()
-    local width = ____temp_9.width
-    local height = ____temp_9.height
+    local ____temp_13 = self.surface:getSize()
+    local width = ____temp_13.width
+    local height = ____temp_13.height
     local totalSurfaceArea = width * height
     local dirtyArea = self:computeRegionsArea(regions)
     if totalSurfaceArea <= 0 then
@@ -629,12 +642,12 @@ function UIRuntime.prototype.mergeRegionIntoList(self, regions, nextRegion)
         local index = 0
         while index < #regions do
             do
-                local __continue62
+                local __continue63
                 repeat
                     local existing = regions[index + 1]
                     if existing then
                         if not self:regionsOverlapOrTouch(existing, current) then
-                            __continue62 = true
+                            __continue63 = true
                             break
                         end
                         current = self:mergeRegions(existing, current)
@@ -642,9 +655,9 @@ function UIRuntime.prototype.mergeRegionIntoList(self, regions, nextRegion)
                         index = index - 1
                         mergedAny = true
                     end
-                    __continue62 = true
+                    __continue63 = true
                 until true
-                if not __continue62 then
+                if not __continue63 then
                     break
                 end
             end
@@ -673,9 +686,9 @@ function UIRuntime.prototype.mergeRegions(self, a, b)
     return {x = left, y = top, width = right - left + 1, height = bottom - top + 1}
 end
 function UIRuntime.prototype.clampRegionToSurface(self, region)
-    local ____temp_10 = self.surface:getSize()
-    local surfaceWidth = ____temp_10.width
-    local surfaceHeight = ____temp_10.height
+    local ____temp_14 = self.surface:getSize()
+    local surfaceWidth = ____temp_14.width
+    local surfaceHeight = ____temp_14.height
     local left = math.max(1, region.x)
     local top = math.max(1, region.y)
     local right = math.min(surfaceWidth, region.x + region.width - 1)

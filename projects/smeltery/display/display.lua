@@ -57,6 +57,7 @@ local PROTOCOL = ____protocol.PROTOCOL
 local ____protocol = require("projects.smeltery.shared.protocol")
 local SmelteryState = ____protocol.SmelteryState
 local ____screen = require("projects.smeltery.display.screen")
+local PALETTE = ____screen.PALETTE
 local SmelteryScreen = ____screen.SmelteryScreen
 local THEME = __TS__ObjectAssign(
     {},
@@ -72,6 +73,25 @@ function ____exports.runDisplay()
     end
     local monitor = peripheral.wrap(monitorName)
     monitor.setTextScale(0.5)
+    local width, height = monitor.getSize()
+    local buffer = window.create(
+        monitor,
+        1,
+        1,
+        width,
+        height,
+        false
+    )
+    for ____, ____value in ipairs(PALETTE) do
+        local color = ____value[1]
+        local rgb = ____value[2]
+        monitor.setPaletteColour(color, rgb)
+        buffer.setPaletteColour(color, rgb)
+    end
+    local function flush()
+        buffer.setVisible(true)
+        buffer.setVisible(false)
+    end
     local channel = __TS__New(Channel, {protocol = PROTOCOL, timeoutSeconds = 8})
     channel:open()
     local controller
@@ -80,7 +100,24 @@ function ____exports.runDisplay()
         local ____opt_0 = ui.runtime
         return ____opt_0 and ____opt_0:invalidate({reason = "state", kind = "full"})
     end
-    local function request(____, messageType, payload, done)
+    local function loadFluids()
+        if controller == nil then
+            return
+        end
+        channel:request(
+            controller,
+            Messages.getFluids,
+            nil,
+            function(____, result)
+                if result.ok then
+                    screen:setFluids(result.value)
+                end
+                redraw(nil)
+            end
+        )
+    end
+    local fluidsAsked = false
+    local function request(____, messageType, payload, done, ____then)
         if controller == nil then
             screen:notify("controller not found yet", colors.red)
             redraw(nil)
@@ -94,6 +131,9 @@ function ____exports.runDisplay()
                 if result.ok then
                     screen:setState(result.value)
                     screen:notify(done, colors.lime)
+                    if ____then ~= nil then
+                        ____then(nil)
+                    end
                 else
                     screen:notify(result.error, colors.red)
                 end
@@ -116,6 +156,30 @@ function ____exports.runDisplay()
                     alloy.result,
                     (string.find(alloy.result, ":", nil, true) or 0) - 1 + 1
                 )
+            ) end,
+            setReservoir = function(____, settings) return request(nil, Messages.setReservoir, settings, "reservoir saved") end,
+            setSmelteryCapacity = function(____, capacity) return request(
+                nil,
+                Messages.setSmelteryCapacity,
+                capacity,
+                capacity.capacity ~= nil and ("capacity " .. tostring(capacity.capacity)) .. " mB" or "capacity: auto"
+            ) end,
+            saveRecipe = function(____, recipe, saved) return request(
+                nil,
+                Messages.saveRecipe,
+                recipe,
+                "recipe saved",
+                function()
+                    saved(nil)
+                    loadFluids(nil)
+                end
+            ) end,
+            deleteRecipe = function(____, recipe) return request(
+                nil,
+                Messages.deleteRecipe,
+                recipe,
+                "recipe deleted",
+                loadFluids
             ) end
         }
     )
@@ -124,6 +188,10 @@ function ____exports.runDisplay()
         function(____, payload, from)
             controller = from
             screen:setState(payload)
+            if not fluidsAsked then
+                fluidsAsked = true
+                loadFluids(nil)
+            end
         end
     )
     print("Looking for the Smeltery controller...")
@@ -135,7 +203,7 @@ function ____exports.runDisplay()
             root = screen.root,
             eventBus = __TS__New(BasicUIEventBus),
             theme = THEME,
-            surface = ComputerCraftSurfaceAdapter:fromMonitor(monitor),
+            surface = ComputerCraftSurfaceAdapter:fromMonitor(buffer),
             surfaceKind = "monitor"
         }
     )
@@ -152,6 +220,8 @@ function ____exports.runDisplay()
                 redraw(nil)
             end
         )
+        fluidsAsked = true
+        loadFluids(nil)
     end
     local everySecond
     everySecond = function()
@@ -162,6 +232,7 @@ function ____exports.runDisplay()
     runtime:schedule(1, everySecond)
     runtime:run({
         monitor = monitorName,
+        afterRender = flush,
         onEvent = function(____, raw)
             if channel:handleEvent(raw) then
                 redraw(nil)

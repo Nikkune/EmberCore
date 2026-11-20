@@ -1,11 +1,5 @@
 --[[ Generated with https://github.com/TypeScriptToLua/TypeScriptToLua ]]
 -- Lua Library inline imports
-local function __TS__New(target, ...)
-    local instance = setmetatable({}, target.prototype)
-    instance:____constructor(...)
-    return instance
-end
-
 local function __TS__Class(self)
     local c = {prototype = {}}
     c.prototype.__index = c.prototype
@@ -70,6 +64,237 @@ do
             return ipairs(iterable)
         end
     end
+end
+
+local function __TS__New(target, ...)
+    local instance = setmetatable({}, target.prototype)
+    instance:____constructor(...)
+    return instance
+end
+
+local Set
+do
+    Set = __TS__Class()
+    Set.name = "Set"
+    function Set.prototype.____constructor(self, values)
+        self[Symbol.toStringTag] = "Set"
+        self.size = 0
+        self.nextKey = {}
+        self.previousKey = {}
+        if values == nil then
+            return
+        end
+        local iterable = values
+        if iterable[Symbol.iterator] then
+            local iterator = iterable[Symbol.iterator](iterable)
+            while true do
+                local result = iterator:next()
+                if result.done then
+                    break
+                end
+                self:add(result.value)
+            end
+        else
+            local array = values
+            for ____, value in ipairs(array) do
+                self:add(value)
+            end
+        end
+    end
+    function Set.prototype.add(self, value)
+        local isNewValue = not self:has(value)
+        if isNewValue then
+            self.size = self.size + 1
+        end
+        if self.firstKey == nil then
+            self.firstKey = value
+            self.lastKey = value
+        elseif isNewValue then
+            self.nextKey[self.lastKey] = value
+            self.previousKey[value] = self.lastKey
+            self.lastKey = value
+        end
+        return self
+    end
+    function Set.prototype.clear(self)
+        self.nextKey = {}
+        self.previousKey = {}
+        self.firstKey = nil
+        self.lastKey = nil
+        self.size = 0
+    end
+    function Set.prototype.delete(self, value)
+        local contains = self:has(value)
+        if contains then
+            self.size = self.size - 1
+            local next = self.nextKey[value]
+            local previous = self.previousKey[value]
+            if next ~= nil and previous ~= nil then
+                self.nextKey[previous] = next
+                self.previousKey[next] = previous
+            elseif next ~= nil then
+                self.firstKey = next
+                self.previousKey[next] = nil
+            elseif previous ~= nil then
+                self.lastKey = previous
+                self.nextKey[previous] = nil
+            else
+                self.firstKey = nil
+                self.lastKey = nil
+            end
+            self.nextKey[value] = nil
+            self.previousKey[value] = nil
+        end
+        return contains
+    end
+    function Set.prototype.forEach(self, callback)
+        for ____, key in __TS__Iterator(self:keys()) do
+            callback(nil, key, key, self)
+        end
+    end
+    function Set.prototype.has(self, value)
+        return self.nextKey[value] ~= nil or self.lastKey == value
+    end
+    Set.prototype[Symbol.iterator] = function(self)
+        return self:values()
+    end
+    function Set.prototype.entries(self)
+        local nextKey = self.nextKey
+        local key = self.firstKey
+        return {
+            [Symbol.iterator] = function(self)
+                return self
+            end,
+            next = function(self)
+                local result = {done = not key, value = {key, key}}
+                key = nextKey[key]
+                return result
+            end
+        }
+    end
+    function Set.prototype.keys(self)
+        local nextKey = self.nextKey
+        local key = self.firstKey
+        return {
+            [Symbol.iterator] = function(self)
+                return self
+            end,
+            next = function(self)
+                local result = {done = not key, value = key}
+                key = nextKey[key]
+                return result
+            end
+        }
+    end
+    function Set.prototype.values(self)
+        local nextKey = self.nextKey
+        local key = self.firstKey
+        return {
+            [Symbol.iterator] = function(self)
+                return self
+            end,
+            next = function(self)
+                local result = {done = not key, value = key}
+                key = nextKey[key]
+                return result
+            end
+        }
+    end
+    function Set.prototype.union(self, other)
+        local result = __TS__New(Set, self)
+        for ____, item in __TS__Iterator(other) do
+            result:add(item)
+        end
+        return result
+    end
+    function Set.prototype.intersection(self, other)
+        local result = __TS__New(Set)
+        for ____, item in __TS__Iterator(self) do
+            if other:has(item) then
+                result:add(item)
+            end
+        end
+        return result
+    end
+    function Set.prototype.difference(self, other)
+        local result = __TS__New(Set, self)
+        for ____, item in __TS__Iterator(other) do
+            result:delete(item)
+        end
+        return result
+    end
+    function Set.prototype.symmetricDifference(self, other)
+        local result = __TS__New(Set, self)
+        for ____, item in __TS__Iterator(other) do
+            if self:has(item) then
+                result:delete(item)
+            else
+                result:add(item)
+            end
+        end
+        return result
+    end
+    function Set.prototype.isSubsetOf(self, other)
+        for ____, item in __TS__Iterator(self) do
+            if not other:has(item) then
+                return false
+            end
+        end
+        return true
+    end
+    function Set.prototype.isSupersetOf(self, other)
+        for ____, item in __TS__Iterator(other) do
+            if not self:has(item) then
+                return false
+            end
+        end
+        return true
+    end
+    function Set.prototype.isDisjointFrom(self, other)
+        for ____, item in __TS__Iterator(self) do
+            if other:has(item) then
+                return false
+            end
+        end
+        return true
+    end
+    Set[Symbol.species] = Set
+end
+
+local function __TS__StringAccess(self, index)
+    if index >= 0 and index < #self then
+        return string.sub(self, index + 1, index + 1)
+    end
+end
+
+local __TS__Unpack = table.unpack or unpack
+
+local function __TS__Spread(iterable)
+    local arr = {}
+    if type(iterable) == "string" then
+        for i = 0, #iterable - 1 do
+            arr[i + 1] = __TS__StringAccess(iterable, i)
+        end
+    else
+        local len = 0
+        for ____, item in __TS__Iterator(iterable) do
+            len = len + 1
+            arr[len] = item
+        end
+    end
+    return __TS__Unpack(arr)
+end
+
+local function __TS__ArraySort(self, compareFn)
+    if compareFn ~= nil then
+        table.sort(
+            self,
+            function(a, b) return compareFn(nil, a, b) < 0 end
+        )
+    else
+        table.sort(self)
+    end
+    return self
 end
 
 local Map
@@ -237,6 +462,14 @@ local DEFAULT_MELTING_TEMPERATURES = ____temperaturesData.DEFAULT_MELTING_TEMPER
 local ____temperaturesData = require("projects.smeltery.shared.temperaturesData")
 local FluidTemperature = ____temperaturesData.FluidTemperature
 ____exports.CATALOGUE_PATH = "/smeltery/catalogue.db"
+local DEFAULT_RESERVOIR_CAPACITIES = {
+    {type = "mob_grinding_utils:tank", capacity = 32000},
+    {type = "mob_grinding_utils:jumbo_tank", capacity = 1024000},
+    {type = "evilcraft:dark_tank", capacity = 16000},
+    {type = "industrialforegoing:common_black_hole_tank", capacity = 16000},
+    {type = "industrialforegoing:pity_black_hole_tank", capacity = 64000},
+    {type = "industrialforegoing:simple_black_hole_tank", capacity = 1024000}
+}
 function ____exports.defaultCatalogue()
     return {
         alloys = DEFAULT_ALLOYS,
@@ -245,7 +478,8 @@ function ____exports.defaultCatalogue()
         overrides = {},
         castAmounts = DEFAULT_CAST_AMOUNTS,
         meltingTemperatures = DEFAULT_MELTING_TEMPERATURES,
-        fuels = DEFAULT_FUELS
+        fuels = DEFAULT_FUELS,
+        reservoirCapacities = DEFAULT_RESERVOIR_CAPACITIES
     }
 end
 function ____exports.loadCatalogue(path)
@@ -256,6 +490,31 @@ function ____exports.loadCatalogue(path)
         path,
         ____exports.defaultCatalogue()
     )
+end
+function ____exports.saveCatalogue(catalogue, path)
+    if path == nil then
+        path = ____exports.CATALOGUE_PATH
+    end
+    Config:save(path, catalogue)
+end
+function ____exports.catalogueFluids(catalogue)
+    local fluids = __TS__New(Set, catalogue.moltenFluids)
+    for ____, ratio in ipairs(catalogue.alloyRatios) do
+        fluids:add(ratio.result)
+        for ____, input in ipairs(ratio.inputs) do
+            fluids:add(input.fluid)
+        end
+    end
+    for ____, alloy in ipairs(catalogue.alloys) do
+        fluids:add(alloy.result)
+        for ____, ingredient in ipairs(alloy.ingredients) do
+            fluids:add(ingredient)
+        end
+    end
+    for ____, fuel in ipairs(catalogue.fuels) do
+        fluids:add(fuel.fluid)
+    end
+    return __TS__ArraySort({__TS__Spread(fluids)})
 end
 function ____exports.materialMapOf(catalogue)
     return __TS__New(MaterialMap, {fluids = catalogue.moltenFluids, overrides = catalogue.overrides})

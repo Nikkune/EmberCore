@@ -100,6 +100,9 @@ function Inventory.prototype.pushTo(self, target, fromSlot, limit, toSlot)
     end
     return self.peripheralRef.pushItems(target.name, fromSlot, limit, toSlot)
 end
+function Inventory.prototype.push(self, target, fromSlot, limit, toSlot)
+    return self.peripheralRef.pushItems(target.name, fromSlot, limit, toSlot)
+end
 function Inventory.prototype.pullFrom(self, source, fromSlot, limit, toSlot)
     if fromSlot < 1 or fromSlot > source:size() then
         error(
@@ -124,10 +127,10 @@ function Inventory.prototype.moveAllOfItem(self, target, itemName)
     local moved = 0
     for slot, item in pairs(self:list()) do
         do
-            local __continue25
+            local __continue26
             repeat
                 if item.name ~= itemName then
-                    __continue25 = true
+                    __continue26 = true
                     break
                 end
                 local amount = self.peripheralRef.pushItems(target.name, slot)
@@ -135,9 +138,9 @@ function Inventory.prototype.moveAllOfItem(self, target, itemName)
                 if amount < item.count then
                     break
                 end
-                __continue25 = true
+                __continue26 = true
             until true
-            if not __continue25 then
+            if not __continue26 then
                 break
             end
         end

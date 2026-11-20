@@ -7,14 +7,6 @@ local function __TS__Class(self)
     return c
 end
 
-local function __TS__ArrayMap(self, callbackfn, thisArg)
-    local result = {}
-    for i = 1, #self do
-        result[i] = callbackfn(thisArg, self[i], i - 1, self)
-    end
-    return result
-end
-
 local function __TS__ObjectAssign(target, ...)
     local sources = {...}
     for i = 1, #sources do
@@ -26,28 +18,31 @@ local function __TS__ObjectAssign(target, ...)
     return target
 end
 
-local function __TS__ArrayFilter(self, callbackfn, thisArg)
+local function __TS__ArrayMap(self, callbackfn, thisArg)
     local result = {}
-    local len = 0
     for i = 1, #self do
-        if callbackfn(thisArg, self[i], i - 1, self) then
-            len = len + 1
-            result[len] = self[i]
-        end
+        result[i] = callbackfn(thisArg, self[i], i - 1, self)
     end
     return result
 end
 
-local function __TS__ArraySort(self, compareFn)
-    if compareFn ~= nil then
-        table.sort(
-            self,
-            function(a, b) return compareFn(nil, a, b) < 0 end
-        )
-    else
-        table.sort(self)
+local function __TS__ArraySome(self, callbackfn, thisArg)
+    for i = 1, #self do
+        if callbackfn(thisArg, self[i], i - 1, self) then
+            return true
+        end
     end
-    return self
+    return false
+end
+
+local function __TS__ArrayFind(self, predicate, thisArg)
+    for i = 1, #self do
+        local elem = self[i]
+        if predicate(thisArg, elem, i - 1, self) then
+            return elem
+        end
+    end
+    return nil
 end
 
 local function __TS__StringIncludes(self, searchString, position)
@@ -204,6 +199,30 @@ local function __TS__Delete(target, key)
     return true
 end
 
+local function __TS__ArrayFilter(self, callbackfn, thisArg)
+    local result = {}
+    local len = 0
+    for i = 1, #self do
+        if callbackfn(thisArg, self[i], i - 1, self) then
+            len = len + 1
+            result[len] = self[i]
+        end
+    end
+    return result
+end
+
+local function __TS__ArraySort(self, compareFn)
+    if compareFn ~= nil then
+        table.sort(
+            self,
+            function(a, b) return compareFn(nil, a, b) < 0 end
+        )
+    else
+        table.sort(self)
+    end
+    return self
+end
+
 local function __TS__CountVarargs(...)
     return select("#", ...)
 end
@@ -242,23 +261,23 @@ function ReservoirPool.prototype.____constructor(self, names, options)
         options = {}
     end
     self.assignments = options.assignments or ({})
+    self.learnt = __TS__ObjectAssign({}, options.capacities)
+    self.setCapacities = __TS__ObjectAssign({}, options.setCapacities)
+    self.typeCapacities = __TS__ObjectAssign({}, options.typeCapacities)
     self.reservoirs = __TS__ArrayMap(
         names,
         function(____, name)
             local view = {name = name, amount = 0}
-            local ____opt_0 = options.capacities
-            local capacity = ____opt_0 and ____opt_0[name]
             local assigned = self.assignments[name]
-            if capacity ~= nil then
-                view.capacity = capacity
-            end
             if assigned ~= nil then
                 view.assigned = assigned
             end
-            return {
+            local reservoir = {
                 tank = Tank:fromName(name),
                 view = view
             }
+            self:resolveCapacity(reservoir)
+            return reservoir
         end
     )
 end
@@ -277,12 +296,51 @@ function ReservoirPool.prototype.views(self)
         function(____, reservoir) return __TS__ObjectAssign({}, reservoir.view) end
     )
 end
+function ReservoirPool.prototype.has(self, name)
+    return __TS__ArraySome(
+        self.reservoirs,
+        function(____, reservoir) return reservoir.view.name == name end
+    )
+end
+function ReservoirPool.prototype.assign(self, name, fluid)
+    local reservoir = __TS__ArrayFind(
+        self.reservoirs,
+        function(____, candidate) return candidate.view.name == name end
+    )
+    if reservoir == nil then
+        return
+    end
+    if fluid == nil then
+        __TS__Delete(self.assignments, name)
+        __TS__Delete(reservoir.view, "assigned")
+    else
+        self.assignments[name] = fluid
+        reservoir.view.assigned = fluid
+    end
+end
+function ReservoirPool.prototype.setCapacity(self, name, capacity)
+    local reservoir = __TS__ArrayFind(
+        self.reservoirs,
+        function(____, candidate) return candidate.view.name == name end
+    )
+    if reservoir == nil then
+        return
+    end
+    __TS__Delete(self.learnt, name)
+    if capacity == nil then
+        __TS__Delete(self.setCapacities, name)
+    else
+        self.setCapacities[name] = capacity
+    end
+    self:resolveCapacity(reservoir)
+end
 function ReservoirPool.prototype.capacities(self)
     local result = {}
     for ____, ____value in ipairs(self.reservoirs) do
         local view = ____value.view
-        if view.capacity ~= nil then
-            result[view.name] = view.capacity
+        local learnt = self.learnt[view.name]
+        if learnt ~= nil then
+            result[view.name] = learnt
         end
     end
     return result
@@ -304,14 +362,14 @@ function ReservoirPool.prototype.store(self, source, fluid, amount)
     local stored = 0
     for ____, reservoir in ipairs(self:candidates(fluid)) do
         do
-            local __continue22
+            local __continue33
             repeat
                 if stored >= amount then
                     break
                 end
                 self:read(reservoir)
                 if not self:accepts(reservoir, fluid) then
-                    __continue22 = true
+                    __continue33 = true
                     break
                 end
                 local wanted = amount - stored
@@ -319,11 +377,12 @@ function ReservoirPool.prototype.store(self, source, fluid, amount)
                 self:read(reservoir)
                 stored = stored + moved
                 if moved < wanted and reservoir.view.fluid == fluid then
-                    reservoir.view.capacity = reservoir.view.amount
+                    self.learnt[reservoir.view.name] = reservoir.view.amount
+                    self:resolveCapacity(reservoir)
                 end
-                __continue22 = true
+                __continue33 = true
             until true
-            if not __continue22 then
+            if not __continue33 then
                 break
             end
         end
@@ -347,6 +406,32 @@ function ReservoirPool.prototype.take(self, target, fluid, amount)
         self:read(reservoir)
     end
     return taken
+end
+function ReservoirPool.prototype.resolveCapacity(self, reservoir)
+    local name = reservoir.view.name
+    local view = reservoir.view
+    local found = {{self.learnt[name], "learnt"}, {self.setCapacities[name], "set"}, {self.typeCapacities[name], "type"}}
+    __TS__Delete(view, "capacity")
+    __TS__Delete(view, "capacitySource")
+    for ____, ____value in ipairs(found) do
+        local capacity = ____value[1]
+        local source = ____value[2]
+        do
+            local __continue45
+            repeat
+                if capacity == nil then
+                    __continue45 = true
+                    break
+                end
+                view.capacity = capacity
+                view.capacitySource = source
+                return
+            until true
+            if not __continue45 then
+                break
+            end
+        end
+    end
 end
 function ReservoirPool.prototype.read(self, reservoir)
     local fluid = unpack(
@@ -385,11 +470,11 @@ function ReservoirPool.prototype.candidates(self, fluid)
         empty,
         function(____, a, b) return (a.view.assigned == fluid and 0 or 1) - (b.view.assigned == fluid and 0 or 1) end
     )
-    local ____array_4 = __TS__SparseArrayNew(unpack(holding))
+    local ____array_2 = __TS__SparseArrayNew(unpack(holding))
     __TS__SparseArrayPush(
-        ____array_4,
+        ____array_2,
         unpack(empty)
     )
-    return {__TS__SparseArraySpread(____array_4)}
+    return {__TS__SparseArraySpread(____array_2)}
 end
 return ____exports

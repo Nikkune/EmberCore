@@ -411,4 +411,10 @@ function Caster.prototype.collect(self, target)
     end
     return self.inventory:pushTo(target, OUTPUT_SLOT)
 end
+function Caster.prototype.pourPlanned(self, smeltery, fluidName, amount)
+    return smeltery:pour(self.tank, fluidName, amount)
+end
+function Caster.prototype.collectPlanned(self, target)
+    return self.inventory:push(target, OUTPUT_SLOT)
+end
 return ____exports

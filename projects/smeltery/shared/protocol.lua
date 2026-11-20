@@ -7,6 +7,7 @@ local FluidStack = ____tank.FluidStack
 local ____index = require("modules.fluids.index")
 local ReservoirView = ____index.ReservoirView
 local ____index = require("modules.tinkers.index")
+local AlloyRatio = ____index.AlloyRatio
 local CasterKind = ____index.CasterKind
 local CasterStatus = ____index.CasterStatus
 ____exports.PROTOCOL = "smeltery/v1"
@@ -28,6 +29,14 @@ ____exports.Messages = {
     insert = "insert",
     cast = "cast",
     setAlloy = "setAlloy",
-    setFormat = "setFormat"
+    setFormat = "setFormat",
+    setReservoir = "setReservoir",
+    saveRecipe = "saveRecipe",
+    deleteRecipe = "deleteRecipe",
+    getFluids = "getFluids",
+    setSmelteryCapacity = "setSmelteryCapacity"
 }
+____exports.HISTORY_SECONDS = 30
+____exports.HISTORY_SIZE = 20
+____exports.MAX_INGREDIENTS = 4
 return ____exports

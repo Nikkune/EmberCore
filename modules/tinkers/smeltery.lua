@@ -50,7 +50,7 @@ function Smeltery.prototype.melting(self)
     return result
 end
 function Smeltery.prototype.insert(self, source, slot, limit)
-    return source:pushTo(self.chute, slot, limit)
+    return source:push(self.chute, slot, limit)
 end
 function Smeltery.prototype.pour(self, target, fluidName, amount)
     return self.drain:pushTo(target, amount, fluidName)

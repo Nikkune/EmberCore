@@ -23,9 +23,13 @@ function ____exports.defaultControllerConfig()
         fuel = "minecraft:lava",
         reservoirs = {},
         assignments = {},
+        capacities = {},
+        smelteryCapacity = 0,
+        smelteryCapacitySource = "",
         formatPriority = {"block", "ingot", "nugget"},
         idleSeconds = 30,
         tickSeconds = 1,
+        activeTickSeconds = 0.25,
         heartbeatSeconds = 5,
         logSize = 20
     }
@@ -89,6 +93,12 @@ function ____exports.saveAlloy(alloy, path)
         path = ____exports.ALLOY_PATH
     end
     Config:save(path, {result = alloy.result, target = alloy.target or 0, made = alloy.made})
+end
+function ____exports.clearAlloy(path)
+    if path == nil then
+        path = ____exports.ALLOY_PATH
+    end
+    Config:save(path, {result = "", target = 0, made = 0})
 end
 function ____exports.loadCapacities(path)
     if path == nil then

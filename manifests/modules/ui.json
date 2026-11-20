@@ -3,7 +3,7 @@
   "type": "component",
   "id": "modules/ui",
   "name": "UI",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "files": [
     "modules/ui/components/container/BoxComponent.lua",
     "modules/ui/components/container/ContainerComponent.lua",
