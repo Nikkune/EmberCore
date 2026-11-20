@@ -906,6 +906,7 @@ local Plan = ____planner.Plan
 local PlanContext = ____planner.PlanContext
 local Snapshot = ____planner.Snapshot
 local INPUT_PACE_SECONDS = 300
+local LOG_FILE_BYTES = 16 * 1024
 ____exports.Controller = __TS__Class()
 local Controller = ____exports.Controller
 Controller.name = "Controller"
@@ -942,13 +943,33 @@ function Controller.prototype.____constructor(self, config, catalogue, modePath)
     self.state = self:emptyState()
 end
 function Controller.prototype.setLogFile(self, path)
-    if fs.exists(path) then
-        if fs.exists(path .. ".old") then
-            fs.delete(path .. ".old")
-        end
-        fs.move(path, path .. ".old")
-    end
     self.logFile = path
+    self:rotateLogFile()
+end
+function Controller.prototype.rotateLogFile(self)
+    local path = self.logFile
+    if path == nil or not fs.exists(path) then
+        return
+    end
+    local old = path .. ".old"
+    do
+        local function ____catch()
+            do
+                pcall(function()
+                    fs.delete(path)
+                end)
+            end
+        end
+        local ____try = pcall(function()
+            if fs.exists(old) then
+                fs.delete(old)
+            end
+            fs.move(path, old)
+        end)
+        if not ____try then
+            ____catch()
+        end
+    end
 end
 function Controller.prototype.setConfigPath(self, path)
     self.configPath = path
@@ -1714,10 +1735,10 @@ function Controller.storedFluids(self, pool)
     local stored = {}
     for ____, view in ipairs(pool and pool:views() or ({})) do
         do
-            local __continue147
+            local __continue151
             repeat
                 if view.fluid == nil then
-                    __continue147 = true
+                    __continue151 = true
                     break
                 end
                 local entry = __TS__ArrayFind(
@@ -1729,9 +1750,9 @@ function Controller.storedFluids(self, pool)
                 else
                     stored[#stored + 1] = {fluid = view.fluid, amount = view.amount}
                 end
-                __continue147 = true
+                __continue151 = true
             until true
-            if not __continue147 then
+            if not __continue151 then
                 break
             end
         end
@@ -1820,9 +1841,9 @@ end
 function Controller.prototype.apply(self, action)
     local smeltery = self.smeltery
     repeat
-        local ____switch176 = action.kind
-        local ____cond176 = ____switch176 == "collect"
-        if ____cond176 then
+        local ____switch180 = action.kind
+        local ____cond180 = ____switch180 == "collect"
+        if ____cond180 then
             do
                 local caster = __TS__ArrayFind(
                     self.casters,
@@ -1852,8 +1873,8 @@ function Controller.prototype.apply(self, action)
                 return 0
             end
         end
-        ____cond176 = ____cond176 or ____switch176 == "pour"
-        if ____cond176 then
+        ____cond180 = ____cond180 or ____switch180 == "pour"
+        if ____cond180 then
             do
                 local caster = __TS__ArrayFind(
                     self.casters,
@@ -1886,8 +1907,8 @@ function Controller.prototype.apply(self, action)
                 return 0
             end
         end
-        ____cond176 = ____cond176 or ____switch176 == "reject"
-        if ____cond176 then
+        ____cond180 = ____cond180 or ____switch180 == "reject"
+        if ____cond180 then
             do
                 local ____temp_46
                 if action.reason == "heat" then
@@ -1910,8 +1931,8 @@ function Controller.prototype.apply(self, action)
                 return action.count - moved
             end
         end
-        ____cond176 = ____cond176 or ____switch176 == "store"
-        if ____cond176 then
+        ____cond180 = ____cond180 or ____switch180 == "store"
+        if ____cond180 then
             do
                 local pool = self.pool
                 if pool == nil then
@@ -1941,8 +1962,8 @@ function Controller.prototype.apply(self, action)
                 return 0
             end
         end
-        ____cond176 = ____cond176 or ____switch176 == "restore"
-        if ____cond176 then
+        ____cond180 = ____cond180 or ____switch180 == "restore"
+        if ____cond180 then
             do
                 local ____opt_47 = self.pool
                 local taken = ____opt_47 and ____opt_47:take(smeltery.drain, action.fluid, action.amount) or 0
@@ -2272,18 +2293,18 @@ function Controller.prototype.forecast(self, reading)
                 local format = ____value.format
                 local amount = ____value.amount
                 do
-                    local __continue265
+                    local __continue269
                     repeat
                         local count = math.floor(left / amount)
                         if count <= 0 then
-                            __continue265 = true
+                            __continue269 = true
                             break
                         end
                         casts[#casts + 1] = {format = format, count = count}
                         left = left - count * amount
-                        __continue265 = true
+                        __continue269 = true
                     until true
-                    if not __continue265 then
+                    if not __continue269 then
                         break
                     end
                 end
@@ -2360,10 +2381,18 @@ function Controller.prototype.log(self, line)
     local ____self_logLines_78 = self.logLines
     ____self_logLines_78[#____self_logLines_78 + 1] = stamped
     if self.logFile ~= nil then
-        local file = fs.open(self.logFile, "a")
-        if file ~= nil then
-            file.writeLine(stamped)
-            file.close()
+        local path = self.logFile
+        if fs.exists(path) and fs.getSize(path) >= LOG_FILE_BYTES then
+            self:rotateLogFile()
+        end
+        do
+            pcall(function()
+                local file = fs.open(path, "a")
+                if file ~= nil then
+                    file.writeLine(stamped)
+                    file.close()
+                end
+            end)
         end
     end
     while #self.logLines > self.config.logSize do
@@ -2450,18 +2479,18 @@ function ____exports.runController()
     local function listen()
         while true do
             do
-                local __continue302
+                local __continue308
                 repeat
                     local event = {os.pullEvent("rednet_message")}
                     if event[4] ~= PROTOCOL then
-                        __continue302 = true
+                        __continue308 = true
                         break
                     end
                     inbox[#inbox + 1] = event
                     os.queueEvent(WAKE_EVENT)
-                    __continue302 = true
+                    __continue308 = true
                 until true
-                if not __continue302 then
+                if not __continue308 then
                     break
                 end
             end
@@ -2473,7 +2502,7 @@ function ____exports.runController()
         local timer = os.startTimer(0)
         while true do
             do
-                local __continue305
+                local __continue311
                 repeat
                     local event = {os.pullEvent()}
                     while #inbox > 0 do
@@ -2481,7 +2510,7 @@ function ____exports.runController()
                     end
                     local timerDue = event[1] == "timer" and event[2] == timer
                     if not timerDue and not controller:wantsTick() then
-                        __continue305 = true
+                        __continue311 = true
                         break
                     end
                     if not timerDue then
@@ -2490,7 +2519,7 @@ function ____exports.runController()
                     local worked = controller:tick()
                     timer = os.startTimer(worked and config.activeTickSeconds or config.tickSeconds)
                     if not online then
-                        __continue305 = true
+                        __continue311 = true
                         break
                     end
                     local state = controller:getState()
@@ -2500,9 +2529,9 @@ function ____exports.runController()
                         lastSent = text
                         lastSentClock = os.clock()
                     end
-                    __continue305 = true
+                    __continue311 = true
                 until true
-                if not __continue305 then
+                if not __continue311 then
                     break
                 end
             end

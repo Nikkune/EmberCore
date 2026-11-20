@@ -2,7 +2,7 @@
   "manifestVersion": 1,
   "repository": "Nikkune/EmberCore",
   "branch": "lua",
-  "generatedAt": "2026-11-20T16:22:33.000Z",
+  "generatedAt": "2026-11-20T17:19:51.000Z",
   "components": {
     "core/assert": "manifests/core/assert.json",
     "core/config": "manifests/core/config.json",
@@ -23,6 +23,7 @@
     "modules/ui": "manifests/modules/ui.json"
   },
   "projects": {
-    "projects/smeltery": "manifests/projects/smeltery.json"
+    "projects/smeltery-controller": "manifests/projects/smeltery-controller.json",
+    "projects/smeltery-display": "manifests/projects/smeltery-display.json"
   }
 }

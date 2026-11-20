@@ -1,0 +1,30 @@
+{
+  "manifestVersion": 1,
+  "type": "project",
+  "id": "projects/smeltery-display",
+  "name": "Smeltery (display)",
+  "version": "0.1.3",
+  "entry": "projects/smeltery/main.lua",
+  "files": [
+    "projects/smeltery/main.lua",
+    "projects/smeltery/display/display.lua",
+    "projects/smeltery/display/model.lua",
+    "projects/smeltery/display/screen.lua",
+    "projects/smeltery/display/widgets.lua",
+    "projects/smeltery/shared/protocol.lua",
+    "projects/smeltery/shared/recipes.lua"
+  ],
+  "dependencies": [
+    "core/config",
+    "core/inventory",
+    "core/peripheral",
+    "core/tank",
+    "modules/fluids",
+    "modules/net",
+    "modules/tinkers",
+    "modules/ui"
+  ],
+  "install": {
+    "startup": true
+  }
+}

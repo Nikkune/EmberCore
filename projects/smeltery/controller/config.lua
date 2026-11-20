@@ -31,17 +31,22 @@ function ____exports.defaultControllerConfig()
         tickSeconds = 1,
         activeTickSeconds = 0.25,
         heartbeatSeconds = 5,
-        logSize = 20
+        logSize = 100
     }
 end
+local OLD_LOG_SIZE = 20
 function ____exports.loadControllerConfig(path)
     if path == nil then
         path = ____exports.CONFIG_PATH
     end
-    return Config:load(
+    local config = Config:load(
         path,
         ____exports.defaultControllerConfig()
     )
+    if config.logSize == OLD_LOG_SIZE then
+        config.logSize = ____exports.defaultControllerConfig().logSize
+    end
+    return config
 end
 function ____exports.saveControllerConfig(config, path)
     if path == nil then

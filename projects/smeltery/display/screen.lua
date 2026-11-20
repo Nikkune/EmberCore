@@ -2240,7 +2240,6 @@ function SmelteryScreen.prototype.sync(self)
 end
 function SmelteryScreen.prototype.syncPicker(self, picker)
     local options = self:alloyOptions()
-    self.alloyPages:setProps({visible = picker and #options > ALLOYS_PER_PAGE, totalItems = #options})
     self.alloyPage = math.min(
         self.alloyPage,
         math.max(
@@ -2248,6 +2247,7 @@ function SmelteryScreen.prototype.syncPicker(self, picker)
             math.ceil(#options / ALLOYS_PER_PAGE)
         )
     )
+    self.alloyPages:setProps({visible = picker and #options > ALLOYS_PER_PAGE, totalItems = #options, page = self.alloyPage})
     local pageOptions = __TS__ArraySlice(options, (self.alloyPage - 1) * ALLOYS_PER_PAGE, self.alloyPage * ALLOYS_PER_PAGE)
     __TS__ArrayForEach(
         self.alloyButtons,
@@ -2332,7 +2332,6 @@ function SmelteryScreen.prototype.syncOverview(self)
     local overview = self.tab == "overview" and self.state ~= nil
     local panel = overview and self.capacityDraft ~= nil
     local groups = self:castGroups()
-    self.castPages:setProps({visible = overview and not panel and #groups > CASTS_PER_PAGE, totalItems = #groups})
     self.castPage = math.min(
         self.castPage,
         math.max(
@@ -2340,6 +2339,8 @@ function SmelteryScreen.prototype.syncOverview(self)
             math.ceil(#groups / CASTS_PER_PAGE)
         )
     )
+    local castsPaged = overview and not panel and #groups > CASTS_PER_PAGE
+    self.castPages:setProps({visible = castsPaged, totalItems = #groups, page = self.castPage})
     local pageGroups = __TS__ArraySlice(groups, (self.castPage - 1) * CASTS_PER_PAGE, self.castPage * CASTS_PER_PAGE)
     __TS__ArrayForEach(
         self.autoButtons,
@@ -2414,7 +2415,6 @@ function SmelteryScreen.prototype.syncStock(self)
     local stock = self.tab == "stock" and self.state ~= nil
     local ____opt_69 = self.state
     local count = ____opt_69 and #____opt_69.reservoirs or 0
-    self.stockPages:setProps({visible = stock and count > RESERVOIRS_PER_PAGE, totalItems = count})
     self.stockPage = math.min(
         self.stockPage,
         math.max(
@@ -2422,6 +2422,7 @@ function SmelteryScreen.prototype.syncStock(self)
             math.ceil(count / RESERVOIRS_PER_PAGE)
         )
     )
+    self.stockPages:setProps({visible = stock and count > RESERVOIRS_PER_PAGE, totalItems = count, page = self.stockPage})
     local page = self:pageReservoirs()
     __TS__ArrayForEach(
         self.reservoirButtons,
@@ -2453,8 +2454,15 @@ function SmelteryScreen.prototype.syncManual(self)
     local state = self.state
     local tab = self.tab == "manual" and state ~= nil
     local manual = tab and state.mode == "manual"
-    local items = self:pageItems()
     local count = state and #state.inputItems or 0
+    self.itemPage = math.min(
+        self.itemPage,
+        math.max(
+            1,
+            math.ceil(count / ITEMS_PER_PAGE)
+        )
+    )
+    local items = self:pageItems()
     local groups = self:castGroups()
     self:neon(
         self.switchManual,
@@ -2463,7 +2471,7 @@ function SmelteryScreen.prototype.syncManual(self)
         N.yellow,
         true
     )
-    self.itemPages:setProps({visible = tab and count > ITEMS_PER_PAGE, totalItems = count})
+    self.itemPages:setProps({visible = tab and count > ITEMS_PER_PAGE, totalItems = count, page = self.itemPage})
     __TS__ArrayForEach(
         self.itemButtons,
         function(____, button, row)
@@ -2556,7 +2564,6 @@ function SmelteryScreen.prototype.syncLog(self)
         )
     end
     local lines = #self:logLines()
-    self.logPages:setProps({visible = log and lines > LOG_LINES, totalItems = lines})
     self.logPage = math.min(
         self.logPage,
         math.max(
@@ -2564,6 +2571,7 @@ function SmelteryScreen.prototype.syncLog(self)
             math.ceil(lines / LOG_LINES)
         )
     )
+    self.logPages:setProps({visible = log and lines > LOG_LINES, totalItems = lines, page = self.logPage})
 end
 function SmelteryScreen.prototype.syncEditor(self, editing)
     local editor = self.editor

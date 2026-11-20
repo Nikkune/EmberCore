@@ -1,20 +1,16 @@
 {
   "manifestVersion": 1,
   "type": "project",
-  "id": "projects/smeltery",
-  "name": "Smeltery",
-  "version": "0.1.2",
+  "id": "projects/smeltery-controller",
+  "name": "Smeltery (controller)",
+  "version": "0.1.3",
   "entry": "projects/smeltery/main.lua",
   "files": [
+    "projects/smeltery/main.lua",
     "projects/smeltery/controller/config.lua",
     "projects/smeltery/controller/controller.lua",
     "projects/smeltery/controller/discovery.lua",
     "projects/smeltery/controller/planner.lua",
-    "projects/smeltery/display/display.lua",
-    "projects/smeltery/display/model.lua",
-    "projects/smeltery/display/screen.lua",
-    "projects/smeltery/display/widgets.lua",
-    "projects/smeltery/main.lua",
     "projects/smeltery/shared/castAmountsData.lua",
     "projects/smeltery/shared/catalogue.lua",
     "projects/smeltery/shared/catalogueData.lua",
@@ -31,8 +27,7 @@
     "core/tank",
     "modules/fluids",
     "modules/net",
-    "modules/tinkers",
-    "modules/ui"
+    "modules/tinkers"
   ],
   "install": {
     "startup": true
