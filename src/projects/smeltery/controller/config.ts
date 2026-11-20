@@ -34,6 +34,15 @@ export interface ControllerConfig {
 	reservoirs: string[];
 	/** Manual assignments, kept first: such a reservoir only ever takes its fluid. */
 	assignments: {reservoir: string; fluid: string}[];
+	/** Capacities set by hand (from the display), used when none was learnt; before the type ones. */
+	capacities: {reservoir: string; capacity: number}[];
+	/**
+	 * Capacity of the Smeltery in mB (it does not tell it), for the display's gauge; 0: unknown. Learnt
+	 * when the Smeltery refuses part of a stock coming back, or set from the display.
+	 */
+	smelteryCapacity: number;
+	/** Where smelteryCapacity comes from: 'learnt', 'set' (from the display), '' (unknown). */
+	smelteryCapacitySource: string;
 	/**
 	 * Formats auto mode casts, biggest first; casters with another cast are left to the other modes.
 	 * Also set from the display (Overview, CASTING: AUTO / off).
@@ -46,6 +55,8 @@ export interface ControllerConfig {
 	idleSeconds: number;
 	/** Seconds between two readings of the Smeltery. */
 	tickSeconds: number;
+	/** Seconds to the next reading after a tick that moved something (cast, collect, insert...). */
+	activeTickSeconds: number;
 	/** The state is broadcast on every change, and at least this often. */
 	heartbeatSeconds: number;
 	/** Log lines kept and sent to the display. */
@@ -65,9 +76,13 @@ export function defaultControllerConfig(this: void): ControllerConfig {
 		fuel:             'minecraft:lava',
 		reservoirs:       [],
 		assignments:      [],
+		capacities:       [],
+		smelteryCapacity: 0,
+		smelteryCapacitySource: '',
 		formatPriority:   ['block', 'ingot', 'nugget'],
 		idleSeconds:      30,
 		tickSeconds:      1,
+		activeTickSeconds: 0.25,
 		heartbeatSeconds: 5,
 		logSize:          20,
 	};
@@ -125,6 +140,11 @@ export function loadAlloy(this: void, path = ALLOY_PATH): AlloyView | undefined 
 
 export function saveAlloy(this: void, alloy: AlloyView, path = ALLOY_PATH): void {
 	Config.save<AlloyFile>(path, {result: alloy.result, target: alloy.target ?? 0, made: alloy.made});
+}
+
+/** No alloy chosen any more (its last recipe was deleted). */
+export function clearAlloy(this: void, path = ALLOY_PATH): void {
+	Config.save<AlloyFile>(path, {result: '', target: 0, made: 0});
 }
 
 interface ReservoirsFile {

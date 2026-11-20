@@ -1,7 +1,7 @@
 import type {ItemSummary}                from '@core/inventory';
 import type {FluidStack}                 from '@core/tank';
 import type {ReservoirView}              from '@modules/fluids/index';
-import type {CasterKind, CasterStatus}   from '@modules/tinkers/index';
+import type {AlloyRatio, CasterKind, CasterStatus} from '@modules/tinkers/index';
 
 /** What the controller and the display say to each other over rednet. */
 export const PROTOCOL            = 'smeltery/v1';
@@ -37,6 +37,19 @@ export const Messages = {
 	setAlloy: 'setAlloy',
 	/** Display → controller, request: SetFormatRequest. */
 	setFormat: 'setFormat',
+	/** Display → controller, request: SetReservoirRequest. */
+	setReservoir: 'setReservoir',
+	/** Display → controller, request: SaveRecipeRequest (answered with the state, like the others). */
+	saveRecipe:    'saveRecipe',
+	/** Display → controller, request: DeleteRecipeRequest. */
+	deleteRecipe:  'deleteRecipe',
+	/**
+	 * Display → controller, request: answered with every fluid the catalogue knows (string[], sorted).
+	 * Too long for the state broadcast: the display asks for it once, and again after a recipe change.
+	 */
+	getFluids:     'getFluids',
+	/** Display → controller, request: SetSmelteryCapacityRequest. */
+	setSmelteryCapacity: 'setSmelteryCapacity',
 } as const;
 
 export interface CasterView {
@@ -89,13 +102,15 @@ export interface InputItemView {
 	temperature?: number;
 }
 
-/** An alloy alloy mode can make, as the picker shows it. */
+/** A recipe of the catalogue, as the alloy picker shows it (a result may have several recipes). */
 export interface AlloyOption {
+	/** Position of the recipe in the catalogue: what Edit and Delete name. */
+	index: number;
 	result: string;
 	/** mB of `result` the recipe makes from `inputs`. */
 	amount: number;
 	inputs: {fluid: string; amount: number}[];
-	/** mB of the alloy the stock alone can make now. */
+	/** mB of the alloy the stock alone can make now with this recipe. */
 	fromStock: number;
 	/** Set when the fuel is not hot enough to melt into it. */
 	temperature?: number;
@@ -130,13 +145,43 @@ export interface SmelteryState {
 	/** External reservoirs, as last read. */
 	reservoirs: ReservoirView[];
 	alloy?: AlloyView;
-	/** Every alloy of the catalogue, those the stock can make first. */
+	/** Every recipe of the catalogue, those the stock can make first. */
 	alloyOptions: AlloyOption[];
 	waiting: WaitingItem[];
 	/** Problems the player must fix (missing peripheral, output full, ...). */
 	alerts: string[];
+	/** Capacity of the Smeltery in mB, once learnt or set. */
+	smelteryCapacity?: number;
+	smelteryCapacitySource?: 'learnt' | 'set';
+	/** Molten total of the Smeltery, one sample every HISTORY_SECONDS, oldest first. */
+	history?: number[];
+	/** os.epoch('utc') when the current mode started. */
+	modeSince?: number;
+	/** Seconds until the input is melted, at the pace of the last minutes; unknown when nothing went in. */
+	inputSeconds?: number;
+	/** What each molten fluid will be cast into with the auto formats, biggest first. */
+	forecast?: FluidForecast[];
+	/** Stocks too small for any cast auto mode makes (not a problem: they wait for more). */
+	smallStocks?: FluidStack[];
 	/** Latest events, newest last. */
 	log: string[];
+}
+
+/** Samples of SmelteryState.history: one every this many seconds, this many kept (10 minutes). */
+export const HISTORY_SECONDS = 30;
+export const HISTORY_SIZE    = 20;
+
+export interface FluidForecast {
+	fluid: string;
+	amount: number;
+	casts: {format: string; count: number}[];
+	/** mB too small for any auto cast (they go to the stock). */
+	left: number;
+}
+
+/** The Smeltery capacity set from the display; undefined: auto (learnt again when it is full). */
+export interface SetSmelteryCapacityRequest {
+	capacity?: number;
 }
 
 export interface SetModeRequest {
@@ -156,6 +201,34 @@ export interface SetAlloyRequest {
 	target?: number;
 	activate?: boolean;
 }
+
+/**
+ * The settings of one reservoir, all at once. fluid: what it is reserved for (none: free). capacity:
+ * set by hand in mB (none: the learnt or type one).
+ */
+export interface SetReservoirRequest {
+	reservoir: string;
+	fluid?: string;
+	capacity?: number;
+}
+
+/**
+ * Adds a recipe (no index) or replaces the one at `index`. `expected` is the result the display saw at
+ * that index: the controller refuses when the catalogue changed meanwhile.
+ */
+export interface SaveRecipeRequest {
+	index?: number;
+	expected?: string;
+	recipe: AlloyRatio;
+}
+
+export interface DeleteRecipeRequest {
+	index: number;
+	expected: string;
+}
+
+/** Most ingredients a recipe may have (the editor shows four rows). */
+export const MAX_INGREDIENTS = 4;
 
 export interface InsertRequest {
 	/** Slot of the input inventory. */

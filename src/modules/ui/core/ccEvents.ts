@@ -12,6 +12,8 @@ export interface UIEventSourceOptions {
 export interface UIRunOptions extends UIEventSourceOptions {
 	/** Called with every raw CC event ({name, ...args}) before the UI handles it; may call stop(). */
 	onEvent?: (raw: unknown[]) => void;
+	/** Called after each frame drawn, e.g. to show a hidden window buffer in one go. */
+	afterRender?: () => void;
 }
 
 /**
