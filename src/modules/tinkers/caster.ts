@@ -147,4 +147,17 @@ export class Caster {
 		if (this.inventory.list().get(OUTPUT_SLOT) === undefined) return 0;
 		return this.inventory.pushTo(target, OUTPUT_SLOT);
 	}
+
+	/**
+	 * pour without reading again: the caller read the caster idle and the Smeltery holding `amount` in the
+	 * same tick (one peripheral call instead of four). Returns the mB moved.
+	 */
+	public pourPlanned(smeltery: Smeltery, fluidName: string, amount: number): number {
+		return smeltery.pour(this.tank, fluidName, amount);
+	}
+
+	/** collect without reading again: the caller saw the finished item this tick (one call instead of three). */
+	public collectPlanned(target: Inventory): number {
+		return this.inventory.push(target, OUTPUT_SLOT);
+	}
 }

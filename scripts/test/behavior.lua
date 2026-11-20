@@ -2871,5 +2871,76 @@ test('display: Stock sets a capacity with the arrows, and tells where it comes f
 	expect(calls[2] == 'assign drum_1 nil', 'auto not sent: ' .. tostring(calls[2]))
 end)
 
+-- A peripheral call waits a game tick; a parallel batch waits for its longest branch.
+test('controller: a tick costs few game ticks; actions go at once, a collected caster is cast into at once', function()
+	FILES = {}
+	local fake = fakeTinkers()
+	fake.smeltery({ { name = IRON, amount = 3000 }, { name = GOLD, amount = 400 } })
+	local casters = {
+		fake.caster('tconstruct:basin_0', 810), fake.caster('tconstruct:basin_1', 810),
+		fake.caster('tconstruct:table_0', 90, 'tconstruct:ingot_cast'), fake.caster('tconstruct:table_1', 90, 'tconstruct:ingot_cast'),
+		fake.caster('tconstruct:table_2', 10, 'tconstruct:nugget_cast'),
+	}
+	fake.fuelTank('tconstruct:seared_fuel_tank_0', { { name = 'minecraft:lava', amount = 4000 } })
+	local items = {}
+	for i = 1, 6 do items[i] = { name = 'minecraft:raw_iron', count = 64, tags = { ['forge:raw_materials/iron'] = true } } end
+	fake.chest('minecraft:chest_in', 27, items)
+	fake.chest('minecraft:chest_out', 27)
+	fake.reservoir('drum_0', 16000)
+	fake.install()
+	local c = controllerWith(fake, function(config) config.reservoirs = { 'drum_0' } end)
+	quiet(function() c:setMode('auto'); c:tick() end) -- discovery, first pours and inserts
+
+	local ticks, calls = 0, {}
+	for _, device in pairs(fake.devices) do
+		for method, fn in pairs(device.object) do
+			device.object[method] = function(...)
+				ticks = ticks + 1
+				calls[method] = (calls[method] or 0) + 1
+				return fn(...)
+			end
+		end
+	end
+	local realWait = parallel.waitForAll
+	parallel.waitForAll = function(...)
+		local base, longest = ticks, 0
+		for _, task in ipairs({ ... }) do
+			ticks = base
+			task()
+			longest = math.max(longest, ticks - base)
+		end
+		ticks = base + longest
+	end
+	local execute = c.execute
+	local executeTicks
+	c.execute = function(...)
+		local before = ticks
+		execute(...)
+		executeTicks = ticks - before
+	end
+	local function measure()
+		ticks, calls, executeTicks = 0, {}, nil
+		local worked = quiet(function() return c:tick() end)
+		return worked
+	end
+
+	local ok, err = pcall(function()
+		expect(measure() == false and executeTicks == 0, 'nothing to do must not count as work')
+		local full = 0
+		for _, caster in ipairs(casters) do
+			if caster.fluids.fluids[1] then fake.cool(caster); full = full + 1 end
+		end
+		expect(full >= 3, 'not enough casters were poured into: ' .. full)
+		expect(measure() == true, 'a tick that collected and poured must count as work')
+		expect(calls.pushItems == full and calls.pushFluid and calls.pushFluid >= 3, 'collected casters not cast into in the same tick: '
+			.. tostring(calls.pushItems) .. ' collects, ' .. tostring(calls.pushFluid) .. ' pours')
+		-- One batch of collects, one of pours: 2 game ticks, whatever the number of casters.
+		expect(executeTicks == 2, 'actions not done at once: ' .. tostring(executeTicks) .. ' game ticks')
+		expect(ticks <= 12, 'tick too slow: ' .. ticks .. ' game ticks')
+	end)
+	parallel.waitForAll = realWait
+	if not ok then error(err, 0) end
+end)
+
 realPrint(('\n%d passed, %d failed'):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)

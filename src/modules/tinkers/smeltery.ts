@@ -40,7 +40,8 @@ export class Smeltery {
 
 	/** Moves items from an inventory into the Smeltery. Returns how many went in (0 when it is full). */
 	public insert(source: Inventory, slot: number, limit?: number): number {
-		return source.pushTo(this.chute, slot, limit);
+		// The slot was just read from `source`: no bounds check (one game tick less).
+		return source.push(this.chute, slot, limit);
 	}
 
 	/** Pours up to `amount` mB of one fluid into a tank (caster, reservoir). Returns the mB moved. */

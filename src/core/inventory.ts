@@ -117,6 +117,14 @@ export class Inventory {
 		return this.peripheralRef.pushItems(target.name, fromSlot, limit, toSlot);
 	}
 
+	/**
+	 * pushTo without the slot check: one peripheral call (a game tick) instead of two. For a slot just read
+	 * from this inventory (list, getItem), so known to exist.
+	 */
+	public push(target: Inventory, fromSlot: number, limit?: number, toSlot?: number): number {
+		return this.peripheralRef.pushItems(target.name, fromSlot, limit, toSlot);
+	}
+
 	public pullFrom(source: Inventory, fromSlot: number, limit?: number, toSlot?: number): number {
 		if (fromSlot < 1 || fromSlot > source.size()) {
 			throw new InventoryError(`Cannot pull from invalid slot ${fromSlot}`, {

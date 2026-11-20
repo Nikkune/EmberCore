@@ -94,6 +94,8 @@ export class Controller {
 	private lastSample = -Infinity;
 	/** Items that went into the Smeltery lately (os.clock(), count): the pace of the input. */
 	private readonly inserts: {time: number; count: number}[] = [];
+	/** Something moved during this tick. */
+	private worked = false;
 
 	public constructor(
 		private readonly config: ControllerConfig,
@@ -295,9 +297,13 @@ export class Controller {
 		this.state.mode = mode;
 	}
 
-	/** One reading of the Smeltery, the plan of the mode, and its actions. */
-	public tick(): void {
+	/**
+	 * One reading of the Smeltery, the plan of the mode, and its actions. True when something moved (cast,
+	 * collected, inserted, stored...): the next tick then comes sooner (activeTickSeconds).
+	 */
+	public tick(): boolean {
 		if (this.needsDiscovery) this.connect();
+		this.worked = false;
 
 		const alerts = [...this.network.problems];
 		let plan: Plan = {actions: [], waiting: [], alerts: []};
@@ -332,6 +338,7 @@ export class Controller {
 			this.log(alertText === '' ? 'alerts cleared' : `alerts: ${alertText}`);
 			this.lastAlerts = alertText;
 		}
+		return this.worked;
 	}
 
 	/**
@@ -679,25 +686,40 @@ export class Controller {
 		reading.casters = this.casters.map((caster, index) => Controller.viewOf(caster, states[index]!));
 	}
 
+	/**
+	 * Does the actions in their order; the collects, pours and inserts that follow each other go all at
+	 * once (each peripheral call waits a game tick: one tick for the batch, not one per action). The plan
+	 * already shared the fluid between the pours and checked the inserts together.
+	 */
 	private execute(plan: Plan): void {
-		let smelteryFull = false;
+		const actions = plan.actions;
+		let index = 0;
 
-		for (const action of plan.actions) {
-			if (action.kind === 'insert' && smelteryFull) {
-				Controller.addWaiting(plan.waiting, action.name, action.count);
-				continue;
+		while (index < actions.length) {
+			const kind  = actions[index]!.kind;
+			const batch = [actions[index]!];
+			index++;
+			if (kind === 'collect' || kind === 'pour' || kind === 'insert') {
+				while (index < actions.length && actions[index]!.kind === kind) batch.push(actions[index++]!);
 			}
 
-			const left = this.apply(action);
-
-			if (action.kind === 'insert' && left > 0) {
-				smelteryFull = true;
-				Controller.addWaiting(plan.waiting, action.name, left);
+			const left: number[] = [];
+			if (batch.length === 1) {
+				left[0] = this.apply(batch[0]!);
+			}
+			else {
+				Parallel.all(...batch.map((action, slot) => () => {
+					left[slot] = this.apply(action);
+				}));
 			}
 
-			if (action.kind === 'reject' && left > 0) {
-				plan.alerts.push(`${action.reason} output full: ${left} ${action.name} left in the input`);
-			}
+			batch.forEach((action, slot) => {
+				const notMoved = left[slot] ?? 0;
+				if (action.kind === 'insert' && notMoved > 0) Controller.addWaiting(plan.waiting, action.name, notMoved);
+				if (action.kind === 'reject' && notMoved > 0) {
+					plan.alerts.push(`${action.reason} output full: ${notMoved} ${action.name} left in the input`);
+				}
+			});
 		}
 	}
 
@@ -713,7 +735,8 @@ export class Controller {
 
 				// What it gives: the item the last reading saw in it.
 				const item  = this.lastRead?.casters.find((view) => view.name === caster.name)?.output?.name;
-				const moved = caster.collect(output);
+				const moved = caster.collectPlanned(output);
+				if (moved > 0) this.worked = true;
 				if (moved > 0) this.log(`collected ${moved} ${item ?? 'item'} from ${caster.name}`);
 				return 0;
 			}
@@ -721,8 +744,9 @@ export class Controller {
 				const caster = this.casters.find((candidate) => candidate.name === action.caster);
 				if (caster === undefined) return 0;
 
-				const moved  = caster.pour(smeltery, action.fluid);
+				const moved  = caster.pourPlanned(smeltery, action.fluid, action.amount);
 				const format = this.lastRead?.casters.find((view) => view.name === caster.name)?.format;
+				if (moved > 0) this.worked = true;
 				if (moved > 0) this.log(`poured ${moved} mB ${Controller.shortName(action.fluid)} into ${caster.name}${format !== undefined ? ` (${format})` : ''}`);
 
 				const alloy = this.alloy;
@@ -737,6 +761,7 @@ export class Controller {
 				if (target === undefined) return action.count;
 
 				const moved = this.input!.pushTo(target, action.slot, action.count);
+				if (moved > 0) this.worked = true;
 				if (moved > 0) {
 					const why = action.reason === 'heat' ? `needs ${action.temperature ?? '?'} K` : 'melts into nothing known';
 					this.log(`moved ${moved} ${action.name} to ${target.name} (${why})`);
@@ -753,6 +778,7 @@ export class Controller {
 
 				const before = textutils.serialise(pool.capacities());
 				const stored = pool.store(smeltery.drain, action.fluid, amount);
+				if (stored > 0) this.worked = true;
 				if (stored > 0) this.log(`stored ${stored} mB ${Controller.shortName(action.fluid)} (${action.why})`);
 				if (stored < amount) this.log(`no room left for ${amount - stored} mB ${Controller.shortName(action.fluid)}`);
 				if (textutils.serialise(pool.capacities()) !== before) saveCapacities(pool.capacities());
@@ -765,11 +791,13 @@ export class Controller {
 				const why   = action.why === 'stock'
 				              ? 'from the stock'
 				              : action.why === 'alloy' ? `for ${Controller.shortName(this.alloy?.result ?? 'the alloy')}` : 'to complete a cast';
+				if (taken > 0) this.worked = true;
 				if (taken > 0) this.log(`restored ${taken} mB ${Controller.shortName(action.fluid)} ${why}`);
 				return 0;
 			}
 			default: {
 				const moved = smeltery.insert(this.input!, action.slot, action.count);
+				if (moved > 0) this.worked = true;
 				if (moved > 0) this.inserts.push({time: os.clock(), count: moved});
 				if (moved > 0) {
 					const seen = action.seen.map((fluid) => Controller.shortName(fluid)).join(', ');
@@ -1148,8 +1176,9 @@ export function runController(this: void): void {
 			if (!timerDue && !controller.wantsTick()) continue;
 
 			if (!timerDue) os.cancelTimer(timer);
-			controller.tick();
-			timer = os.startTimer(config.tickSeconds);
+			const worked = controller.tick();
+			// While it works, the next step (a caster freed, the next stack) comes sooner.
+			timer = os.startTimer(worked ? config.activeTickSeconds : config.tickSeconds);
 
 			if (!online) continue;
 
