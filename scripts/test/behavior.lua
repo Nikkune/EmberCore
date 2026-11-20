@@ -1907,6 +1907,16 @@ test('controller: a manual cast of a stored fluid brings back what one casting l
 	local ok, err = pcall(function() quiet(function() c:cast({ fluid = TIN, format = 'block' }) end) end)
 	expect(not ok and tostring(err.message or err):find('bronze', 1, true), 'tin with copper must be refused (bronze): ' .. tostring(err))
 	expect(tins.fluids.fluids[1].amount == 2000, 'the tin must stay in its reservoir')
+
+	-- Not enough anywhere: the refusal says how much there is and how much one casting needs.
+	ok, err = pcall(function() quiet(function() c:cast({ fluid = COPPER, format = 'block' }) end) end)
+	expect(not ok and tostring(err.message or err):find('only 270 mB molten_copper (Smeltery + reservoirs): a block needs 810', 1, true),
+		'the refusal must state the amounts: ' .. tostring(err.message or err))
+
+	-- Every basin busy: said as such.
+	basin.fluids.fluids = { { name = GOLD, amount = 810 } }
+	ok, err = pcall(function() quiet(function() c:cast({ fluid = IRON, format = 'block' }) end) end)
+	expect(not ok and tostring(err.message or err):find('every block caster is busy', 1, true), 'busy casters must be said: ' .. tostring(err.message or err))
 end)
 
 test('controller: drain empties the Smeltery into the reservoirs then idles; purge goes back to auto', function()
