@@ -1,7 +1,11 @@
 {
   "name": "Smeltery",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "dependencies": [],
+  "roles": {
+    "controller": "controller/controller",
+    "display": "display/display"
+  },
   "install": {
     "startup": true
   }

@@ -1290,8 +1290,12 @@ local function runSmelteryMain(...)
 	return table.concat(printed, '\n')
 end
 
+-- The code of each role, as the installer writes it (embercore install smeltery-controller / -display).
+local CONTROLLER_CODE = '/projects/smeltery/controller/controller.lua'
+local DISPLAY_CODE = '/projects/smeltery/display/display.lua'
+
 test('smeltery: the role comes from the argument, then the saved one, then the peripherals', function()
-	FILES = {}
+	FILES = { [CONTROLLER_CODE] = '', [DISPLAY_CODE] = '' }
 	installPeripherals({ ['tconstruct:drain_0'] = { types = { 'tconstruct:drain', 'fluid_storage' }, object = {} } })
 	expect(runSmelteryMain():find('role: controller', 1, true), 'a computer next to a drain must be the controller')
 
@@ -1301,10 +1305,25 @@ test('smeltery: the role comes from the argument, then the saved one, then the p
 	expect(runSmelteryMain('display'):find('role: display', 1, true), 'the argument must win')
 	expect(runSmelteryMain():find('role: display', 1, true), 'the role given as argument must be saved')
 
-	FILES = {}
+	FILES = { [CONTROLLER_CODE] = '', [DISPLAY_CODE] = '' }
 	installPeripherals({})
 	expect(runSmelteryMain():find('No Smeltery drain nor monitor', 1, true), 'no role without drain nor monitor')
 	expect(runSmelteryMain('oops'):find('Usage', 1, true), 'a wrong argument must show the usage')
+end)
+
+test('smeltery: a computer with one role installed runs it, and never loads the other one', function()
+	-- PC 0 had both roles (992 KB of 1 MB): the log could not even move. Each one now has its own role.
+	FILES = { [CONTROLLER_CODE] = '' }
+	installPeripherals({ top = { types = { 'monitor' }, object = {} } })
+	expect(runSmelteryMain():find('role: controller', 1, true), 'the only role installed must win over the peripherals')
+
+	expect(runSmelteryMain('display'):find('embercore install smeltery-display', 1, true),
+		'a role not installed must say how to install it')
+
+	local file = assert(io.open(luasDir .. '/projects/smeltery/main.lua'))
+	local source = file:read('*a')
+	file:close()
+	expect(not source:find('require("projects.smeltery.', 1, true), 'main.lua must not require a role when it loads')
 end)
 
 test('smeltery: main finds core/ and modules/ with the require of CC (program folder only)', function()
@@ -2792,6 +2811,80 @@ test('display: the fluid picker jumps to a letter, and names the mod of two flui
 	tap(runtime, terminal, ' FREE ', 1, 7)
 	tap(runtime, terminal, ' SAVE ')
 	expect(calls[2] == 'assign drum_0 nil', 'FREE in the picker: ' .. tostring(calls[2]))
+end)
+
+test('display: a pagination follows its list when it gets shorter', function()
+	local screen, runtime, terminal = screenFor({})
+	local function items(n)
+		local list = {}
+		for i = 1, n do list[i] = { slot = i, name = 'minecraft:raw_iron', count = 1, fluid = IRON, status = 'ok' } end
+		return list
+	end
+	show(screen, runtime, smelteryState({ mode = 'manual', inputItems = items(20) }))
+	tap(runtime, terminal, 'MANUAL')
+	expect(terminal.line(45):find('1/3', 1, true), 'three pages: ' .. terminal.line(45))
+	tap(runtime, terminal, '>', 1, 45)
+	tap(runtime, terminal, '>', 1, 45)
+	expect(terminal.line(45):find('3/3', 1, true), 'not on the last page: ' .. terminal.line(45))
+
+	-- 12 items left: two pages, the screen shows the last one, and so must the pagination.
+	show(screen, runtime, smelteryState({ mode = 'manual', inputItems = items(12) }))
+	expect(terminal.line(45):find('2/2', 1, true), 'pagination left behind its list: ' .. terminal.line(45))
+	expect(screenText(terminal):find('RAW IRON', 1, true), 'the page past the end shows no item')
+end)
+
+test('controller: the log keeps 100 lines; a configuration saved with the old 20 gets 100', function()
+	FILES = {}
+	local configModule = require('projects.smeltery.controller.config')
+	expect(configModule.defaultControllerConfig().logSize == 100, 'default logSize')
+	local old = configModule.defaultControllerConfig()
+	old.logSize = 20
+	configModule.saveControllerConfig(old, '/test/old.db')
+	expect(configModule.loadControllerConfig('/test/old.db').logSize == 100, 'the old default 20 must become 100')
+	old.logSize = 40
+	configModule.saveControllerConfig(old, '/test/old.db')
+	expect(configModule.loadControllerConfig('/test/old.db').logSize == 40, 'a size set by hand is kept')
+end)
+
+test('controller: the log file is capped, and a full disk never stops the controller', function()
+	FILES = {}
+	local controllerModule = require('projects.smeltery.controller.controller')
+	local configModule = require('projects.smeltery.controller.config')
+	local catalogue = require('projects.smeltery.shared.catalogue')
+	local c = quiet(function() return new(controllerModule.Controller, configModule.defaultControllerConfig(), catalogue.defaultCatalogue()) end)
+
+	FILES['/test/c.log'] = 'previous run\n'
+	quiet(function() c:setLogFile('/test/c.log') end)
+	expect(FILES['/test/c.log.old'] == 'previous run\n' and FILES['/test/c.log'] == nil, 'the previous run must move to .old')
+
+	quiet(function() for i = 1, 1000 do c:log(('line %d %s'):format(i, ('x'):rep(40))) end end)
+	expect(#FILES['/test/c.log'] < 16 * 1024 and #FILES['/test/c.log.old'] < 16 * 1024 + 100, 'log file not capped: '
+		.. #FILES['/test/c.log'] .. ' and ' .. #FILES['/test/c.log.old'] .. ' bytes')
+	expect(FILES['/test/c.log']:find('line 1000 ', 1, true), 'the last line must be in the log file')
+
+	-- Full disk (PC 0, 2026-11-20): the move on start threw "Out of space" and the controller never started.
+	DISK_FULL = true
+	FILES['/test/c.log'] = 'previous run\n'
+	local ok, err = pcall(function() quiet(function() c:setLogFile('/test/c.log') end) end)
+	expect(ok, 'a full disk on start must not stop the controller: ' .. tostring(err))
+	expect(FILES['/test/c.log'] == nil, 'the old lines must be dropped to free the disk')
+	ok, err = pcall(function() quiet(function() c:log('still running') end) end)
+	DISK_FULL = false
+	expect(ok, 'a full disk on write must not stop the controller: ' .. tostring(err))
+	expect(c.logLines[#c.logLines]:find('still running', 1, true), 'the line must still reach the display')
+end)
+
+test('display: a log filter goes back to page 1, and so does its pagination', function()
+	local screen, runtime, terminal = screenFor({})
+	local log = {}
+	for i = 1, 70 do log[i] = ('20:%02d:%02d inserted 1 minecraft:raw_iron'):format(math.floor(i / 60), i % 60) end
+	show(screen, runtime, smelteryState({ log = log }))
+	tap(runtime, terminal, 'LOG')
+	tap(runtime, terminal, '>', 1, 5, 86)
+	tap(runtime, terminal, '>', 1, 5, 86)
+	expect(terminal.line(5):find('3/4', 1, true), 'not on page 3: ' .. terminal.line(5))
+	tap(runtime, terminal, ' IN ')
+	expect(terminal.line(5):find('1/4', 1, true), 'the filter showed page 1 but the pagination says: ' .. terminal.line(5))
 end)
 
 test('fluids: a capacity comes from what was learnt, then from the hand, then from the type', function()

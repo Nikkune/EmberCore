@@ -41,6 +41,13 @@ export type AnyManifest = ComponentManifest | ProjectManifest;
 
 export type ComponentMeta = Pick<ComponentManifest, 'name' | 'version' | 'dependencies'>;
 
-export type ProjectMeta = Pick<ProjectManifest, 'name' | 'version' | 'dependencies' | 'install'>;
+export type ProjectMeta = Pick<ProjectManifest, 'name' | 'version' | 'dependencies' | 'install'> & {
+	/**
+	 * A project whose computers each run one role (e.g. {"controller": "controller/controller"}): one
+	 * project `projects/<name>-<role>` per role, with main.lua and only what the role module loads, instead
+	 * of the whole project. The role module path is relative to the project, without .lua.
+	 */
+	roles?: Record<string, string>;
+};
 
 export type AnyMeta = ComponentMeta | ProjectMeta;
