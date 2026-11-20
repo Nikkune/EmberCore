@@ -414,9 +414,18 @@ export class Controller {
 			: request.format !== undefined && caster.read().format === request.format);
 		if (candidates.length === 0) throw new EmberError(`no caster ${request.caster ?? request.format ?? ''}`, 'SMELTERY_ERROR');
 
+		// What an idle caster needed, for the refusal: the smallest casting asked for.
+		let need: {format: string; amount: number} | undefined;
+		let idle = false;
+
 		for (const caster of candidates) {
 			const state = caster.read();
-			if (state.status === 'idle') this.bringBackForCast(smeltery, request.fluid, caster.amountFor(state.format, request.fluid));
+			if (state.status === 'idle') {
+				idle = true;
+				const amount = caster.amountFor(state.format, request.fluid);
+				if (amount !== undefined && (need === undefined || amount < need.amount)) need = {format: state.format ?? 'cast', amount};
+				this.bringBackForCast(smeltery, request.fluid, amount);
+			}
 
 			const moved = caster.pour(smeltery, request.fluid);
 
@@ -428,7 +437,19 @@ export class Controller {
 			}
 		}
 
-		throw new EmberError(`cannot cast ${Controller.shortName(request.fluid)} now (casters busy, or not enough fluid)`, 'SMELTERY_ERROR');
+		throw new EmberError(this.castRefusal(smeltery, request, idle, need), 'SMELTERY_ERROR');
+	}
+
+	/** Why a manual cast poured nothing: every caster busy, or how much fluid there is against one casting. */
+	private castRefusal(
+		smeltery: Smeltery, request: CastRequest, idle: boolean, need: {format: string; amount: number} | undefined,
+	): string {
+		const fluid = Controller.shortName(request.fluid);
+		if (!idle) return `every ${request.format ?? request.caster ?? ''} caster is busy`;
+		if (need === undefined) return `cannot cast ${fluid} now`;
+
+		const total = smeltery.amountOf(request.fluid) + (this.pool?.stored(request.fluid) ?? 0);
+		return `only ${total} mB ${fluid} (Smeltery + reservoirs): a ${need.format} needs ${need.amount}`;
 	}
 
 	/**
