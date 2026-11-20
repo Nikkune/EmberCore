@@ -30,6 +30,8 @@ export const DEFAULT_TAG_PREFIXES = [
 	'forge:raw_materials/',
 	'forge:ores/',
 	'forge:dusts/',
+	// Quartz, diamond, emerald...: a gem only has forge:gems/<material>.
+	'forge:gems/',
 	'forge:plates/',
 	'forge:gears/',
 	'forge:rods/',

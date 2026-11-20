@@ -31,6 +31,7 @@
 - 🖥️ **UI framework** → terminal/monitor interfaces
 - 🎨 **Theming system** → consistent visuals
 - 🧩 **Extensible components & modules**
+- 🔥 **Tinkers' Construct, fluids & network modules** → Smeltery, reservoirs, rednet messaging
 
 ---
 
@@ -44,6 +45,14 @@
 - 🧱 [[Architecture]]
 - 📦 [[Modules]]
 - ⚙️ [[Core]]
+
+### Modules & Projects
+
+- 🔥 [Projects/Smeltery](https://github.com/Nikkune/EmberCore/wiki/Projects-Smeltery)
+- ⚗️ [Modules/Tinkers](https://github.com/Nikkune/EmberCore/wiki/Modules-Tinkers)
+- 💧 [Modules/Fluids](https://github.com/Nikkune/EmberCore/wiki/Modules-Fluids)
+- 📡 [Modules/Net](https://github.com/Nikkune/EmberCore/wiki/Modules-Net)
+- 🚀 [Deployment & Installer](https://github.com/Nikkune/EmberCore/wiki/Deployment-&-Installer)
 
 ### UI Framework
 
@@ -70,6 +79,22 @@ EmberCore includes a fully custom **terminal UI system**:
 
 ---
 
+## 🔥 Smeltery
+
+A Tinkers' Construct Smeltery that runs itself, controlled from a touch monitor. Two computers share the
+work: the **controller** melts, casts and stores leftover fluids; the **display** shows it all and takes your
+orders. Modes (auto, alloy, melt, drain, purge…), casts, reservoirs and alloy recipes are set from the
+monitor.
+
+```
+embercore install smeltery-controller   on the computer next to the Smeltery
+embercore install smeltery-display      on the computer with the monitor
+```
+
+👉 Full docs: https://github.com/Nikkune/EmberCore/wiki/Projects-Smeltery
+
+---
+
 ## 🏗️ Project Structure
 
 ```text
@@ -78,7 +103,7 @@ src/
   modules/     # Reusable systems (UI, storage, automation...)
   projects/    # Entry points (final programs)
 
-dist/          # Generated Lua output
+luas/          # Generated Lua output
 ```
 
 ---
@@ -105,6 +130,10 @@ An id is a full id (`modules/ui`, `core/config`) or its last part when unique (`
 Files come from the `lua` branch through `raw.githubusercontent.com` and are installed at the root
 of the computer, so `require("core.config")` works as is. Each component is downloaded completely
 before anything is written. What is installed is recorded in `/.embercore/installed`.
+
+A project whose computers do different jobs is published as one project per role
+(`smeltery-controller`, `smeltery-display`): each role installs only the files it loads, so it fits on a
+computer (1 MB by default).
 
 The paste is not updated automatically: when `installer/embercore.lua` changes, update it on Pastebin.
 
