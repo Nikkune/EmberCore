@@ -54,6 +54,8 @@ export interface Plan {
 	actions: Action[];
 	waiting: WaitingItem[];
 	alerts: string[];
+	/** Stocks too small for any cast auto mode makes: nothing to fix, the Stock tab notes them. */
+	smallStocks?: FluidStack[];
 	/** A drain or purge has nothing left it can move: the controller ends it. */
 	finished?: boolean;
 }
@@ -432,7 +434,7 @@ function alloyTick(this: void, snapshot: Snapshot, context: PlanContext, plan: P
  * whole (the biggest stock first) and is cast on the next ticks like any other. Only when nothing in the
  * Smeltery can still be cast (what is there are leftovers) and nothing is melting. A fluid that would form
  * an alloy with what is there does not come back: the leftovers it would alloy with go to the reservoirs
- * first. A stock too small for any cast stays where it is (alert).
+ * first. A stock too small for any cast stays where it is (noted for the Stock tab, not an alert).
  */
 function takeStock(this: void, snapshot: Snapshot, context: PlanContext, plan: Plan): void {
 	if (snapshot.meltingFluids.length > 0 || snapshot.stored.length === 0) return;
@@ -453,7 +455,8 @@ function takeStock(this: void, snapshot: Snapshot, context: PlanContext, plan: P
 
 		const inside = snapshot.fluids.find((fluid) => fluid.name === stock.fluid)?.amount ?? 0;
 		if (stock.amount + inside < smallest) {
-			plan.alerts.push(`stock of ${shortFluid(stock.fluid)}: ${stock.amount} mB, below a cast`);
+			plan.smallStocks ??= [];
+			plan.smallStocks.push({name: stock.fluid, amount: stock.amount});
 			continue;
 		}
 

@@ -12,8 +12,8 @@ import type {AlloyGuard, AlloyRatio, CastAmounts, CasterState, MaterialMap} from
 
 import {alloyGuardOf, CATALOGUE_PATH, catalogueFluids, castAmountsOf, loadCatalogue, materialMapOf, saveCatalogue, temperatureMap} from '../shared/catalogue';
 import type {Catalogue}                                 from '../shared/catalogue';
-import {CONTROLLER_HOSTNAME, Messages, MODES, PROTOCOL} from '../shared/protocol';
-import type {AlloyOption, AlloyView, CasterView, CastRequest, DeleteRecipeRequest, FuelView, InputItemView, InsertRequest, InventoryView, Mode, SaveRecipeRequest, SetAlloyRequest, SetReservoirRequest, SetFormatRequest, SetModeRequest, SmelteryState, WaitingItem} from '../shared/protocol';
+import {CONTROLLER_HOSTNAME, HISTORY_SECONDS, HISTORY_SIZE, Messages, MODES, PROTOCOL} from '../shared/protocol';
+import type {AlloyOption, AlloyView, CasterView, CastRequest, DeleteRecipeRequest, FluidForecast, FuelView, InputItemView, InsertRequest, InventoryView, Mode, SaveRecipeRequest, SetAlloyRequest, SetReservoirRequest, SetFormatRequest, SetModeRequest, SetSmelteryCapacityRequest, SmelteryState, WaitingItem} from '../shared/protocol';
 import {checkIndex, deleteRecipe, recipeProblem, saveRecipe} from '../shared/recipes';
 
 import {clearAlloy, CONFIG_PATH, loadAlloy, loadCapacities, loadControllerConfig, loadMode, saveAlloy, saveCapacities, saveControllerConfig, saveMode} from './config';
@@ -27,6 +27,9 @@ import type {Action, InputSlot, Plan, PlanContext, Snapshot} from './planner';
 type FluidCache = Map<string, string | false>;
 
 /** What one reading of the network saw, kept to build the state. */
+/** The pace of the input (SmelteryState.inputSeconds) is measured over this many seconds. */
+const INPUT_PACE_SECONDS = 300;
+
 interface Reading {
 	fluids: FluidStack[];
 	melting: ItemSummary[];
@@ -85,6 +88,12 @@ export class Controller {
 	private lastAlerts                           = '';
 	/** os.clock() of the last activity in auto, alloy or melt (see idleSeconds). */
 	private quietSince?: number | undefined;
+	private modeSince = os.epoch('utc');
+	/** Molten totals, one every HISTORY_SECONDS (os.clock() of the last one). */
+	private readonly history: number[] = [];
+	private lastSample = -Infinity;
+	/** Items that went into the Smeltery lately (os.clock(), count): the pace of the input. */
+	private readonly inserts: {time: number; count: number}[] = [];
 
 	public constructor(
 		private readonly config: ControllerConfig,
@@ -164,6 +173,30 @@ export class Controller {
 
 		const size = capacity !== before ? `, capacity ${capacity !== undefined ? `${capacity} mB` : 'auto'}` : '';
 		this.log(`${reservoir}: ${fluid !== undefined ? `for ${Controller.shortName(fluid)}` : 'free'}${size}`);
+	}
+
+	/** The Smeltery capacity from the display; undefined: auto (forgotten, learnt again when full). */
+	public setSmelteryCapacity(request: SetSmelteryCapacityRequest): void {
+		const capacity = request.capacity;
+		if (capacity !== undefined && !(typeof capacity === 'number' && capacity > 0 && capacity % 1 === 0)) {
+			throw new EmberError('the capacity must be positive', 'SMELTERY_ERROR');
+		}
+		this.config.smelteryCapacity       = capacity ?? 0;
+		this.config.smelteryCapacitySource = capacity !== undefined ? 'set' : '';
+		if (this.configPath !== undefined) saveControllerConfig(this.config, this.configPath);
+		this.log(`Smeltery capacity: ${capacity !== undefined ? `${capacity} mB` : 'auto'}`);
+		this.state = {...this.state};
+		this.applyCapacity(this.state);
+	}
+
+	/** The Smeltery refused more: what it holds now is its capacity. Saved when it changes. */
+	private learnSmelteryCapacity(smeltery: Smeltery): void {
+		const capacity = smeltery.fluids().reduce((sum, fluid) => sum + fluid.amount, 0);
+		if (capacity <= 0 || (capacity === this.config.smelteryCapacity && this.config.smelteryCapacitySource === 'learnt')) return;
+		this.config.smelteryCapacity       = capacity;
+		this.config.smelteryCapacitySource = 'learnt';
+		if (this.configPath !== undefined) saveControllerConfig(this.config, this.configPath);
+		this.log(`Smeltery capacity: ${capacity} mB (it was full)`);
 	}
 
 	/** Adds a recipe, or replaces one; the guard and alloy mode use it at once. */
@@ -256,6 +289,7 @@ export class Controller {
 
 		this.log(`mode ${this.mode} -> ${mode}`);
 		this.quietSince = undefined;
+		this.modeSince  = os.epoch('utc');
 		this.mode = mode;
 		saveMode(mode, this.previousMode, this.modePath);
 		this.state.mode = mode;
@@ -291,7 +325,7 @@ export class Controller {
 		}
 
 		this.tickWanted = false;
-		this.state      = this.buildState([...alerts, ...plan.alerts], plan.waiting);
+		this.state      = this.buildState([...alerts, ...plan.alerts], plan.waiting, plan.smallStocks);
 
 		const alertText = this.state.alerts.join('; ');
 		if (alertText !== this.lastAlerts) {
@@ -327,6 +361,7 @@ export class Controller {
 		if (assessment.status === 'alloy' && !forced) throw new EmberError(`${detail.name} would form ${assessment.alloy ?? 'an alloy'}`, 'SMELTERY_ERROR');
 
 		const moved = smeltery.insert(input, request.slot, request.count);
+		if (moved > 0) this.inserts.push({time: os.clock(), count: moved});
 		if (forced && assessment.status !== 'ok') {
 			const why = assessment.status === 'alloy' ? Controller.shortName(assessment.alloy ?? 'an alloy') : `needs ${assessment.temperature ?? '?'} K`;
 			this.log(`FORCED insert ${moved} ${detail.name} (${why})`);
@@ -417,6 +452,12 @@ export class Controller {
 		});
 
 		channel.on(Messages.getFluids, () => this.fluids());
+
+		channel.on(Messages.setSmelteryCapacity, (payload) => {
+			this.setSmelteryCapacity(payload as SetSmelteryCapacityRequest);
+			this.tickWanted = true;
+			return this.state;
+		});
 	}
 
 	/** A command changed something: the main loop should tick now rather than wait for its timer. */
@@ -541,6 +582,7 @@ export class Controller {
 		if (input !== undefined) reading.input = {name: input.name, size: this.sizeOf(input), used: snapshot.input.length};
 		if (this.output !== undefined) reading.output = {name: this.output.name, size: outputSize, used: outputUsed};
 		this.lastRead = reading;
+		this.sampleHistory(reading);
 
 		return snapshot;
 	}
@@ -669,16 +711,19 @@ export class Controller {
 				const output = this.output;
 				if (caster === undefined || output === undefined) return 0;
 
+				// What it gives: the item the last reading saw in it.
+				const item  = this.lastRead?.casters.find((view) => view.name === caster.name)?.output?.name;
 				const moved = caster.collect(output);
-				if (moved > 0) this.log(`collected ${moved} from ${caster.name}`);
+				if (moved > 0) this.log(`collected ${moved} ${item ?? 'item'} from ${caster.name}`);
 				return 0;
 			}
 			case 'pour': {
 				const caster = this.casters.find((candidate) => candidate.name === action.caster);
 				if (caster === undefined) return 0;
 
-				const moved = caster.pour(smeltery, action.fluid);
-				if (moved > 0) this.log(`poured ${moved} mB ${Controller.shortName(action.fluid)} into ${caster.name}`);
+				const moved  = caster.pour(smeltery, action.fluid);
+				const format = this.lastRead?.casters.find((view) => view.name === caster.name)?.format;
+				if (moved > 0) this.log(`poured ${moved} mB ${Controller.shortName(action.fluid)} into ${caster.name}${format !== undefined ? ` (${format})` : ''}`);
 
 				const alloy = this.alloy;
 				if (moved > 0 && this.mode === 'alloy' && alloy !== undefined && alloy.result === action.fluid) {
@@ -715,6 +760,8 @@ export class Controller {
 			}
 			case 'restore': {
 				const taken = this.pool?.take(smeltery.drain, action.fluid, action.amount) ?? 0;
+				// Every holder was tried and some is left (read again after each pull): the Smeltery is full.
+				if (taken < action.amount && (this.pool?.stored(action.fluid) ?? 0) > 0) this.learnSmelteryCapacity(smeltery);
 				const why   = action.why === 'stock'
 				              ? 'from the stock'
 				              : action.why === 'alloy' ? `for ${Controller.shortName(this.alloy?.result ?? 'the alloy')}` : 'to complete a cast';
@@ -723,6 +770,7 @@ export class Controller {
 			}
 			default: {
 				const moved = smeltery.insert(this.input!, action.slot, action.count);
+				if (moved > 0) this.inserts.push({time: os.clock(), count: moved});
 				if (moved > 0) {
 					const seen = action.seen.map((fluid) => Controller.shortName(fluid)).join(', ');
 					this.log(`inserted ${moved} ${action.name} (seen: ${seen === '' ? 'nothing' : seen})`);
@@ -839,7 +887,7 @@ export class Controller {
 		if (this.mode !== 'manual') throw new EmberError(`manual commands need manual mode (now ${this.mode})`, 'SMELTERY_ERROR');
 	}
 
-	private buildState(alerts: string[], waiting: WaitingItem[]): SmelteryState {
+	private buildState(alerts: string[], waiting: WaitingItem[], smallStocks?: FluidStack[]): SmelteryState {
 		const state: SmelteryState = {
 			mode:    this.mode,
 			time:    os.epoch('utc'),
@@ -856,6 +904,12 @@ export class Controller {
 			alloyOptions: this.alloyOptions(),
 		};
 		if (this.alloy !== undefined) state.alloy = {...this.alloy};
+		if (smallStocks !== undefined) state.smallStocks = smallStocks;
+		this.applyCapacity(state);
+		state.modeSince = this.modeSince;
+		if (this.history.length > 0) state.history = [...this.history];
+		const seconds = this.inputSeconds();
+		if (seconds !== undefined) state.inputSeconds = seconds;
 		if (this.fuel !== undefined) state.fuel = this.fuel;
 		if (this.heat !== undefined) state.heat = this.heat;
 
@@ -867,9 +921,64 @@ export class Controller {
 			state.casters = reading.casters;
 			if (reading.input !== undefined) state.input = reading.input;
 			if (reading.output !== undefined) state.output = reading.output;
+			state.forecast = this.forecast(reading);
 		}
 
 		return state;
+	}
+
+	private applyCapacity(state: SmelteryState): void {
+		delete state.smelteryCapacity;
+		delete state.smelteryCapacitySource;
+		if (this.config.smelteryCapacity <= 0) return;
+		state.smelteryCapacity = this.config.smelteryCapacity;
+		const source           = this.config.smelteryCapacitySource;
+		if (source === 'learnt' || source === 'set') state.smelteryCapacitySource = source;
+	}
+
+	/** Keeps a molten total every HISTORY_SECONDS (the curve of the display). */
+	private sampleHistory(reading: Reading): void {
+		const now = os.clock();
+		if (now - this.lastSample < HISTORY_SECONDS) return;
+		this.lastSample = now;
+		this.history.push(reading.fluids.reduce((sum, fluid) => sum + fluid.amount, 0));
+		while (this.history.length > HISTORY_SIZE) this.history.shift();
+	}
+
+	/**
+	 * Seconds until the input is melted: what it still holds (items that melt into something), at the
+	 * pace items went in over the last INPUT_PACE_SECONDS. Undefined when nothing went in lately.
+	 */
+	private inputSeconds(): number | undefined {
+		const now = os.clock();
+		while (this.inserts.length > 0 && now - this.inserts[0]!.time > INPUT_PACE_SECONDS) this.inserts.shift();
+		const left = this.inputItems.reduce((sum, item) => sum + (item.status === 'unknown' ? 0 : item.count), 0);
+		if (left === 0) return 0;
+		const first = this.inserts[0];
+		if (first === undefined) return undefined;
+		const went   = this.inserts.reduce((sum, entry) => sum + entry.count, 0);
+		const window = Math.max(10, now - first.time);
+		return Math.ceil(left / (went / window));
+	}
+
+	/** What each molten fluid becomes with the auto formats that have a caster, biggest first. */
+	private forecast(reading: Reading): FluidForecast[] {
+		const formats = this.config.formatPriority.filter((format) => reading.casters.some((caster) => caster.format === format));
+		return reading.fluids.map((fluid) => {
+			let left = fluid.amount;
+			const casts: {format: string; count: number}[] = [];
+			const sized = formats
+				.map((format) => ({format, amount: this.amounts.get(format, fluid.name)}))
+				.filter((entry): entry is {format: string; amount: number} => entry.amount !== undefined && entry.amount > 0)
+				.sort((a, b) => b.amount - a.amount);
+			for (const {format, amount} of sized) {
+				const count = Math.floor(left / amount);
+				if (count <= 0) continue;
+				casts.push({format, count});
+				left -= count * amount;
+			}
+			return {fluid: fluid.name, amount: fluid.amount, casts, left};
+		});
 	}
 
 	/**

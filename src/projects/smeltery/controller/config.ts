@@ -37,6 +37,13 @@ export interface ControllerConfig {
 	/** Capacities set by hand (from the display), used when none was learnt; before the type ones. */
 	capacities: {reservoir: string; capacity: number}[];
 	/**
+	 * Capacity of the Smeltery in mB (it does not tell it), for the display's gauge; 0: unknown. Learnt
+	 * when the Smeltery refuses part of a stock coming back, or set from the display.
+	 */
+	smelteryCapacity: number;
+	/** Where smelteryCapacity comes from: 'learnt', 'set' (from the display), '' (unknown). */
+	smelteryCapacitySource: string;
+	/**
 	 * Formats auto mode casts, biggest first; casters with another cast are left to the other modes.
 	 * Also set from the display (Overview, CASTING: AUTO / off).
 	 */
@@ -68,6 +75,8 @@ export function defaultControllerConfig(this: void): ControllerConfig {
 		reservoirs:       [],
 		assignments:      [],
 		capacities:       [],
+		smelteryCapacity: 0,
+		smelteryCapacitySource: '',
 		formatPriority:   ['block', 'ingot', 'nugget'],
 		idleSeconds:      30,
 		tickSeconds:      1,

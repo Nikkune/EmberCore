@@ -899,8 +899,8 @@ local function fakeTinkers()
 		return devices[name]
 	end
 
-	function net.smeltery(fluids)
-		addDevice('tconstruct:drain_0', { 'tconstruct:drain', 'fluid_storage' }, fluidStore(fluids))
+	function net.smeltery(fluids, capacity)
+		addDevice('tconstruct:drain_0', { 'tconstruct:drain', 'fluid_storage' }, fluidStore(fluids, capacity))
 		addDevice('tconstruct:chute_0', { 'tconstruct:chute', 'inventory' }, nil, itemStore(343))
 	end
 
@@ -1992,20 +1992,45 @@ test('display: casters grouped by cast, auto formats first', function()
 	local groups = displayModel.groupCasters(casters, { 'block', 'ingot', 'nugget' })
 	local names = {}
 	for i, g in ipairs(groups) do names[i] = g.format end
-	expect(table.concat(names, ',') == 'block,ingot,gear,no cast', 'order: ' .. table.concat(names, ','))
+	expect(table.concat(names, ',') == 'block,gear,ingot,no cast', 'order: ' .. table.concat(names, ','))
 	expect(groups[1].free == 1 and groups[1].casting == 1 and groups[1].auto, 'block counts')
-	expect(groups[2].ready == 1 and not groups[3].auto, 'ingot ready, gear not auto')
+	expect(groups[3].ready == 1 and groups[3].auto and not groups[2].auto, 'ingot ready, gear not auto')
+	-- A row never moves when its format goes in or out of auto mode.
+	local again = displayModel.groupCasters(casters, { 'gear', 'nugget' })
+	for i, g in ipairs(again) do expect(g.format == names[i], 'same order with other auto formats: ' .. g.format) end
 end)
 
-test('display: log lines are shortened by kind', function()
+test('display: Pixels draws each cell with the pixels set in it', function()
+	local widgets = require('projects.smeltery.display.widgets')
+	local cells = {}
+	local painter = { pixel = function(_, x, y, mask, on, off) cells[#cells + 1] = { x = x, y = y, mask = mask, on = on, off = off } end }
+	local tube = new(widgets.Pixels, 1, 1, 2, 1)
+	tube:rect(0, 0, 1, 3, colors.gray) -- left column of the first cell
+	tube:rect(3, 0, 1, 3, colors.gray) -- right column of the second cell
+	tube:paint(painter)
+	expect(#cells == 2, 'cells painted: ' .. #cells)
+	expect(cells[1].mask == 21 and cells[1].on == colors.gray, 'left column: mask ' .. cells[1].mask)
+	expect(cells[2].mask == 42 and cells[2].on == colors.gray, 'right column: mask ' .. cells[2].mask)
+end)
+
+test('display: log lines are shortened by kind; texts fit their box', function()
 	local line = displayModel.parseLogLine('20:24:54 inserted 64 minecraft:raw_gold (seen: molten_iron)')
-	expect(line.time == '20:24:54' and line.kind == 'in' and line.text == 'raw_gold 64', 'insert: ' .. line.text)
-	line = displayModel.parseLogLine('20:25:16 poured 810 mB molten_gold into tconstruct:basin_0')
-	expect(line.kind == 'cast' and line.text == 'gold 810 > basin_0', 'cast: ' .. line.text)
+	expect(line.time == '20:24:54' and line.kind == 'in' and line.text == 'raw gold x64', 'insert: ' .. line.text)
+	line = displayModel.parseLogLine('20:25:16 poured 810 mB molten_gold into tconstruct:basin_0 (block)')
+	expect(line.kind == 'cast' and line.text == 'gold 810 mB > basin 0 (block)', 'cast: ' .. line.text)
 	line = displayModel.parseLogLine('20:26:02 moved 64 occultism:raw_iesnium to sophisticatedstorage:barrel_3 (needs 1090 K)')
-	expect(line.kind == 'reject' and line.text == 'raw_iesnium 64 > needs 1090 K', 'reject: ' .. line.text)
+	expect(line.kind == 'held' and line.text == 'raw iesnium x64 > barrel 3 (needs 1090 K)', 'held: ' .. line.text)
+	line = displayModel.parseLogLine('20:27:00 collected 1 minecraft:gold_block from tconstruct:basin_0')
+	expect(line.kind == 'out' and line.text == 'gold block x1 from basin 0', 'out: ' .. line.text)
 	expect(displayModel.parseLogLine('20:31:40 FORCED insert 12 mod:raw_tin (bronze)').kind == 'forced', 'forced')
+	line = displayModel.parseLogLine('11:49:02 mode drain -> idle')
+	expect(line.kind == 'mode' and line.text == 'drain -> idle', 'mode: ' .. line.text)
 	expect(displayModel.fluidLabel('tconstruct:molten_rose_gold') == 'rose gold', 'fluid label')
+
+	expect(displayModel.fit('gold nugget cast', 14) == 'gold nug. cast', 'abbreviation: ' .. displayModel.fit('gold nugget cast', 14))
+	expect(displayModel.fit('abcdefghij', 5) == 'abcd.', 'cut: ' .. displayModel.fit('abcdefghij', 5))
+	expect(displayModel.fit('short', 10) == 'short', 'a text that fits stays')
+	expect(displayModel.itemAmount('minecraft:gold_block') == 810 and displayModel.itemAmount('mod:tin_nugget') == 10, 'item amounts')
 end)
 
 local function smelteryState(fields)
@@ -2036,19 +2061,45 @@ local function screenFor(calls)
 			saved()
 		end,
 		deleteRecipe = function(_, r) calls[#calls + 1] = 'delete ' .. r.index .. ' ' .. r.expected end,
+		setSmelteryCapacity = function(_, r) calls[#calls + 1] = 'capacity ' .. tostring(r.capacity or 'auto') end,
 	})
-	local runtime, terminal = runtimeFor(screen.root, 79, 38)
+	local runtime, terminal = runtimeFor(screen.root, 100, 52)
 	return screen, runtime, terminal
 end
 
 local function screenText(terminal)
 	local lines = {}
-	for y = 1, 38 do lines[y] = terminal.line(y) end
+	for y = 1, 52 do lines[y] = terminal.line(y) end
 	return table.concat(lines, '\n')
 end
 
 local function touch(runtime, x, y)
 	runtime:dispatch({ type = 'mouse_click', x = x, y = y, button = 1 })
+	runtime:render()
+end
+
+-- Touches the `n`-th place `text` is written on the screen (rows from `y0`, columns from `x0`).
+local function tap(runtime, terminal, text, n, y0, x0)
+	local seen = 0
+	for y = y0 or 1, 52 do
+		local from = x0 or 1
+		while true do
+			local x = terminal.line(y):find(text, from, true)
+			if not x then break end
+			seen = seen + 1
+			if seen == (n or 1) then
+				touch(runtime, x, y)
+				return x, y
+			end
+			from = x + 1
+		end
+	end
+	error('"' .. text .. '" (' .. (n or 1) .. ') not on the screen', 2)
+end
+
+local function show(screen, runtime, state)
+	screen:setState(state)
+	runtime:invalidate({ reason = 'state', kind = 'full' })
 	runtime:render()
 end
 
@@ -2058,60 +2109,103 @@ test('display: overview draws the tank, the fuel and the casting; tabs switch sc
 	runtime:render()
 	expect(screenText(terminal):find('Waiting for the controller', 1, true), 'no waiting message before the first state')
 
-	screen:setState(smelteryState())
-	runtime:invalidate({ reason = 'state', kind = 'full' })
-	runtime:render()
+	show(screen, runtime, smelteryState())
 	local text = screenText(terminal)
-	for _, wanted in ipairs({ 'MOLTEN', 'FUEL', 'CASTING', 'gold', 'iron', '3810', 'lava', '2600 mB', '1000 K', 'block', ' AUTO ' }) do
+	for _, wanted in ipairs({ 'MOLTEN', 'STACK', 'FUEL', 'CASTERS', 'GOLD', 'IRON', '3810 mB', 'lava', '2600 mB', '1000 K', 'BLOCK', ' AUTO ', 'TO MELT', 'WILL BECOME' }) do
 		expect(text:find(wanted, 1, true), 'overview misses "' .. wanted .. '"')
 	end
 
-	touch(runtime, 39, 2) -- "Modes" tab
+	tap(runtime, terminal, 'MODES')
 	text = screenText(terminal)
-	expect(text:find('Full stop.', 1, true) and text:find('active', 1, true), 'modes tab not shown')
-	touch(runtime, 4, 14) -- Activate under IDLE
+	expect(text:find('Full stop.', 1, true) and text:find('ACTIVE', 1, true), 'modes tab not shown')
+	tap(runtime, terminal, ' ACTIVATE ') -- the IDLE card
 	expect(calls[1] == 'setMode idle', 'Activate did not ask for idle: ' .. tostring(calls[1]))
+end)
+
+test('display: INPUT > OUTPUT tells what is left to melt and what it will become', function()
+	local screen, runtime, terminal = screenFor({})
+	show(screen, runtime, smelteryState({
+		inputItems = {
+			{ slot = 1, name = 'minecraft:raw_gold', count = 20, fluid = GOLD, status = 'ok' },
+			{ slot = 2, name = 'mod:mystery', count = 5, status = 'unknown' },
+		},
+		input = { used = 2, size = 27 },
+		inputSeconds = 600,
+		forecast = { { fluid = GOLD, amount = 1890, casts = { { format = 'block', count = 2 }, { format = 'ingot', count = 3 } }, left = 0 } },
+	}))
+	local text = screenText(terminal)
+	for _, wanted in ipairs({ '20 items', '~1800 mB', '~10 min', '2 block 3 ingot', 'nothing left over' }) do
+		expect(text:find(wanted, 1, true), 'INPUT > OUTPUT misses "' .. wanted .. '"')
+	end
+end)
+
+test('display: SET CAPACITY sets the Smeltery capacity, or gives it back to auto', function()
+	local calls = {}
+	local screen, runtime, terminal = screenFor(calls)
+	show(screen, runtime, smelteryState({ smelteryCapacity = 30600, smelteryCapacitySource = 'learnt' }))
+	tap(runtime, terminal, ' SET CAPACITY ')
+	local text = screenText(terminal)
+	expect(text:find('SMELTERY CAPACITY', 1, true) and text:find('learnt (it was full)', 1, true), 'capacity panel not shown')
+	tap(runtime, terminal, ' + ', 1, 17)
+	expect(screenText(terminal):find('31600 mB', 1, true), 'the + step is 1000 mB')
+	tap(runtime, terminal, ' 10000 ')
+	tap(runtime, terminal, ' - ', 1, 17)
+	tap(runtime, terminal, ' 10 ', 1, 22)
+	tap(runtime, terminal, ' + ', 1, 17)
+	expect(screenText(terminal):find('21610 mB', 1, true), 'the 10 mB step reaches any capacity')
+	tap(runtime, terminal, ' SAVE ')
+	expect(calls[1] == 'capacity 21610', 'capacity not sent: ' .. tostring(calls[1]))
+	expect(screenText(terminal):find('CASTERS', 1, true), 'the panel stays open after Save')
+
+	tap(runtime, terminal, ' SET CAPACITY ')
+	tap(runtime, terminal, ' AUTO ', 1, 30)
+	expect(calls[2] == 'capacity auto', 'auto not sent: ' .. tostring(calls[2]))
 end)
 
 test('display: Force asks twice before a forced insert, and can be cancelled', function()
 	local calls = {}
 	local screen, runtime, terminal = screenFor(calls)
-	screen:setState(smelteryState({
-		mode = 'manual',
+	local state = smelteryState({
+		mode = 'auto',
 		inputItems = {
 			{ slot = 3, name = 'minecraft:raw_iron', count = 8, fluid = IRON, status = 'ok' },
 			{ slot = 5, name = 'mod:raw_tin', count = 12, fluid = TIN, status = 'alloy', alloy = 'tconstruct:molten_bronze' },
 		},
-	}))
-	runtime:invalidate({ reason = 'state', kind = 'full' })
-	runtime:render()
-	touch(runtime, 49, 2) -- "Manual" tab
-	expect(screenText(terminal):find('raw_tin', 1, true), 'manual tab does not list the input')
+	})
+	show(screen, runtime, state)
+	tap(runtime, terminal, 'MANUAL')
+	local text = screenText(terminal)
+	expect(text:find('RAW TIN', 1, true), 'manual tab does not list the input')
+	expect(text:find('MANUAL MODE IS OFF', 1, true) and select(2, text:gsub(' INSERT ', '')) == 1, 'off: banner, and no INSERT button')
+	tap(runtime, terminal, ' SWITCH TO MANUAL ')
+	expect(calls[1] == 'setMode manual', 'switch not asked: ' .. tostring(calls[1]))
 
-	touch(runtime, 38, 8) -- Insert on the first row
-	expect(calls[1] == 'insert 3', 'insert not asked: ' .. tostring(calls[1]))
+	state.mode = 'manual'
+	show(screen, runtime, state)
+	tap(runtime, terminal, ' INSERT ', 2) -- the first is the frame title
+	expect(calls[2] == 'insert 3', 'insert not asked: ' .. tostring(calls[2]))
 
-	touch(runtime, 38, 11) -- Force on the second row
+	local fx, fy = tap(runtime, terminal, ' FORCE  ')
 	expect(screenText(terminal):find('step 1 of 2', 1, true) and screenText(terminal):find('bronze', 1, true), 'first confirmation not shown')
-	touch(runtime, 38, 8) -- under the dialog: must do nothing
-	expect(#calls == 1, 'a button under the dialog was pressed')
-	touch(runtime, 19, 22) -- Continue
+	touch(runtime, 51, 14) -- Insert, outside the dialog: must do nothing
+	expect(#calls == 2, 'a button was pressed while the dialog is open')
+	tap(runtime, terminal, ' CONTINUE ')
 	expect(screenText(terminal):find('step 2 of 2', 1, true), 'second confirmation not shown')
-	expect(#calls == 1, 'inserted after a single confirmation')
-	touch(runtime, 19, 22) -- Force insert
-	expect(calls[2] == 'insert 5 force', 'forced insert not asked: ' .. tostring(calls[2]))
+	expect(#calls == 2, 'inserted after a single confirmation')
+	tap(runtime, terminal, ' FORCE INSERT ', 2) -- the first is the title
+	expect(calls[3] == 'insert 5 force', 'forced insert not asked: ' .. tostring(calls[3]))
 
-	touch(runtime, 38, 11)
-	touch(runtime, 48, 22) -- Cancel
-	expect(not screenText(terminal):find('FORCE INSERT', 1, true) and #calls == 2, 'cancel did not close the dialog')
+	touch(runtime, fx, fy)
+	tap(runtime, terminal, ' CANCEL ')
+	expect(not screenText(terminal):find('FORCE INSERT', 1, true) and #calls == 3, 'cancel did not close the dialog')
 
-	touch(runtime, 38, 11)
-	touch(runtime, 19, 22)
+	touch(runtime, fx, fy)
+	tap(runtime, terminal, ' CONTINUE ')
 	FAKE_CLOCK = FAKE_CLOCK + 11
 	screen:tick()
 	runtime:invalidate({ reason = 'state', kind = 'full' })
 	runtime:render()
-	expect(not screenText(terminal):find('FORCE INSERT', 1, true) and #calls == 2, 'the second step must expire after 10 s')
+	expect(not screenText(terminal):find('FORCE INSERT', 1, true) and #calls == 3, 'the second step must expire after 10 s')
 end)
 
 test('planner: auto empties the stock once the input is done, biggest stock first, one fluid at a time', function()
@@ -2164,7 +2258,9 @@ test('planner: a stock that would alloy moves the leftover away first; a stock b
 
 	local small = snapshot({ casters = { basinIdle, tableIdle }, stored = { { fluid = GOLD, amount = 50 } } })
 	plan = planner.planTick('auto', small, planContext())
-	expect(kinds(plan) == '' and plan.alerts[1] == 'stock of gold: 50 mB, below a cast', 'small stock: ' .. kinds(plan) .. ' ' .. tostring(plan.alerts[1]))
+	-- Not an alert (nothing to fix): a note for the Stock tab.
+	expect(kinds(plan) == '' and #plan.alerts == 0, 'small stock: ' .. kinds(plan) .. ' ' .. tostring(plan.alerts[1]))
+	expect(plan.smallStocks and plan.smallStocks[1].name == GOLD and plan.smallStocks[1].amount == 50, 'small stock not noted')
 
 	-- With the 40 mB already in the Smeltery, 50 mB of stock make an ingot.
 	local together = snapshot({ fluids = { { name = GOLD, amount = 40 } }, casters = { basinIdle, tableIdle }, stored = { { fluid = GOLD, amount = 50 } } })
@@ -2191,38 +2287,55 @@ test('controller: auto formats are switched from the display, stay biggest first
 	expect(not ok, 'a caster without a cast cannot be a format')
 end)
 
-test('display: the stock tab shows reservoirs, totals and room; CASTING switches auto formats', function()
+test('display: the stock tab shows reservoirs, totals and room; CASTERS switches auto formats', function()
 	local calls = {}
 	local screen, runtime, terminal = screenFor(calls)
-	screen:setState(smelteryState({
+	show(screen, runtime, smelteryState({
 		fluids = { { name = GOLD, amount = 15300 } },
 		casters = {
 			{ name = 'tconstruct:basin_0', kind = 'basin', status = 'idle', format = 'block', amount = 0 },
 			{ name = 'tconstruct:table_0', kind = 'table', status = 'idle', format = 'gear', amount = 0 },
 		},
+		autoFormats = { 'block', 'ingot', 'nugget' },
 		reservoirs = {
 			{ name = 'evilcraft:drum_1', fluid = IRON, amount = 3630 },
 			{ name = 'evilcraft:drum_2', fluid = COPPER, amount = 16000, capacity = 16000 },
 			{ name = 'evilcraft:drum_3', amount = 0, assigned = TIN },
 			{ name = 'evilcraft:drum_4', amount = 0 },
 		},
-		alerts = { 'stock of gold: 50 mB, below a cast' },
+		smallStocks = { { name = GOLD, amount = 50 } },
 	}))
-	runtime:invalidate({ reason = 'state', kind = 'full' })
-	runtime:render()
+	expect(not screenText(terminal):find('!!', 1, true), 'a small stock is no alert on the overview')
+	expect(screenText(terminal):find('15300 mB', 1, true), 'molten total not shown')
 
-	-- The molten total no longer runs into the fuel tank (column 37).
-	expect(terminal.line(26):sub(24, 36):find('15300 mB', 1, true) and terminal.line(27):sub(24, 36):find('molten', 1, true), 'molten total: ' .. terminal.line(26))
-
-	touch(runtime, 72, 7) -- block row: AUTO -> off
-	touch(runtime, 72, 10) -- gear row: off -> AUTO
+	tap(runtime, terminal, ' AUTO ', 1, 4) -- block: AUTO -> off
+	tap(runtime, terminal, ' off ', 1, 4) -- gear: off -> AUTO
 	expect(calls[1] == 'format block false' and calls[2] == 'format gear true', 'switches: ' .. tostring(calls[1]) .. ' / ' .. tostring(calls[2]))
 
-	touch(runtime, 55, 2) -- "Stock" tab
+	tap(runtime, terminal, 'STOCK')
 	local text = screenText(terminal)
-	for _, wanted in ipairs({ 'RESERVOIRS', 'TOTALS', '3630 mB', 'FULL', 'for tin', 'drum 4', '177 ing', '1 free', 'capacity known for 1/4', 'stock of gold' }) do
+	for _, wanted in ipairs({ 'RESERVOIRS', 'TOTALS', '3630 mB', 'FULL', 'for tin', 'drum 4', '177 ing', '1 free', 'capacity known 1/4', 'BELOW A CAST', 'gold 50 mB' }) do
 		expect(text:find(wanted, 1, true), 'stock tab misses "' .. wanted .. '"')
 	end
+	-- Filled first: the copper drum (the fullest) is the first tube.
+	expect(terminal.line(12):sub(6, 17):find('16000 mB', 1, true), 'fullest first: ' .. terminal.line(12))
+end)
+
+test('display: the log tab filters the lines by kind', function()
+	local screen, runtime, terminal = screenFor({})
+	show(screen, runtime, smelteryState({ log = {
+		'20:24:54 inserted 64 minecraft:raw_gold (seen: x)',
+		'20:25:16 poured 810 mB molten_gold into tconstruct:basin_0 (block)',
+		'20:26:00 mode auto -> idle',
+	} }))
+	tap(runtime, terminal, 'LOG')
+	local text = screenText(terminal)
+	expect(text:find('raw gold x64', 1, true) and text:find('basin 0 (block)', 1, true) and text:find('auto -> idle', 1, true), 'log lines missing')
+	tap(runtime, terminal, ' CAST ')
+	text = screenText(terminal)
+	expect(text:find('basin 0', 1, true) and not text:find('raw gold', 1, true), 'CAST filter')
+	tap(runtime, terminal, ' ALERT ')
+	expect(screenText(terminal):find('Nothing for this filter.', 1, true), 'ALERT filter')
 end)
 
 local ROSE = 'tconstruct:molten_rose_gold'
@@ -2351,7 +2464,7 @@ end)
 test('display: alloy and melt cards; Change alloy picks an alloy and an amount', function()
 	local calls = {}
 	local screen, runtime, terminal = screenFor(calls)
-	screen:setState(smelteryState({
+	show(screen, runtime, smelteryState({
 		mode = 'alloy',
 		alloy = { result = ROSE, target = 1800, made = 540 },
 		reservoirs = { { name = 'evilcraft:drum_1', fluid = COPPER, amount = 1800 }, { name = 'evilcraft:drum_2', fluid = GOLD, amount = 900 } },
@@ -2360,26 +2473,24 @@ test('display: alloy and melt cards; Change alloy picks an alloy and an amount',
 			{ index = 0, result = 'tconstruct:molten_bronze', amount = 360, inputs = { { fluid = COPPER, amount = 270 }, { fluid = TIN, amount = 90 } }, fromStock = 0 },
 		},
 	}))
-	runtime:invalidate({ reason = 'state', kind = 'full' })
-	runtime:render()
-	touch(runtime, 39, 2) -- "Modes" tab
+	tap(runtime, terminal, 'MODES')
 	local text = screenText(terminal)
-	for _, wanted in ipairs({ 'ALLOY', 'MELT', 'Only rose gold,', '6/20 ingots', 'Change alloy', 'into the stock,' }) do
+	for _, wanted in ipairs({ 'ALLOY', 'MELT', 'Only ROSE GOLD,', '6/20 ingots', 'CHANGE ALLOY', 'into the stock,' }) do
 		expect(text:find(wanted, 1, true), 'modes tab misses "' .. wanted .. '"')
 	end
 
-	touch(runtime, 43, 29) -- Change alloy
+	tap(runtime, terminal, ' CHANGE ALLOY ')
 	text = screenText(terminal)
-	for _, wanted in ipairs({ 'from stock: 20 ing', 'put in the input', 'recipe', '1 copper', '= 20 ingots now', '20 ingots', 'then back to' }) do
+	for _, wanted in ipairs({ 'stock: 20 ing', 'input', 'copper 1 + gold 1', '1 copper', '= 20 ingots now', '20 ingots', 'then back to', 'CATALOGUE' }) do
 		expect(text:find(wanted, 1, true), 'picker misses "' .. wanted .. '"')
 	end
 
-	touch(runtime, 10, 10) -- bronze
+	tap(runtime, terminal, 'BRONZE')
 	expect(screenText(terminal):find('3 copper', 1, true), 'bronze recipe not shown')
-	touch(runtime, 70, 22) -- + (20 ingots: a block more)
-	touch(runtime, 55, 30) -- Select
+	tap(runtime, terminal, ' + ', 1, 20) -- 20 ingots: a block more
+	tap(runtime, terminal, ' ACTIVATE ')
 	expect(calls[1] and calls[1]:find('alloy tconstruct:molten_bronze 2610', 1, true), 'select: ' .. tostring(calls[1]))
-	expect(screenText(terminal):find('Change alloy', 1, true), 'the picker must close after Select')
+	expect(screenText(terminal):find('CHANGE ALLOY', 1, true), 'the picker must close after Activate')
 end)
 
 -- ============================================================
@@ -2585,65 +2696,60 @@ end)
 test('display: Stock reserves a reservoir; the editor writes and saves a recipe; Delete asks twice', function()
 	local calls = {}
 	local screen, runtime, terminal = screenFor(calls)
-	screen:setState(smelteryState({
+	screen:setFluids({ COPPER, GOLD, IRON, TIN, ZINC })
+	show(screen, runtime, smelteryState({
 		reservoirs = { { name = 'drum_0', amount = 0 }, { name = 'drum_1', fluid = GOLD, amount = 500 } },
 		alloyOptions = { { index = 0, result = BRONZE, amount = 360, inputs = { { fluid = COPPER, amount = 270 }, { fluid = TIN, amount = 90 } }, fromStock = 0 } },
 	}))
-	screen:setFluids({ COPPER, GOLD, IRON, TIN, ZINC })
-	runtime:invalidate({ reason = 'state', kind = 'full' })
-	runtime:render()
 
-	touch(runtime, 55, 2) -- "Stock" tab
-	touch(runtime, 4, 17) -- the name of drum_0
+	tap(runtime, terminal, 'STOCK')
+	tap(runtime, terminal, 'drum 0')
 	local text = screenText(terminal)
 	expect(text:find('ASSIGN RESERVOIR', 1, true) and text:find('free (no fluid)', 1, true) and text:find('ALL FLUIDS', 1, true), 'assign panel not shown')
-	-- free, KNOWN, iron, gold, ALL FLUIDS, copper, tin, zinc
-	expect(terminal.line(16):find('tin', 1, true), 'line 16: ' .. terminal.line(16))
-	touch(runtime, 60, 16) -- tin
-	touch(runtime, 56, 33) -- Save
+	tap(runtime, terminal, 'tin', 1, 10, 73)
+	tap(runtime, terminal, ' SAVE ')
 	expect(calls[1] == 'assign drum_0 ' .. TIN, 'assignment not sent: ' .. tostring(calls[1]))
 	expect(not screenText(terminal):find('ASSIGN RESERVOIR', 1, true), 'the panel stays open after Save')
 
-	touch(runtime, 16, 17) -- drum_1, holding gold
-	touch(runtime, 60, 15) -- copper
+	tap(runtime, terminal, 'drum 1')
+	tap(runtime, terminal, 'copper', 1, 10, 73)
 	expect(screenText(terminal):find('Keeps its gold', 1, true), 'no warning for a reservoir holding another fluid')
-	touch(runtime, 64, 33) -- Cancel
+	tap(runtime, terminal, ' CANCEL ')
 	expect(#calls == 1, 'Cancel sent something')
 
-	touch(runtime, 39, 2) -- "Modes" tab
-	touch(runtime, 43, 29) -- Change alloy
-	touch(runtime, 61, 34) -- New
+	tap(runtime, terminal, 'MODES')
+	tap(runtime, terminal, ' CHANGE ALLOY ')
+	tap(runtime, terminal, ' NEW ')
 	text = screenText(terminal)
-	expect(text:find('NEW RECIPE', 1, true) and text:find('cannot save: choose the result', 1, true), 'editor not opened: ' .. terminal.line(28))
-	touch(runtime, 56, 33) -- Save, not ready
+	expect(text:find('NEW RECIPE', 1, true) and text:find('cannot save: choose the result', 1, true), 'editor not opened')
+	tap(runtime, terminal, ' SAVE ')
 	expect(#calls == 1, 'an incomplete recipe was sent')
 
-	-- The result is chosen first: KNOWN, iron, gold, ALL FLUIDS, copper, tin, zinc.
-	touch(runtime, 60, 16) -- zinc
-	touch(runtime, 7, 14) -- ingredient 1: KNOWN, iron, gold, zinc, ALL FLUIDS, copper, tin
-	touch(runtime, 60, 15) -- copper
-	touch(runtime, 7, 16) -- ingredient 2: KNOWN, iron, gold, zinc, copper, ALL FLUIDS, tin
-	touch(runtime, 60, 16) -- tin
-	touch(runtime, 10, 25) -- step 10 mB
-	touch(runtime, 39, 9) -- result + 10
+	tap(runtime, terminal, 'zinc', 1, 10, 73) -- the result
+	tap(runtime, terminal, 'choose...') -- ingredient 1
+	tap(runtime, terminal, 'copper', 1, 10, 73)
+	tap(runtime, terminal, 'choose...') -- ingredient 2
+	tap(runtime, terminal, 'tin', 1, 10, 73)
+	tap(runtime, terminal, ' 10 ', 1, 25) -- step 10 mB
+	tap(runtime, terminal, ' + ') -- result + 10
 	text = screenText(terminal)
 	expect(text:find('ready to save', 1, true) and text:find('makes 100 mB zinc', 1, true), 'recipe not ready: ' .. terminal.line(28) .. ' / ' .. terminal.line(31))
-	touch(runtime, 56, 33) -- Save
+	tap(runtime, terminal, ' SAVE ')
 	expect(calls[2] == 'recipe nil 100 ' .. ZINC .. ' = 90 ' .. COPPER .. ' + 90 ' .. TIN, 'recipe not sent: ' .. tostring(calls[2]))
-	expect(screenText(terminal):find('ALLOY', 1, true) and not screenText(terminal):find('NEW RECIPE', 1, true), 'the editor stays open once saved')
+	expect(screenText(terminal):find('CATALOGUE', 1, true) and not screenText(terminal):find('NEW RECIPE', 1, true), 'the editor stays open once saved')
 
-	touch(runtime, 9, 7) -- bronze in the list
-	touch(runtime, 54, 34) -- Edit
+	tap(runtime, terminal, 'BRONZE')
+	tap(runtime, terminal, ' EDIT ')
 	expect(screenText(terminal):find('EDIT RECIPE', 1, true) and screenText(terminal):find('270 mB', 1, true), 'bronze not in the editor')
-	touch(runtime, 44, 16) -- x on tin
+	tap(runtime, terminal, ' x ', 2) -- x on tin
 	expect(screenText(terminal):find('at least 2 ingredients', 1, true), 'removing an ingredient not checked')
-	touch(runtime, 64, 33) -- Cancel
+	tap(runtime, terminal, ' CANCEL ')
 
-	touch(runtime, 67, 34) -- Delete
+	tap(runtime, terminal, ' DELETE ')
 	expect(screenText(terminal):find('DELETE RECIPE', 1, true) and screenText(terminal):find('step 1 of 2', 1, true), 'delete not confirmed first')
-	touch(runtime, 19, 22) -- Continue
+	tap(runtime, terminal, ' CONTINUE ')
 	expect(#calls == 2 and screenText(terminal):find('step 2 of 2', 1, true), 'deleted after one confirmation')
-	touch(runtime, 19, 22) -- Delete
+	tap(runtime, terminal, ' DELETE ', 2) -- the first is the title
 	expect(calls[3] == 'delete 0 ' .. BRONZE, 'delete not sent: ' .. tostring(calls[3]))
 end)
 
@@ -2704,40 +2810,64 @@ test('controller: reservoir capacities by type, set from the display and saved',
 	expect(c:getState().reservoirs[2].capacity == nil and #configModule.loadControllerConfig('/smeltery/controller.db').capacities == 0, 'auto not restored')
 end)
 
+test('controller: the Smeltery capacity is learnt when it refuses a stock, and saved', function()
+	FILES = {}
+	local fake = fakeTinkers()
+	fake.smeltery({}, 500)
+	fake.caster('tconstruct:table_0', 90, 'tconstruct:ingot_cast')
+	fake.reservoir('drum_0', 16000, { { name = COPPER, amount = 2000 } })
+	fake.chest('minecraft:chest_in', 27)
+	fake.chest('minecraft:chest_out', 27)
+	fake.install()
+
+	local configModule = require('projects.smeltery.controller.config')
+	local c = controllerWith(fake, function(config) config.reservoirs = { 'drum_0' } end)
+	c:setConfigPath('/smeltery/controller.db')
+	expect(c:getState().smelteryCapacity == nil, 'capacity known before anything happened')
+	quiet(function() c:setMode('auto'); c:tick() end)
+	-- The stock comes back whole: the Smeltery takes 500 mB, the drum still holds 1500.
+	expect(c:getState().smelteryCapacity == 500, 'capacity not learnt: ' .. tostring(c:getState().smelteryCapacity))
+	expect(configModule.loadControllerConfig('/smeltery/controller.db').smelteryCapacity == 500, 'capacity not saved')
+end)
+
+test('display: the molten gauge is drawn to the Smeltery capacity once known', function()
+	local screen, runtime, terminal = screenFor({})
+	show(screen, runtime, smelteryState({ fluids = { { name = GOLD, amount = 15300 } } }))
+	expect(screenText(terminal):find('cap ?', 1, true) and terminal.line(7):sub(5, 8):find('15k', 1, true), 'scale without a capacity: ' .. terminal.line(7))
+	show(screen, runtime, smelteryState({ fluids = { { name = GOLD, amount = 15300 } }, smelteryCapacity = 30600 }))
+	expect(screenText(terminal):find('50 % cap', 1, true) and terminal.line(7):sub(5, 8):find('31k', 1, true), 'scale to the capacity: ' .. terminal.line(7))
+end)
+
 test('display: Stock sets a capacity with the arrows, and tells where it comes from', function()
 	local calls = {}
 	local screen, runtime, terminal = screenFor(calls)
-	screen:setState(smelteryState({
+	screen:setFluids({ COPPER })
+	show(screen, runtime, smelteryState({
 		reservoirs = {
 			{ name = 'drum_0', amount = 0 },
 			{ name = 'tank_0', amount = 0, capacity = 32000, capacitySource = 'type' },
 			{ name = 'drum_1', amount = 0, capacity = 256000, capacitySource = 'set' },
 		},
 	}))
-	screen:setFluids({ COPPER })
-	runtime:invalidate({ reason = 'state', kind = 'full' })
-	runtime:render()
-	touch(runtime, 55, 2) -- "Stock" tab
+	tap(runtime, terminal, 'STOCK')
 
-	touch(runtime, 4, 17) -- drum_0: unknown
-	expect(screenText(terminal):find('unknown: set it', 1, true) and terminal.line(31):find('auto ?', 1, true), 'unknown capacity: ' .. terminal.line(31))
-	touch(runtime, 74, 31) -- ▶ 16000
-	touch(runtime, 74, 31) -- ▶ 32000
-	touch(runtime, 74, 31) -- ▶ 64000
-	touch(runtime, 56, 31) -- ◀ 32000
-	expect(terminal.line(31):find('32000 mB', 1, true) and screenText(terminal):find('set by hand', 1, true), 'arrows: ' .. terminal.line(31))
-	touch(runtime, 56, 33) -- Save
+	tap(runtime, terminal, 'drum 0')
+	expect(screenText(terminal):find('unknown: set it', 1, true) and terminal.line(39):find('auto ?', 1, true), 'unknown capacity: ' .. terminal.line(39))
+	for _ = 1, 3 do touch(runtime, 95, 39) end -- > 16000, 32000, 64000
+	touch(runtime, 71, 39) -- < 32000
+	expect(terminal.line(39):find('32000 mB', 1, true) and screenText(terminal):find('set by hand', 1, true), 'arrows: ' .. terminal.line(39))
+	tap(runtime, terminal, ' SAVE ')
 	expect(calls[1] == 'assign drum_0 nil 32000', 'capacity not sent: ' .. tostring(calls[1]))
 
-	touch(runtime, 16, 17) -- tank_0: from its type
-	expect(screenText(terminal):find('from its type', 1, true) and terminal.line(31):find('auto 32000', 1, true), 'type capacity: ' .. terminal.line(31))
-	touch(runtime, 64, 33) -- Cancel
+	tap(runtime, terminal, 'tank 0')
+	expect(screenText(terminal):find('from its type', 1, true) and terminal.line(39):find('auto 32000', 1, true), 'type capacity: ' .. terminal.line(39))
+	tap(runtime, terminal, ' CANCEL ')
 
-	touch(runtime, 28, 17) -- drum_1: set by hand, back to auto with ◀ from the first step
-	expect(terminal.line(31):find('256000 mB', 1, true), 'hand-set capacity not shown: ' .. terminal.line(31))
-	for _ = 1, 4 do touch(runtime, 56, 31) end
-	expect(terminal.line(31):find('auto', 1, true), 'auto not reached: ' .. terminal.line(31))
-	touch(runtime, 56, 33) -- Save
+	tap(runtime, terminal, 'drum 1') -- set by hand, back to auto with < from the first step
+	expect(terminal.line(39):find('256000 mB', 1, true), 'hand-set capacity not shown: ' .. terminal.line(39))
+	for _ = 1, 4 do touch(runtime, 71, 39) end
+	expect(terminal.line(39):find('auto', 1, true), 'auto not reached: ' .. terminal.line(39))
+	tap(runtime, terminal, ' SAVE ')
 	expect(calls[2] == 'assign drum_1 nil', 'auto not sent: ' .. tostring(calls[2]))
 end)
 

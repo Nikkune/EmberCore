@@ -7,7 +7,7 @@ import type {Theme}                                         from '@modules/ui/ty
 import {CONTROLLER_HOSTNAME, Messages, PROTOCOL}            from '../shared/protocol';
 import type {SmelteryState}                                 from '../shared/protocol';
 
-import {SmelteryScreen}                                     from './screen';
+import {PALETTE, SmelteryScreen}                            from './screen';
 
 /** Buttons drawn flat (no border): the screen gives each one its colors. */
 const THEME: Theme = {
@@ -22,10 +22,17 @@ const THEME: Theme = {
 /** @noSelf */
 interface MonitorPeripheral {
 	setTextScale(scale: number): void;
+	setPaletteColour(color: number, rgb: number): void;
+}
+
+/** A CC window: drawn to while hidden, then shown in one go. @noSelf */
+interface WindowBuffer extends TerminalLike {
+	setVisible(visible: boolean): void;
+	setPaletteColour(color: number, rgb: number): void;
 }
 
 /**
- * The screen computer: shows the controller's state on the monitor (text scale 0.5: 79 x 38) and sends
+ * The screen computer: shows the controller's state on the monitor (text scale 0.5: 100 x 52) and sends
  * the commands touched on it. The controller is found by name at start, then by the states it broadcasts.
  */
 export function runDisplay(this: void): void {
@@ -37,6 +44,19 @@ export function runDisplay(this: void): void {
 
 	const monitor = peripheral.wrap(monitorName) as unknown as MonitorPeripheral & TerminalLike;
 	monitor.setTextScale(0.5);
+	// A frame is a clear and hundreds of writes: drawn straight on the monitor, the game can show it half
+	// done (buttons missing, for one frame). Drawn in a hidden window, then shown at once.
+	const [width, height] = monitor.getSize();
+	const buffer = window.create(monitor as unknown as Redirect, 1, 1, width, height, false) as unknown as WindowBuffer;
+	// The neon palette: the window shows its own palette when it is drawn, the monitor keeps it in between.
+	for (const [color, rgb] of PALETTE) {
+		monitor.setPaletteColour(color, rgb);
+		buffer.setPaletteColour(color, rgb);
+	}
+	const flush  = (): void => {
+		buffer.setVisible(true);
+		buffer.setVisible(false);
+	};
 
 	const channel = new Channel({protocol: PROTOCOL, timeoutSeconds: 8});
 	channel.open();
@@ -84,6 +104,7 @@ export function runDisplay(this: void): void {
 		setFormat: (format) => request(Messages.setFormat, format, `${format.format}: ${format.auto ? 'auto' : 'off'}`),
 		setAlloy:  (alloy) => request(Messages.setAlloy, alloy, `alloy ${alloy.result.substring(alloy.result.indexOf(':') + 1)}`),
 		setReservoir: (settings) => request(Messages.setReservoir, settings, 'reservoir saved'),
+		setSmelteryCapacity: (capacity) => request(Messages.setSmelteryCapacity, capacity, capacity.capacity !== undefined ? `capacity ${capacity.capacity} mB` : 'capacity: auto'),
 		saveRecipe:    (recipe, saved) => request(Messages.saveRecipe, recipe, 'recipe saved', () => {
 			saved();
 			loadFluids();
@@ -109,7 +130,7 @@ export function runDisplay(this: void): void {
 		root:        screen.root,
 		eventBus:    new BasicUIEventBus(),
 		theme:       THEME,
-		surface:     ComputerCraftSurfaceAdapter.fromMonitor(monitor),
+		surface:     ComputerCraftSurfaceAdapter.fromMonitor(buffer),
 		surfaceKind: 'monitor',
 	});
 	ui.runtime = runtime;
@@ -132,8 +153,9 @@ export function runDisplay(this: void): void {
 	runtime.schedule(1, everySecond);
 
 	runtime.run({
-		monitor: monitorName,
-		onEvent: (raw) => {
+		monitor:     monitorName,
+		afterRender: flush,
+		onEvent:     (raw) => {
 			if (channel.handleEvent(raw)) redraw();
 		},
 	});

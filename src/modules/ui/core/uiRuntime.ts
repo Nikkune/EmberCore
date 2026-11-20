@@ -93,6 +93,7 @@ export class UIRuntime<TDrawSurface extends RuntimeSurface> implements UIInvalid
 	public run(options: UIRunOptions = {}): void {
 		this.running = true;
 		this.forceRender();
+		options.afterRender?.();
 
 		while (this.running) {
 			const raw: unknown[] = [...os.pullEvent()];
@@ -116,7 +117,7 @@ export class UIRuntime<TDrawSurface extends RuntimeSurface> implements UIInvalid
 				this.dispatch(event);
 			}
 
-			this.render();
+			if (this.render().rendered) options.afterRender?.();
 		}
 	}
 
