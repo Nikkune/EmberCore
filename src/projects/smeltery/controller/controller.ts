@@ -417,6 +417,7 @@ export class Controller {
 		// What an idle caster needed, for the refusal: the smallest casting asked for.
 		let need: {format: string; amount: number} | undefined;
 		let idle = false;
+		let refused: string | undefined;
 
 		for (const caster of candidates) {
 			const state = caster.read();
@@ -427,7 +428,15 @@ export class Controller {
 				this.bringBackForCast(smeltery, request.fluid, amount);
 			}
 
+			const ready = state.status === 'idle' && state.format !== undefined && need !== undefined
+			              && smeltery.amountOf(request.fluid) >= (caster.amountFor(state.format, request.fluid) ?? Infinity);
 			const moved = caster.pour(smeltery, request.fluid);
+
+			// Idle, enough fluid, and it took nothing: that cast has no recipe for this fluid.
+			if (moved === 0 && ready) {
+				this.learnUncastable(caster.name, state.format!, request.fluid);
+				refused = `${caster.name} has no ${state.format!} recipe for ${Controller.shortName(request.fluid)}`;
+			}
 
 			if (moved > 0) {
 				// As in auto: the format at the end, for the log of the display.
@@ -437,7 +446,22 @@ export class Controller {
 			}
 		}
 
-		throw new EmberError(this.castRefusal(smeltery, request, idle, need), 'SMELTERY_ERROR');
+		throw new EmberError(refused ?? this.castRefusal(smeltery, request, idle, need), 'SMELTERY_ERROR');
+	}
+
+	/**
+	 * A caster took nothing of a fluid it was ready for: its format has no casting recipe for that fluid
+	 * (quartz makes no ingot). Remembered in the catalogue (amount 0), so it is never tried again and auto
+	 * mode stores the fluid when no other caster can cast it.
+	 */
+	private learnUncastable(caster: string, format: string, fluid: string): void {
+		if (this.amounts.get(format, fluid) === undefined) return;
+
+		this.amounts.forbid(format, fluid);
+		this.catalogue.castAmounts = this.catalogue.castAmounts.filter((entry) => entry.format !== format || entry.fluid !== fluid);
+		this.catalogue.castAmounts.push({format, amount: 0, fluid});
+		if (this.cataloguePath !== undefined) saveCatalogue(this.catalogue, this.cataloguePath);
+		this.log(`${caster} refused ${Controller.shortName(fluid)}: no ${format} recipe, never cast into ${format} again`);
 	}
 
 	/** Why a manual cast poured nothing: every caster busy, or how much fluid there is against one casting. */
@@ -820,6 +844,8 @@ export class Controller {
 
 				const moved  = caster.pourPlanned(smeltery, action.fluid, action.amount);
 				const format = this.lastRead?.casters.find((view) => view.name === caster.name)?.format;
+				// Planned on an idle caster with enough fluid: taking nothing means no recipe.
+				if (moved === 0 && format !== undefined) this.learnUncastable(caster.name, format, action.fluid);
 				if (moved > 0) this.worked = true;
 				if (moved > 0) this.log(`poured ${moved} mB ${Controller.shortName(action.fluid)} into ${caster.name}${format !== undefined ? ` (${format})` : ''}`);
 

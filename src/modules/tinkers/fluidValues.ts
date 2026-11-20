@@ -8,7 +8,10 @@ export const FluidValues = {
 /** What a caster produces, named after its cast: 'ingot' for tconstruct:ingot_cast, 'block' for an empty basin. */
 export type CastFormat = string;
 
-/** Fluid one casting of `format` needs; with `fluid`, only for that fluid (an exception to the format's amount). */
+/**
+ * Fluid one casting of `format` needs; with `fluid`, only for that fluid (an exception to the format's
+ * amount). An amount of 0 with a fluid: that format has no recipe for it (quartz makes no ingot).
+ */
 export interface CastAmount {
 	format: CastFormat;
 	amount: number;
@@ -38,6 +41,11 @@ export class CastAmounts {
 		}
 	}
 
+	/** `format` has no recipe for `fluid`: get() answers undefined for them from now on. */
+	public forbid(format: CastFormat, fluid: string): void {
+		this.byFluid.set(CastAmounts.key(format, fluid), 0);
+	}
+
 	private static key(format: CastFormat, fluid: string): string {
 		return `${format}|${fluid}`;
 	}
@@ -47,7 +55,7 @@ export class CastAmounts {
 
 		if (fluid !== undefined) {
 			const exception = this.byFluid.get(CastAmounts.key(format, fluid));
-			if (exception !== undefined) return exception;
+			if (exception !== undefined) return exception > 0 ? exception : undefined;
 		}
 
 		return this.byFormat.get(format);
