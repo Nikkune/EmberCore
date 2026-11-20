@@ -1064,6 +1064,17 @@ test('tinkers: collect moves the result to the output, Smeltery insert and melti
 	expect(input.items.slots[3].count == 3, 'input not decremented')
 end)
 
+test('tinkers: a cast amount of 0 means no recipe: the format cannot take that fluid', function()
+	local amounts = new(tinkers.CastAmounts, {
+		{ format = 'ingot', amount = 90 },
+		{ format = 'ingot', amount = 0, fluid = 'tconstruct:molten_quartz' },
+	})
+	expect(amounts:get('ingot', 'tconstruct:molten_iron') == 90, 'iron ingot')
+	expect(amounts:get('ingot', 'tconstruct:molten_quartz') == nil, 'quartz has no ingot recipe')
+	amounts:forbid('ingot', 'tconstruct:molten_gold')
+	expect(amounts:get('ingot', 'tconstruct:molten_gold') == nil, 'forbid: gold no longer cast into ingots')
+end)
+
 test('tinkers: MaterialMap finds the fluid from tags, refuses doubtful items', function()
 	local map = new(tinkers.MaterialMap, {
 		overrides = { { item = 'minecraft:obsidian', fluid = 'tconstruct:molten_obsidian' } },
@@ -1434,6 +1445,17 @@ local tableIdle = { name = 'table_0', state = { status = 'idle', format = 'ingot
 local nuggetIdle = { name = 'table_1', state = { status = 'idle', format = 'nugget', amount = 0 } }
 local gearIdle = { name = 'table_2', state = { status = 'idle', format = 'gear', amount = 0 } }
 local basinBlocked = { name = 'basin_1', state = { status = 'blocked', format = 'block', amount = 0 } }
+
+test('planner: auto sends at once to the reservoirs a fluid no caster there can cast', function()
+	local GLASS = 'tconstruct:molten_glass'
+	local s = snapshot({ fluids = { { name = GLASS, amount = 300 }, { name = IRON, amount = 50 } }, casters = { gearIdle }, storable = { GLASS, IRON } })
+	local context = planContext()
+	context.amounts = new(tinkers.CastAmounts, { { format = 'gear', amount = 360 }, { format = 'gear', amount = 0, fluid = GLASS } })
+	context.formatPriority = { 'block', 'ingot', 'nugget', 'gear' }
+	expect(kinds(planner.planTick('auto', s, context)) == 'store:/glass', 'glass must be stored, iron (a gear later) stays: '
+		.. kinds(planner.planTick('auto', s, context)))
+	expect(kinds(planner.planTick('lock', s, context)) == '', 'lock moves nothing to the reservoirs')
+end)
 
 test('planner: idle does nothing, manual only collects, lock collects and casts but inserts nothing', function()
 	local s = snapshot({
@@ -1884,6 +1906,36 @@ test('controller: manual cast picks an idle caster of the asked format', functio
 	expect(log[#log]:find('%(block%)$'), 'the manual cast log must name the format: ' .. tostring(log[#log]))
 	local ok = pcall(function() quiet(function() c:cast({ fluid = IRON, format = 'block' }) end) end)
 	expect(not ok, 'no idle basin left and only 90 mB: the cast must be refused')
+end)
+
+test('controller: a caster refusing a fluid is learnt, saved, and the fluid then goes to the reservoirs', function()
+	FILES = {}
+	local QUARTZ = 'tconstruct:molten_quartz'
+	local fake = fakeTinkers()
+	fake.smeltery({ { name = QUARTZ, amount = 300 } })
+	local ingots = fake.caster('tconstruct:table_0', 810, 'tconstruct:ingot_cast')
+	local accepts = ingots.fluids.accepts
+	ingots.fluids.accepts = function(name) return name ~= QUARTZ and accepts(name) end
+	local drum = fake.reservoir('drum_0', 4000)
+	fake.chest('minecraft:chest_in', 27)
+	fake.chest('minecraft:chest_out', 27)
+	fake.install()
+
+	local catalogue = require('projects.smeltery.shared.catalogue')
+	local c = controllerWith(fake, function(config) config.reservoirs = { 'drum_0' } end)
+	c:setCataloguePath('/smeltery/catalogue.db')
+	quiet(function() c:setMode('auto'); c:tick() end)
+	local learnt = false
+	for _, entry in ipairs(catalogue.loadCatalogue('/smeltery/catalogue.db').castAmounts) do
+		if entry.format == 'ingot' and entry.fluid == QUARTZ and entry.amount == 0 then learnt = true end
+	end
+	expect(learnt, 'the refusal must be saved in the catalogue')
+	local log = table.concat(c.logLines, '\n')
+	expect(log:find('no ingot recipe', 1, true), 'the refusal must be logged: ' .. log)
+
+	quiet(function() c:tick() end)
+	expect(drum.fluids.fluids[1] and drum.fluids.fluids[1].name == QUARTZ and drum.fluids.fluids[1].amount == 300,
+		'quartz, now uncastable here, must go to the reservoir')
 end)
 
 test('controller: a manual cast of a stored fluid brings back what one casting lacks, never an alloy', function()
