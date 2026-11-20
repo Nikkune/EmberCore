@@ -7,8 +7,8 @@ import type {AlloyOption, CastRequest, DeleteRecipeRequest, InputItemView, Inser
 import {MAX_INGREDIENTS, MODES}              from '../shared/protocol';
 import {recipeProblem}                       from '../shared/recipes';
 
-import {attentionLines, fit, fluidChoices, fluidColor, fluidLabel, formatLabel, Glyph, groupCasters, itemAmount, knownFluids, parseLogLine, placeLabel} from './model';
-import type {CastGroup, FluidChoice, LogKind, LogLine} from './model';
+import {attentionLines, fit, fluidColor, fluidLabel, formatLabel, Glyph, groupCasters, itemAmount, knownFluids, parseLogLine, placeLabel} from './model';
+import type {CastGroup, LogKind, LogLine} from './model';
 import {AbsoluteLayout, PaintComponent, Pixels} from './widgets';
 import type {Painter}                        from './widgets';
 
@@ -150,8 +150,12 @@ const ALLOYS_PER_PAGE = 10;
 const INGOT = 90;
 const ITEMS_PER_PAGE  = 8;
 const RESERVOIRS_PER_PAGE = 15;
-/** Rows of the fluid lists (Stock: reserve a reservoir; recipe editor: choose a fluid). */
-const CHOICE_ROWS = 22;
+/** The fluid picker (full screen): 4 columns of 18 fluids a page, and the KNOWN ones above. */
+const PICKER_COLUMNS = 4;
+const PICKER_ROWS    = 18;
+const PICKER_PAGE    = PICKER_COLUMNS * PICKER_ROWS;
+const PICKER_KNOWN   = 4;
+const LETTERS        = 'abcdefghijklmnopqrstuvwxyz';
 /** Steps of the recipe editor's - and + (mB). */
 const STEPS = [10, 90, 1000];
 /** Steps of the Smeltery capacity's - and + (mB). */
@@ -235,6 +239,8 @@ export class SmelteryScreen {
 	private editor?: EditorState | undefined;
 	private assigning?: Assigning | undefined;
 	private choicePage = 1;
+	/** The fluid picker covers the screen (for the reservoir being assigned, or the slot of the editor). */
+	private choosing = false;
 	/** Every fluid of the catalogue (sorted), once the controller sent it. */
 	private allFluids?: string[] | undefined;
 	private pickIngots = 16;
@@ -276,8 +282,14 @@ export class SmelteryScreen {
 	private readonly itemPages: PaginationComponent;
 	private readonly stockPages: PaginationComponent;
 	private readonly reservoirButtons: ButtonComponent[] = [];
-	private readonly choiceButtons: ButtonComponent[] = [];
+	private readonly pickerButtons: ButtonComponent[] = [];
+	private readonly knownButtons: ButtonComponent[] = [];
+	private readonly letterButtons: ButtonComponent[] = [];
+	private readonly pickerFree: ButtonComponent;
+	private readonly pickerCancel: ButtonComponent;
 	private readonly choicePages: PaginationComponent;
+	private readonly chooseButton: ButtonComponent;
+	private readonly freeButton: ButtonComponent;
 	private readonly capacityLess: ButtonComponent;
 	private readonly capacityMore: ButtonComponent;
 	private readonly panelSave: ButtonComponent;
@@ -386,13 +398,8 @@ export class SmelteryScreen {
 		this.deleteButton  = this.button(' DELETE ', {x: 80, y: 36, width: 8, height: 1}, () => this.askDelete());
 
 		// The fluid list, on the right: Stock (reserve a reservoir) and the recipe editor.
-		for (let row = 0; row < CHOICE_ROWS; row++) {
-			const index = row;
-			this.choiceButtons.push(this.button('', {x: 73, y: 10 + index, width: 24, height: 1}, () => this.pressChoice(index)));
-		}
-		this.choicePages  = this.pagination(CHOICE_ROWS, {x: 70, y: 33, width: 11, height: 1}, (page) => {
-			this.choicePage = page;
-		});
+		this.chooseButton = this.button(' CHOOSE FLUID ', {x: 70, y: 13, width: 14, height: 1}, () => this.openFluidPicker());
+		this.freeButton   = this.button(' FREE ', {x: 86, y: 13, width: 6, height: 1}, () => this.choose(undefined));
 		this.capacityLess = this.button(` ${Glyph.left} `, {x: 70, y: 39, width: 3, height: 1}, () => this.stepCapacity(-1));
 		this.capacityMore = this.button(` ${Glyph.right} `, {x: 94, y: 39, width: 3, height: 1}, () => this.stepCapacity(1));
 		this.panelSave    = this.button(' SAVE ', {x: 70, y: 43, width: 6, height: 1}, () => this.savePanel());
@@ -417,6 +424,27 @@ export class SmelteryScreen {
 			this.stepButtons.push(this.button(label, {x: stepX, y: 25, width: label.length, height: 1}, () => this.setStep(step)));
 			stepX += label.length + 1;
 		}
+
+		// The fluid picker, over the whole screen.
+		for (let cell = 0; cell < PICKER_PAGE; cell++) {
+			const index = cell;
+			const x     = 9 + Math.floor(index / PICKER_ROWS) * 23;
+			this.pickerButtons.push(this.button('', {x, y: 13 + index % PICKER_ROWS, width: 20, height: 1}, () => this.pressPicker(index)));
+		}
+		for (let cell = 0; cell < PICKER_KNOWN; cell++) {
+			const index = cell;
+			this.knownButtons.push(this.button('', {x: 9 + index * 23, y: 10, width: 20, height: 1}, () => this.pressKnown(index)));
+		}
+		for (let letter = 0; letter < LETTERS.length; letter++) {
+			const index = letter;
+			const label = ` ${LETTERS.charAt(index).toUpperCase()} `;
+			this.letterButtons.push(this.button(label, {x: 6 + index * 3, y: 7, width: 3, height: 1}, () => this.jumpTo(index)));
+		}
+		this.pickerFree   = this.button(' FREE ', {x: 86, y: 7, width: 6, height: 1}, () => this.choose(undefined));
+		this.pickerCancel = this.button(' CANCEL ', {x: 87, y: 45, width: 8, height: 1}, () => this.closeFluidPicker());
+		this.choicePages  = this.pagination(PICKER_PAGE, {x: 6, y: 45, width: 11, height: 1}, (page) => {
+			this.choicePage = page;
+		});
 
 		// Added last: drawn and hit above everything else.
 		this.root.place(new PaintComponent({paint: (painter) => this.paintConfirm(painter)}), FULL_SCREEN);
@@ -460,6 +488,7 @@ export class SmelteryScreen {
 		this.editor        = undefined;
 		this.assigning     = undefined;
 		this.capacityDraft = undefined;
+		this.choosing      = false;
 		this.sync();
 	}
 
@@ -529,41 +558,75 @@ export class SmelteryScreen {
 		this.sync();
 	}
 
-	/** Rows of the fluid list shown now: for a reservoir (with "free"), or for the slot of the editor. */
-	private choices(): FluidChoice[] {
+	/** Fluids the foundry is seeing (the Smeltery, the reservoirs, the recipe being written): shown first. */
+	private knownChoices(): string[] {
 		const state = this.state;
 		if (state === undefined) return [];
-
-		if (this.tab === 'stock' && this.assigning !== undefined) return fluidChoices(knownFluids(state), this.allFluids, true);
-
+		// Only the fluids chosen: an undefined in a Lua array would leave no hole and hide the ones after it.
+		const extra: string[] = [];
 		const editor = this.editor;
-		if (this.tab === 'modes' && editor !== undefined && editor.slot !== undefined) {
-			// Only the fluids chosen: an undefined in a Lua array would leave no hole and hide the ones after it.
-			const extra: string[] = [];
+		if (editor !== undefined) {
 			for (const fluid of [editor.result, ...editor.inputs.map((input) => input.fluid)]) if (fluid !== undefined) extra.push(fluid);
-			return fluidChoices(knownFluids(state, extra), this.allFluids, false);
 		}
-		return [];
+		return knownFluids(state, extra);
 	}
 
-	private pageChoices(): FluidChoice[] {
-		const start = (this.choicePage - 1) * CHOICE_ROWS;
-		return this.choices().slice(start, start + CHOICE_ROWS);
+	/** Every fluid (catalogue and known), by name: the pages of the picker. */
+	private pickerFluids(): string[] {
+		const fluids = [...(this.allFluids ?? [])];
+		for (const fluid of this.knownChoices()) if (!fluids.includes(fluid)) fluids.push(fluid);
+		return fluids.sort((a, b) => {
+			const left = fluidLabel(a), right = fluidLabel(b);
+			return left < right ? -1 : left > right ? 1 : a < b ? -1 : a > b ? 1 : 0;
+		});
 	}
 
-	/** The fluid now chosen for what the list fills (undefined: free, or nothing chosen). */
-	private chosenFluid(): string | undefined {
-		if (this.assigning !== undefined) return this.assigning.fluid;
-		const editor = this.editor;
-		if (editor === undefined || editor.slot === undefined) return undefined;
-		return editor.slot === 'result' ? editor.result : editor.inputs[editor.slot]?.fluid;
+	/** The name of a fluid in the picker; two fluids of the same name show their mod. */
+	private pickerLabel(fluid: string, fluids: string[]): string {
+		const label = fluidLabel(fluid);
+		if (fluids.filter((other) => fluidLabel(other) === label).length < 2) return label;
+		const colon = fluid.indexOf(':');
+		return `${label} (${colon > 0 ? fluid.substring(0, colon).split('_')[0]! : '?'})`;
 	}
 
-	private pressChoice(row: number): void {
-		const choice = this.pageChoices()[row];
-		if (choice === undefined || choice.kind === 'header') return;
+	private pagePickerFluids(fluids: string[]): string[] {
+		const start = (this.choicePage - 1) * PICKER_PAGE;
+		return fluids.slice(start, start + PICKER_PAGE);
+	}
 
-		const fluid  = choice.kind === 'fluid' ? choice.fluid : undefined;
+	private openFluidPicker(): void {
+		this.choosing   = true;
+		this.choicePage = 1;
+		this.sync();
+	}
+
+	private closeFluidPicker(): void {
+		this.choosing = false;
+		this.sync();
+	}
+
+	/** A letter: the page where the fluids from that letter on start. */
+	private jumpTo(letter: number): void {
+		const fluids = this.pickerFluids();
+		const wanted = LETTERS.charAt(letter);
+		let index    = fluids.findIndex((fluid) => fluidLabel(fluid).substring(0, 1) >= wanted);
+		if (index < 0) index = fluids.length - 1;
+		this.choicePage = Math.max(1, Math.floor(index / PICKER_PAGE) + 1);
+		this.sync();
+	}
+
+	private pressPicker(cell: number): void {
+		const fluid = this.pagePickerFluids(this.pickerFluids())[cell];
+		if (fluid !== undefined) this.choose(fluid);
+	}
+
+	private pressKnown(cell: number): void {
+		const fluid = this.knownChoices()[cell];
+		if (fluid !== undefined) this.choose(fluid);
+	}
+
+	/** The fluid for the reservoir (undefined: free) or for the slot of the editor; closes the picker. */
+	private choose(fluid: string | undefined): void {
 		const editor = this.editor;
 		if (this.assigning !== undefined) {
 			this.assigning.fluid = fluid;
@@ -572,7 +635,16 @@ export class SmelteryScreen {
 			if (editor.slot === 'result') editor.result = fluid;
 			else if (editor.slot !== undefined && editor.inputs[editor.slot] !== undefined) editor.inputs[editor.slot]!.fluid = fluid;
 		}
+		this.choosing = false;
 		this.sync();
+	}
+
+	/** The fluid now chosen for what the list fills (undefined: free, or nothing chosen). */
+	private chosenFluid(): string | undefined {
+		if (this.assigning !== undefined) return this.assigning.fluid;
+		const editor = this.editor;
+		if (editor === undefined || editor.slot === undefined) return undefined;
+		return editor.slot === 'result' ? editor.result : editor.inputs[editor.slot]?.fluid;
 	}
 
 	private savePanel(): void {
@@ -609,6 +681,7 @@ export class SmelteryScreen {
 	private cancelPanel(): void {
 		this.assigning = undefined;
 		this.editor    = undefined;
+		this.choosing  = false;
 		this.sync();
 	}
 
@@ -626,6 +699,8 @@ export class SmelteryScreen {
 				inputs: option.inputs.map((input) => ({fluid: input.fluid, amount: input.amount})), step: INGOT,
 			}
 		              : {amount: INGOT, inputs: [{amount: INGOT}, {amount: INGOT}], slot: 'result', step: INGOT};
+		// A new recipe starts with its result.
+		this.choosing   = option === undefined;
 		this.choicePage = 1;
 		this.sync();
 	}
@@ -633,6 +708,7 @@ export class SmelteryScreen {
 	private pickSlot(slot: 'result' | number): void {
 		if (this.editor === undefined) return;
 		this.editor.slot = slot;
+		this.choosing    = true;
 		this.choicePage  = 1;
 		this.sync();
 	}
@@ -660,6 +736,7 @@ export class SmelteryScreen {
 		if (editor === undefined || editor.inputs.length >= MAX_INGREDIENTS) return;
 		editor.inputs.push({amount: INGOT});
 		editor.slot     = editor.inputs.length - 1;
+		this.choosing   = true;
 		this.choicePage = 1;
 		this.sync();
 	}
@@ -920,6 +997,7 @@ export class SmelteryScreen {
 		}
 		const paginations = [this.castPages, this.itemPages, this.stockPages, this.alloyPages, this.choicePages, this.logPages];
 		for (const pages of paginations) pages.setProps({disabled: modal});
+		if (this.pickerOpen() && this.state !== undefined) this.hideUnderPicker();
 	}
 
 	private syncPicker(picker: boolean): void {
@@ -1060,40 +1138,60 @@ export class SmelteryScreen {
 		this.stepButtons.forEach((button, index) => this.neon(button, shown, undefined, N.purple, editor?.step === STEPS[index]));
 	}
 
-	/** The fluid list on the right (Stock or editor), its pages, and Save / Cancel. */
+	/** The panel on the right (Stock or editor): Choose / Free, capacity, Save / Cancel; and the fluid picker. */
 	private syncChoices(editing: boolean): void {
 		const assigning = this.tab === 'stock' && this.assigning !== undefined && this.state !== undefined;
-		const choices   = this.choices();
-		const listed    = assigning || (editing && this.editor?.slot !== undefined);
+		const picking   = this.pickerOpen() && this.state !== undefined;
 
-		this.choicePages.setProps({visible: listed && choices.length > CHOICE_ROWS, totalItems: choices.length});
-		this.choicePage = Math.min(this.choicePage, Math.max(1, Math.ceil(choices.length / CHOICE_ROWS)));
-
-		const page   = this.pageChoices();
-		const chosen = this.chosenFluid();
-		this.choiceButtons.forEach((button, row) => {
-			const choice = page[row];
-			if (!listed || choice === undefined) {
-				this.show(button, false);
-			}
-			else if (choice.kind === 'header') {
-				this.show(button, true, choice.text.padEnd(24), N.dim, N.bg);
-			}
-			else if (choice.kind === 'free') {
-				this.show(button, true, 'free (no fluid)'.padEnd(24), chosen === undefined ? N.text : N.soft, N.bg);
-			}
-			else {
-				this.show(button, true, fit(fluidLabel(choice.fluid), 24).padEnd(24), choice.fluid === chosen ? N.text : N.soft, N.bg);
-			}
-		});
-
+		this.neon(this.chooseButton, assigning, ' CHOOSE FLUID ', N.cyan, true);
+		this.neon(this.freeButton, assigning, ' FREE ', N.soft, this.assigning?.fluid === undefined);
 		this.neon(this.capacityLess, assigning, undefined, N.cyan, true);
 		this.neon(this.capacityMore, assigning, undefined, N.cyan, true);
 
-		const panel    = assigning || editing;
-		const savable  = assigning || this.editedRecipe().recipe !== undefined;
+		const panel   = assigning || editing;
+		const savable = assigning || this.editedRecipe().recipe !== undefined;
 		this.neon(this.panelSave, panel, ' SAVE ', savable ? N.lime : N.dim, true);
 		this.neon(this.panelCancel, panel, ' CANCEL ', N.soft, false);
+
+		const fluids = picking ? this.pickerFluids() : [];
+		this.choicePage = Math.min(this.choicePage, Math.max(1, Math.ceil(fluids.length / PICKER_PAGE)));
+		// A letter changes the page too: the pagination shows it.
+		this.choicePages.setProps({visible: picking && fluids.length > PICKER_PAGE, totalItems: fluids.length, page: this.choicePage});
+
+		const chosen = this.chosenFluid();
+		const page   = this.pagePickerFluids(fluids);
+		this.pickerButtons.forEach((button, cell) => {
+			const fluid = page[cell];
+			const label = fluid === undefined ? '' : fit(this.pickerLabel(fluid, fluids), 19).padEnd(20);
+			this.show(button, picking && fluid !== undefined, label, fluid === chosen ? N.yellow : N.soft, N.bg);
+		});
+		const known = this.knownChoices();
+		this.knownButtons.forEach((button, cell) => {
+			const fluid = known[cell];
+			const label = fluid === undefined ? '' : fit(this.pickerLabel(fluid, fluids), 19).padEnd(20);
+			this.show(button, picking && fluid !== undefined, label, fluid === chosen ? N.yellow : N.text, N.bg);
+		});
+
+		// The letters of this page are lit; a letter no fluid starts with is dim.
+		const onPage = new Set(page.map((fluid) => fluidLabel(fluid).substring(0, 1)));
+		const used   = new Set(fluids.map((fluid) => fluidLabel(fluid).substring(0, 1)));
+		this.letterButtons.forEach((button, index) => {
+			const letter = LETTERS.charAt(index);
+			this.neon(button, picking, undefined, used.has(letter) ? N.purple : N.dim, onPage.has(letter));
+		});
+		this.neon(this.pickerFree, picking && assigning, ' FREE ', N.soft, chosen === undefined);
+		this.neon(this.pickerCancel, picking, ' CANCEL ', N.soft, false);
+	}
+
+	/** While the fluid picker is open, only it (and the tabs) can be seen and pressed. */
+	private hideUnderPicker(): void {
+		const picker = new Set<ButtonComponent>([...this.pickerButtons, ...this.knownButtons, ...this.letterButtons]);
+		picker.add(this.pickerFree);
+		picker.add(this.pickerCancel);
+		for (const button of this.tabButtons.values()) picker.add(button);
+		for (const button of this.allButtons) if (!picker.has(button)) button.setProps({visible: false});
+		const under = [this.castPages, this.itemPages, this.stockPages, this.alloyPages, this.logPages];
+		for (const pages of under) pages.setProps({visible: false});
 	}
 
 	// ------------------------------------------------------------------ drawing
@@ -1127,6 +1225,12 @@ export class SmelteryScreen {
 		if (state === undefined) {
 			p.text(36, 24, 'Waiting for the controller...', N.cyan);
 			p.text(31, 26, 'Is the foundry computer running main?', N.dim);
+			return;
+		}
+
+		if (this.pickerOpen()) {
+			this.paintFluidPicker(p);
+			this.paintFooter(p, state);
 			return;
 		}
 
@@ -1500,31 +1604,49 @@ export class SmelteryScreen {
 			p.text(6, 28, fit(`cannot save: ${problem ?? '?'}`, 56), N.red);
 		}
 
-		this.bracket(p, 67, 5, 32, 42, N.cyan, 'CHOOSE FLUID');
-		const slot = editor.slot;
-		if (slot === undefined) {
-			p.text(70, 7, 'Touch the result or an', N.dim);
-			p.text(70, 8, 'ingredient to choose it.', N.dim);
-		}
-		else {
-			p.text(70, 7, slot === 'result' ? 'for: the result' : `for: ingredient ${slot + 1}`, N.soft);
-			this.paintChoices(p);
-		}
+		this.bracket(p, 67, 5, 32, 42, N.cyan, 'FLUIDS');
+		p.text(70, 7, 'Touch the result or an', N.dim);
+		p.text(70, 8, 'ingredient: the fluid', N.dim);
+		p.text(70, 9, 'picker opens.', N.dim);
 	}
 
-	/** The fluid list on the right: a mark on the chosen one, the color of each fluid. */
-	private paintChoices(p: Painter): void {
+	/** Is the fluid picker over the screen now. */
+	private pickerOpen(): boolean {
+		if (!this.choosing) return false;
+		if (this.tab === 'stock') return this.assigning !== undefined;
+		return this.tab === 'modes' && this.editor !== undefined && this.editor.slot !== undefined;
+	}
+
+	/** The fluid picker: letters, the KNOWN fluids, then every fluid by name, 4 columns a page. */
+	private paintFluidPicker(p: Painter): void {
+		const editor = this.editor;
+		let target: string;
+		if (this.assigning !== undefined) target = placeLabel(this.assigning.reservoir);
+		else if (editor?.slot === 'result') target = 'the result';
+		else target = `ingredient ${(typeof editor?.slot === 'number' ? editor.slot : 0) + 1}`;
+		this.bracket(p, 3, 5, 96, 43, N.cyan, `CHOOSE FLUID ${Glyph.mid} for ${target}`);
+
+		const fluids = this.pickerFluids();
 		const chosen = this.chosenFluid();
-		this.pageChoices().forEach((choice, row) => {
-			const y = 10 + row;
-			if (choice.kind === 'fluid') {
-				p.fill(70, y, 2, 1, fluidColor(choice.fluid));
-				if (choice.fluid === chosen) p.text(68, y, Glyph.right, N.yellow);
-			}
-			else if (choice.kind === 'free' && chosen === undefined) {
-				p.text(68, y, Glyph.right, N.yellow);
-			}
-		});
+		const mark   = (x: number, y: number, fluid: string): void => {
+			p.fill(x, y, 2, 1, fluidColor(fluid));
+			if (fluid === chosen) p.text(x - 1, y, Glyph.right, N.yellow);
+		};
+
+		p.text(6, 9, 'KNOWN', N.yellow);
+		const known = this.knownChoices();
+		known.slice(0, PICKER_KNOWN).forEach((fluid, index) => mark(6 + index * 23, 10, fluid));
+		if (known.length === 0) p.text(9, 10, 'nothing seen yet', N.dim);
+
+		const page = this.pagePickerFluids(fluids);
+		const from = page[0] !== undefined ? fluidLabel(page[0]).substring(0, 1).toUpperCase() : '';
+		p.text(6, 12, `ALL FLUIDS${from !== '' ? ` ${Glyph.mid} from ${from}` : ''}`, N.dim);
+		page.forEach((fluid, index) => mark(6 + Math.floor(index / PICKER_ROWS) * 23, 13 + index % PICKER_ROWS, fluid));
+		if (this.allFluids === undefined) p.text(9, 13, 'loading...', N.dim);
+
+		const start = (this.choicePage - 1) * PICKER_PAGE;
+		const count = fluids.length > PICKER_PAGE ? `${start + 1}-${start + page.length} of ${fluids.length}` : `${fluids.length} fluids`;
+		p.text(fluids.length > PICKER_PAGE ? 20 : 6, 45, fit(`${count} ${Glyph.mid} a letter jumps to its page`, 60), N.dim);
 	}
 
 	// ------------------------------------------------------------------ manual
@@ -1691,7 +1813,14 @@ export class SmelteryScreen {
 		const now = reservoir?.assigned !== undefined ? `for ${fluidLabel(reservoir.assigned)}` : 'free';
 		p.text(70, 8, fit(`now: ${now}`, 27), N.dim);
 
-		this.paintChoices(p);
+		p.text(70, 10, 'RESERVE FOR', N.dim);
+		if (assigning.fluid !== undefined) {
+			p.fill(70, 11, 2, 1, fluidColor(assigning.fluid));
+			p.text(73, 11, fit(fluidLabel(assigning.fluid), 24), N.text);
+		}
+		else {
+			p.text(70, 11, 'free (any fluid)', N.soft);
+		}
 
 		const holds = reservoir?.fluid;
 		if (holds !== undefined && assigning.fluid !== undefined && assigning.fluid !== holds) {

@@ -1855,6 +1855,8 @@ test('controller: manual cast picks an idle caster of the asked format', functio
 	quiet(function() c:setMode('manual'); c:tick() end)
 	expect(quiet(function() return c:cast({ fluid = IRON, format = 'block' }) end) == 810, 'block not cast')
 	expect(free.fluids.fluids[1] and free.fluids.fluids[1].name == IRON, 'the idle basin was not used')
+	local log = c.logLines
+	expect(log[#log]:find('%(block%)$'), 'the manual cast log must name the format: ' .. tostring(log[#log]))
 	local ok = pcall(function() quiet(function() c:cast({ fluid = IRON, format = 'block' }) end) end)
 	expect(not ok, 'no idle basin left and only 90 mB: the cast must be refused')
 end)
@@ -2705,14 +2707,20 @@ test('display: Stock reserves a reservoir; the editor writes and saves a recipe;
 	tap(runtime, terminal, 'STOCK')
 	tap(runtime, terminal, 'drum 0')
 	local text = screenText(terminal)
-	expect(text:find('ASSIGN RESERVOIR', 1, true) and text:find('free (no fluid)', 1, true) and text:find('ALL FLUIDS', 1, true), 'assign panel not shown')
-	tap(runtime, terminal, 'tin', 1, 10, 73)
+	expect(text:find('ASSIGN RESERVOIR', 1, true) and text:find('free (any fluid)', 1, true), 'assign panel not shown')
+	tap(runtime, terminal, ' CHOOSE FLUID ')
+	text = screenText(terminal)
+	expect(text:find('for drum 0', 1, true) and text:find('KNOWN', 1, true) and text:find('ALL FLUIDS', 1, true), 'fluid picker not shown')
+	expect(not text:find('RESERVOIRS', 1, true), 'the picker must cover the Stock tab')
+	tap(runtime, terminal, 'tin ', 1, 13)
+	expect(terminal.line(11):find('tin', 1, true), 'tin not chosen: ' .. terminal.line(11))
 	tap(runtime, terminal, ' SAVE ')
 	expect(calls[1] == 'assign drum_0 ' .. TIN, 'assignment not sent: ' .. tostring(calls[1]))
 	expect(not screenText(terminal):find('ASSIGN RESERVOIR', 1, true), 'the panel stays open after Save')
 
 	tap(runtime, terminal, 'drum 1')
-	tap(runtime, terminal, 'copper', 1, 10, 73)
+	tap(runtime, terminal, ' CHOOSE FLUID ')
+	tap(runtime, terminal, 'copper', 1, 13)
 	expect(screenText(terminal):find('Keeps its gold', 1, true), 'no warning for a reservoir holding another fluid')
 	tap(runtime, terminal, ' CANCEL ')
 	expect(#calls == 1, 'Cancel sent something')
@@ -2720,16 +2728,20 @@ test('display: Stock reserves a reservoir; the editor writes and saves a recipe;
 	tap(runtime, terminal, 'MODES')
 	tap(runtime, terminal, ' CHANGE ALLOY ')
 	tap(runtime, terminal, ' NEW ')
+	expect(screenText(terminal):find('for the result', 1, true), 'a new recipe must open the picker for its result')
+	tap(runtime, terminal, ' CANCEL ')
 	text = screenText(terminal)
 	expect(text:find('NEW RECIPE', 1, true) and text:find('cannot save: choose the result', 1, true), 'editor not opened')
 	tap(runtime, terminal, ' SAVE ')
 	expect(#calls == 1, 'an incomplete recipe was sent')
 
-	tap(runtime, terminal, 'zinc', 1, 10, 73) -- the result
+	tap(runtime, terminal, 'choose...') -- the result
+	tap(runtime, terminal, 'zinc', 1, 13)
 	tap(runtime, terminal, 'choose...') -- ingredient 1
-	tap(runtime, terminal, 'copper', 1, 10, 73)
+	expect(screenText(terminal):find('for ingredient 1', 1, true), 'picker not opened for ingredient 1')
+	tap(runtime, terminal, 'copper', 1, 13)
 	tap(runtime, terminal, 'choose...') -- ingredient 2
-	tap(runtime, terminal, 'tin', 1, 10, 73)
+	tap(runtime, terminal, 'tin ', 1, 13)
 	tap(runtime, terminal, ' 10 ', 1, 25) -- step 10 mB
 	tap(runtime, terminal, ' + ') -- result + 10
 	text = screenText(terminal)
@@ -2751,6 +2763,35 @@ test('display: Stock reserves a reservoir; the editor writes and saves a recipe;
 	expect(#calls == 2 and screenText(terminal):find('step 2 of 2', 1, true), 'deleted after one confirmation')
 	tap(runtime, terminal, ' DELETE ', 2) -- the first is the title
 	expect(calls[3] == 'delete 0 ' .. BRONZE, 'delete not sent: ' .. tostring(calls[3]))
+end)
+
+test('display: the fluid picker jumps to a letter, and names the mod of two fluids of the same name', function()
+	local calls = {}
+	local screen, runtime, terminal = screenFor(calls)
+	local all = { 'mod_a:molten_ender', 'mod_b:molten_ender' }
+	for code = string.byte('a'), string.byte('z') do
+		for n = 1, 4 do all[#all + 1] = 'mod:molten_' .. string.char(code) .. 'metal' .. n end
+	end
+	screen:setFluids(all)
+	show(screen, runtime, smelteryState({ reservoirs = { { name = 'drum_0', amount = 0 } } }))
+	tap(runtime, terminal, 'STOCK')
+	tap(runtime, terminal, 'drum 0')
+	tap(runtime, terminal, ' CHOOSE FLUID ')
+	local text = screenText(terminal)
+	expect(text:find('ender (mod)', 1, true) and text:find('1-72 of', 1, true), 'first page: homonyms and count')
+	expect(not text:find('tmetal1', 1, true), 't is on the second page')
+	tap(runtime, terminal, ' T ', 1, 7)
+	text = screenText(terminal)
+	expect(text:find('tmetal1', 1, true) and text:find('2/2', 1, true), 'the letter did not jump to its page: ' .. terminal.line(45))
+	tap(runtime, terminal, 'tmetal2')
+	tap(runtime, terminal, ' SAVE ')
+	expect(calls[1] == 'assign drum_0 mod:molten_tmetal2', 'fluid from the jumped page not chosen: ' .. tostring(calls[1]))
+
+	tap(runtime, terminal, 'drum 0')
+	tap(runtime, terminal, ' CHOOSE FLUID ')
+	tap(runtime, terminal, ' FREE ', 1, 7)
+	tap(runtime, terminal, ' SAVE ')
+	expect(calls[2] == 'assign drum_0 nil', 'FREE in the picker: ' .. tostring(calls[2]))
 end)
 
 test('fluids: a capacity comes from what was learnt, then from the hand, then from the type', function()
