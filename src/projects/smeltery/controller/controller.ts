@@ -415,6 +415,9 @@ export class Controller {
 		if (candidates.length === 0) throw new EmberError(`no caster ${request.caster ?? request.format ?? ''}`, 'SMELTERY_ERROR');
 
 		for (const caster of candidates) {
+			const state = caster.read();
+			if (state.status === 'idle') this.bringBackForCast(smeltery, request.fluid, caster.amountFor(state.format, request.fluid));
+
 			const moved = caster.pour(smeltery, request.fluid);
 
 			if (moved > 0) {
@@ -426,6 +429,30 @@ export class Controller {
 		}
 
 		throw new EmberError(`cannot cast ${Controller.shortName(request.fluid)} now (casters busy, or not enough fluid)`, 'SMELTERY_ERROR');
+	}
+
+	/**
+	 * Manual cast of a fluid the Smeltery lacks: what one casting (`need` mB) misses comes back from the
+	 * reservoirs, when they hold enough. Refused when the fluid is not in the Smeltery and would form an
+	 * alloy with what is there.
+	 */
+	private bringBackForCast(smeltery: Smeltery, fluid: string, need: number | undefined): void {
+		const pool = this.pool;
+		if (pool === undefined || need === undefined) return;
+
+		const inside  = smeltery.amountOf(fluid);
+		const missing = need - inside;
+		if (missing <= 0 || pool.stored(fluid) < missing) return;
+
+		if (inside === 0) {
+			const alloy = this.guard.wouldForm(smeltery.fluids().map((stack) => stack.name), fluid);
+			if (alloy !== undefined) {
+				throw new EmberError(`${Controller.shortName(fluid)} would form ${Controller.shortName(alloy.result)} with the Smeltery`, 'SMELTERY_ERROR');
+			}
+		}
+
+		const taken = pool.take(smeltery.drain, fluid, missing);
+		if (taken > 0) this.log(`restored ${taken} mB ${Controller.shortName(fluid)} to cast`);
 	}
 
 	/** Answers the display: state, mode changes, manual commands. Each command replies with the new state. */
