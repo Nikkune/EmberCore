@@ -211,6 +211,13 @@ export function parseLogLine(this: void, line: string): LogLine {
 			return {time, kind: 'store', text: `${fluidLabel(word(3))} ${word(1)} mB > reservoirs (${reasonOf(body)})`};
 		case 'trashed':
 			return {time, kind: 'store', text: `${fluidLabel(word(3))} ${word(1)} mB > trash (from ${words.slice(5).join(' ')})`};
+		case 'injected': {
+			// 'injected 500 mB lava from drum 1 into the Smeltery (forms obsidian)'
+			const into  = words.indexOf('into');
+			const from  = words.slice(5, into > 5 ? into : undefined).join(' ');
+			const forms = body.includes('(forms ') ? `, ${body.substring(body.indexOf('(forms ') + 1, body.length - 1)}` : '';
+			return {time, kind: 'stock', text: `${fluidLabel(word(3))} ${word(1)} mB > Smeltery (from ${placeLabel(from)}${forms})`};
+		}
 		case 'restored':
 			return {time, kind: 'stock', text: `${fluidLabel(word(3))} ${word(1)} mB back ${words.slice(4).join(' ')}`};
 		case 'FORCED':

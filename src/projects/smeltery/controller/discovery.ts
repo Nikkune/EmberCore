@@ -10,6 +10,8 @@ export interface Network {
 	craftCasters: string[];
 	/** The fluid trash can (never among `reservoirs`). */
 	trash?: string;
+	/** The fluid input tank (never among `reservoirs`). */
+	fluidInput?: string;
 	input?: string;
 	output?: string;
 	heatOutput?: string;
@@ -130,18 +132,26 @@ export function discoverNetwork(this: void, config: ControllerConfig): Network {
 	}
 	if (trash !== undefined) network.trash = trash;
 
+	// Optional, configured only: a tank looks like any reservoir.
+	let fluidInput: string | undefined;
+	if (config.fluidInput !== '') {
+		if (peripheral.isPresent(config.fluidInput)) fluidInput = config.fluidInput;
+		else problems.push(`fluid input '${config.fluidInput}' not found on the network`);
+	}
+	if (fluidInput !== undefined) network.fluidInput = fluidInput;
+
 	// Reservoirs: the configured ones, otherwise every other fluid storage (not the Smeltery, its casters,
-	// its fuel tank nor the trash can).
+	// its fuel tank, the trash can nor the fluid input).
 	if (config.reservoirs.length > 0) {
 		for (const name of config.reservoirs) {
-			if (name === trash) continue;
+			if (name === trash || name === fluidInput) continue;
 			if (peripheral.isPresent(name)) network.reservoirs.push(name);
 			else problems.push(`reservoir '${name}' not found on the network`);
 		}
 	}
 	else {
 		for (const name of namesOfType('fluid_storage')) {
-			if (name.startsWith('tconstruct:') || name === fuelTank || name === trash) continue;
+			if (name.startsWith('tconstruct:') || name === fuelTank || name === trash || name === fluidInput) continue;
 			network.reservoirs.push(name);
 		}
 	}

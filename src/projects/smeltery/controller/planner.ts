@@ -76,6 +76,8 @@ export const CRAFT_FORMAT = 'craft';
 
 /** Whether an item (its name and tags) is the input of a craft recipe ('minecraft:apple', '#minecraft:planks'). */
 export function craftInputMatches(this: void, input: string, item: string | undefined, tags: string[]): boolean {
+	// '': a casting onto the empty table (obsidian pane), which needs nothing on it.
+	if (input === '') return item === undefined;
 	if (item === undefined) return false;
 	return input.startsWith('#') ? tags.includes(input.substring(1)) : input === item;
 }
@@ -660,7 +662,7 @@ function takeStock(this: void, snapshot: Snapshot, context: PlanContext, plan: P
 
 /**
  * What to do this tick. Collecting comes first (a blocked caster is freed), then casting, then the input:
- * idle:   nothing;
+ * idle:   collect only (a casting still cooling when the mode changed leaves its caster), nothing else;
  * manual: collect, the orders of the queue, INSERT READY; the rest comes from the display;
  * lock:   collect and cast, nothing new goes in;
  * drain:  collect, every fluid to the reservoirs;
@@ -674,9 +676,8 @@ function takeStock(this: void, snapshot: Snapshot, context: PlanContext, plan: P
 export function planTick(this: void, mode: Mode, snapshot: Snapshot, context: PlanContext): Plan {
 	const plan: Plan = {actions: [], waiting: [], alerts: []};
 
-	if (mode === 'idle') return plan;
-
 	collectAll(snapshot, plan);
+	if (mode === 'idle') return plan;
 	if (mode === 'manual') {
 		pourOrders(snapshot, context, plan);
 		if (context.insertReady === true) insertReady(snapshot, context, plan);

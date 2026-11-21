@@ -31,6 +31,11 @@ export interface ControllerConfig {
 	/** The fluid trash can (fluids trashed from the display); empty: the first fluid storage named '...trash...'. */
 	fluidTrash: string;
 	/**
+	 * A tank the player fills by hand (bucket, pipe) whose fluid goes into the Smeltery from the Manual tab
+	 * (INJECT), for alloys made from fluids (lava and water: obsidian); empty: none. Never a reservoir.
+	 */
+	fluidInput: string;
+	/**
 	 * A fuel tank of the Smeltery (a seared tank or gauge with a wired modem); empty: the first one found.
 	 * Its fluid gives the heat items are checked against.
 	 */
@@ -81,6 +86,7 @@ export function defaultControllerConfig(this: void): ControllerConfig {
 		casters:          [],
 		craftCasters:     [],
 		fluidTrash:       '',
+		fluidInput:       '',
 		fuelTank:         '',
 		fuel:             'minecraft:lava',
 		reservoirs:       [],
