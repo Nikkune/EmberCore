@@ -2230,6 +2230,45 @@ test('controller: a fluid is injected from the fluid input or a reservoir; an al
 	expect(not ok, 'an amount must be a whole number of mB')
 end)
 
+test('controller: a tool part on a craft table offers the composite castings; a wrong material drops the order', function()
+	FILES = {}
+	local OBSIDIAN, HANDLE = 'tconstruct:molten_obsidian', 'tconstruct:tool_handle'
+	local labels = require('projects.smeltery.shared.labels')
+	expect(labels.materialLabel('tconstruct:copper#oxidized') == 'oxidized copper' and labels.materialLabel('tconstruct:slimewood#composite') == 'slimewood',
+		'material labels')
+	local fake = fakeTinkers()
+	fake.smeltery({ { name = OBSIDIAN, amount = 4000 } })
+	fake.caster('tconstruct:basin_0', 810)
+	local craft = fake.caster('tconstruct:table_9', 1000, HANDLE)
+	fake.chest('minecraft:chest_in', 27)
+	fake.chest('minecraft:chest_out', 27)
+	fake.install()
+
+	local c = controllerWith(fake, function(config) config.craftCasters = { 'tconstruct:table_9' } end)
+	quiet(function() c:setMode('manual'); c:tick() end)
+	local recipe
+	for _, candidate in ipairs(c:getState().craftCasters[1].recipes) do
+		if candidate.material == 'tconstruct:nahuatl' then recipe = candidate end
+	end
+	expect(recipe and recipe.from == 'tconstruct:wood' and recipe.fluid == OBSIDIAN and recipe.amount == 1000 and recipe.result == HANDLE
+		and recipe.consumed, 'a wooden handle + 1000 mB obsidian: nahuatl handle')
+
+	quiet(function() c:queueCraft({ caster = 'tconstruct:table_9', recipe = recipe.index, count = 1 }) end)
+	expect(c:getState().orders[1].craft.material == 'tconstruct:nahuatl', 'the order must carry its material')
+	quiet(function() c:tick() end)
+	expect(craft.fluids.fluids[1] and craft.fluids.fluids[1].amount == 1000, 'the table must get 1000 mB')
+	local log = table.concat(c.logLines, '\n')
+	expect(log:find('order #1: 1 nahuatl tool handle on tconstruct:table_9 (1000 mB molten_obsidian each)', 1, true), 'not logged: ' .. log)
+
+	-- A handle of another material: the table takes nothing, the order is dropped.
+	craft.fluids.fluids = {}
+	craft.fluids.accepts = function() return false end
+	quiet(function() c:queueCraft({ caster = 'tconstruct:table_9', recipe = recipe.index, count = 1 }) end)
+	quiet(function() c:tick(); c:tick() end)
+	log = table.concat(c.logLines, '\n')
+	expect(log:find('order #2 dropped', 1, true) and c:getState().orders == nil, 'a refused composite must drop its order: ' .. log)
+end)
+
 test('controller: an empty craft table offers the castings without a cast, and a craft order keeps it empty', function()
 	FILES = {}
 	local OBSIDIAN, PANE = 'tconstruct:molten_obsidian', 'tconstruct:obsidian_pane'
@@ -3758,6 +3797,27 @@ test('display: the fluid input and a reservoir are injected; an alloy asks twice
 	tap(runtime, terminal, 'drum')
 	expect(screenText(terminal):find('in manual mode only', 1, true) and not screenText(terminal):find(' INJECT ', 1, true),
 		'no inject outside manual mode')
+end)
+
+test('display: a composite casting names the new material, the one it needs, in the CRAFT view and the queue', function()
+	local calls = {}
+	local screen, runtime, terminal = screenFor(calls)
+	local state = smelteryState({
+		mode = 'manual',
+		craftCasters = { { name = 'tconstruct:table_9', kind = 'table', status = 'idle', amount = 0, item = 'tconstruct:tool_handle', recipes = {
+			{ index = 700, fluid = 'tconstruct:molten_obsidian', amount = 1000, result = 'tconstruct:tool_handle', consumed = true,
+				material = 'tconstruct:nahuatl', from = 'tconstruct:wood' },
+		} } },
+		orders = { {
+			id = 5, fluid = 'tconstruct:molten_obsidian', status = 'pouring', lines = { { format = 'craft', count = 2, done = 1 } },
+			craft = { caster = 'tconstruct:table_9', result = 'tconstruct:tool_handle', material = 'tconstruct:nahuatl' },
+		} },
+	})
+	show(screen, runtime, state)
+	tap(runtime, terminal, 'MANUAL')
+	tap(runtime, terminal, ' CRAFT ')
+	expect(terminal.line(8):find('nahuatl tool handle (wood only)', 1, true), 'the recipe row: ' .. terminal.line(8))
+	expect(screenText(terminal):find('nahuatl tool handle 1/2 on table 9', 1, true), 'the queue row: ' .. terminal.line(33))
 end)
 
 realPrint(('\n%d passed, %d failed'):format(passed, failed))

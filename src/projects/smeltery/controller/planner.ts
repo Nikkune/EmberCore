@@ -70,6 +70,8 @@ export interface CraftJob {
 	result: string;
 	amount: number;
 	consumed: boolean;
+	/** Composite casting: the material the part becomes. */
+	material?: string;
 }
 
 export const CRAFT_FORMAT = 'craft';
