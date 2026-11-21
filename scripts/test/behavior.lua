@@ -936,6 +936,16 @@ local function fakeTinkers()
 	return net
 end
 
+test('tinkers: the casting recipes of a fluid decide its formats; a learnt refusal wins over them', function()
+	local LAPIS = 'tinkers_reforged:molten_lapis'
+	local amounts = new(tinkers.CastAmounts, nil, { [LAPIS] = 'block:900 gear:360 gem:100' })
+	expect(amounts:get('gem', LAPIS) == 100 and amounts:get('block', LAPIS) == 900, 'the recipe amounts')
+	expect(amounts:get('ingot', LAPIS) == nil, 'lapis has no ingot recipe')
+	expect(amounts:get('ingot', 'tconstruct:molten_iron') == 90, 'a fluid with no recipe list keeps the format amount')
+	amounts:forbid('gear', LAPIS)
+	expect(amounts:get('gear', LAPIS) == nil, 'a refusal learnt must win over the recipes')
+end)
+
 test('tinkers: formatOfCast reads gold, sand and red sand casts', function()
 	expect(tinkers.formatOfCast('tconstruct:ingot_cast') == 'ingot', 'ingot_cast')
 	expect(tinkers.formatOfCast('tconstruct:nugget_sand_cast') == 'nugget', 'nugget_sand_cast')
@@ -1470,6 +1480,139 @@ test('planner: idle does nothing, manual only collects, lock collects and casts 
 	expect(auto == 'collect:basin_1 pour:basin_0/iron insert:minecraft:raw_gold/gold', 'auto: ' .. auto)
 end)
 
+local function ingotTable(name, status)
+	return { name = name, state = { status = status or 'idle', format = 'ingot', amount = 0 } }
+end
+
+local function order(id, fluid, lines)
+	local list = {}
+	for i, line in ipairs(lines) do list[i] = { format = line[1], count = line[2], done = line[3] or 0 } end
+	return { id = id, fluid = fluid, lines = list }
+end
+
+local function manualContext(orders)
+	local context = planContext()
+	context.orders = orders
+	return context
+end
+
+test('planner: manual orders run side by side, each free caster takes the oldest order needing its format', function()
+	local s = snapshot({
+		fluids = { { name = IRON, amount = 1000 }, { name = GOLD, amount = 200 } },
+		casters = { basinIdle, ingotTable('table_0'), ingotTable('table_3') },
+	})
+	local plan = planner.planTick('manual', s, manualContext({
+		order(1, IRON, { { 'block', 1 }, { 'ingot', 2 } }),
+		order(2, GOLD, { { 'ingot', 1 } }),
+	}))
+	expect(kinds(plan) == 'pour:basin_0/iron pour:table_0/iron pour:table_3/iron', 'pours: ' .. kinds(plan))
+	expect(plan.actions[1].order.id == 1 and plan.actions[1].order.format == 'block', 'the pour must name its order and format')
+	expect(plan.orders[1].status == 'pouring' and plan.orders[2].status == 'queued', 'statuses: '
+		.. plan.orders[1].status .. ' ' .. plan.orders[2].status)
+
+	-- The block is done: gold gets the second ingot table while iron keeps the first.
+	plan = planner.planTick('manual', s, manualContext({
+		order(1, IRON, { { 'block', 1, 1 }, { 'ingot', 2, 1 } }),
+		order(2, GOLD, { { 'ingot', 1 } }),
+	}))
+	expect(kinds(plan) == 'pour:table_0/iron pour:table_3/gold', 'side by side: ' .. kinds(plan))
+end)
+
+test('planner: a manual order casts what it can, then waits for the missing fluid', function()
+	local s = snapshot({ fluids = { { name = IRON, amount = 100 } }, casters = { ingotTable('table_0'), ingotTable('table_3') } })
+	local plan = planner.planTick('manual', s, manualContext({ order(1, IRON, { { 'ingot', 3 } }) }))
+	expect(kinds(plan) == 'pour:table_0/iron', 'one ingot only: ' .. kinds(plan))
+	expect(plan.orders[1].status == 'waiting' and plan.orders[1].missing == 170, 'waiting for 170 mB: '
+		.. plan.orders[1].status .. ' ' .. tostring(plan.orders[1].missing))
+end)
+
+test('planner: a manual order brings back from the stock what a casting lacks, never an alloy', function()
+	local s = snapshot({ fluids = {}, casters = { ingotTable('table_0') }, stored = { { fluid = IRON, amount = 500 } } })
+	local plan = planner.planTick('manual', s, manualContext({ order(1, IRON, { { 'ingot', 1 } }) }))
+	expect(kinds(plan) == 'restore:/iron' and plan.actions[1].amount == 90 and plan.actions[1].why == 'order',
+		'the missing 90 mB must come back, poured next tick: ' .. kinds(plan))
+	expect(plan.orders[1].status == 'pouring', 'restoring counts as working: ' .. plan.orders[1].status)
+
+	s = snapshot({ fluids = { { name = COPPER, amount = 100 } }, casters = { ingotTable('table_0') }, stored = { { fluid = TIN, amount = 500 } } })
+	plan = planner.planTick('manual', s, manualContext({ order(1, TIN, { { 'ingot', 1 } }) }))
+	expect(kinds(plan) == '', 'tin with copper must not come back: ' .. kinds(plan))
+	expect(plan.orders[1].status == 'waiting' and plan.orders[1].alloy == 'tconstruct:molten_bronze', 'the order must wait for bronze')
+end)
+
+local function craftOrder(id, fluid, count, done, input, consumed)
+	return {
+		id = id, fluid = fluid, lines = { { format = 'craft', count = count, done = done or 0 } },
+		craft = { caster = 'table_9', input = input or 'minecraft:apple', result = 'minecraft:golden_apple', amount = 720, consumed = consumed ~= false },
+	}
+end
+
+local function craftTable(status, item, tags, output)
+	return { name = 'table_9', tags = tags or {}, state = { status = status, cast = item, amount = 0, output = output } }
+end
+
+test('planner: a craft order pours onto the item of its caster, waits for the player after a casting uses it up', function()
+	local s = snapshot({ fluids = { { name = GOLD, amount = 1500 } }, casters = { tableIdle }, craft = { craftTable('idle', 'minecraft:apple') } })
+	local plan = planner.planTick('manual', s, manualContext({ craftOrder(1, GOLD, 2) }))
+	expect(kinds(plan) == 'pour:table_9/gold' and plan.actions[1].amount == 720 and plan.actions[1].order.format == 'craft',
+		'the craft table must get 720 mB of gold: ' .. kinds(plan))
+	expect(plan.orders[1].status == 'pouring', 'pouring: ' .. plan.orders[1].status)
+
+	-- Cast: the apple is gone, the golden apple waits; collected, the order waits for another apple.
+	s.craft = { craftTable('blocked', nil, {}, { name = 'minecraft:golden_apple', count = 1 }) }
+	plan = planner.planTick('manual', s, manualContext({ craftOrder(1, GOLD, 2, 1) }))
+	expect(kinds(plan) == 'collect:table_9', 'collect only: ' .. kinds(plan))
+	expect(plan.orders[1].status == 'waiting' and plan.orders[1].need == 'minecraft:apple', 'waiting for an apple: '
+		.. plan.orders[1].status .. ' ' .. tostring(plan.orders[1].need))
+
+	-- An item that stays (not consumed): collected and poured again in the same tick.
+	s.craft = { craftTable('blocked', 'minecraft:book', {}, { name = 'mod:guide', count = 1 }) }
+	plan = planner.planTick('manual', s, manualContext({ craftOrder(1, GOLD, 2, 1, 'minecraft:book', false) }))
+	expect(kinds(plan) == 'collect:table_9 pour:table_9/gold', 'the book stays, cast again: ' .. kinds(plan))
+
+	-- The wrong item: the order waits; a tag input matches by the tags of the item.
+	s.craft = { craftTable('idle', 'minecraft:stick') }
+	plan = planner.planTick('manual', s, manualContext({ craftOrder(1, GOLD, 1) }))
+	expect(kinds(plan) == '' and plan.orders[1].need == 'minecraft:apple', 'a stick is no apple: ' .. kinds(plan))
+	s.craft = { craftTable('idle', 'minecraft:oak_planks', { 'minecraft:planks' }) }
+	plan = planner.planTick('manual', s, manualContext({ craftOrder(1, GOLD, 1, 0, '#minecraft:planks') }))
+	expect(kinds(plan) == 'pour:table_9/gold', 'oak planks are #minecraft:planks: ' .. kinds(plan))
+end)
+
+test('planner: a craft order brings back its fluid from the stock; other modes never pour into a craft caster', function()
+	local s = snapshot({ fluids = {}, craft = { craftTable('idle', 'minecraft:apple') }, stored = { { fluid = GOLD, amount = 1000 } } })
+	local plan = planner.planTick('manual', s, manualContext({ craftOrder(1, GOLD, 1) }))
+	expect(kinds(plan) == 'restore:/gold' and plan.actions[1].amount == 720, '720 mB must come back: ' .. kinds(plan))
+
+	-- An empty craft basin reads as a block caster: auto must leave it alone, but collects it.
+	s = snapshot({
+		fluids = { { name = IRON, amount = 900 } }, storable = { IRON },
+		craft = { { name = 'basin_9', tags = {}, state = { status = 'idle', format = 'block', amount = 0 } } },
+	})
+	expect(not kinds(planner.planTick('auto', s, planContext())):find('pour', 1, true), 'auto poured into the craft basin')
+	s.craft[1].state = { status = 'blocked', amount = 0, output = { name = 'mod:lavawood', count = 1 } }
+	expect(kinds(planner.planTick('auto', s, planContext())):find('collect:basin_9', 1, true), 'auto must collect the craft basin')
+end)
+
+test('planner: manual orders pour nothing while the output is full; INSERT READY sends only safe items', function()
+	local s = snapshot({ fluids = { { name = IRON, amount = 900 } }, casters = { basinIdle }, outputFree = 0 })
+	local plan = planner.planTick('manual', s, manualContext({ order(1, IRON, { { 'block', 1 } }) }))
+	expect(kinds(plan) == '' and plan.orders[1].status == 'queued', 'output full: ' .. kinds(plan))
+
+	s = snapshot({
+		fluids = { { name = COPPER, amount = 100 } },
+		input = {
+			{ slot = 1, name = 'minecraft:raw_iron', count = 4, fluid = IRON },
+			{ slot = 2, name = 'mod:raw_tin', count = 4, fluid = TIN },
+			{ slot = 3, name = 'mod:raw_gold', count = 2, fluid = GOLD },
+		},
+	})
+	expect(kinds(planner.planTick('manual', s, planContext())) == '', 'manual inserts nothing on its own')
+	local context = planContext()
+	context.insertReady = true
+	local inserted = kinds(planner.planTick('manual', s, context))
+	expect(inserted == 'insert:minecraft:raw_iron/iron insert:mod:raw_gold/gold', 'INSERT READY: ' .. inserted)
+end)
+
 test('planner: only the biggest format a fluid fills, smaller ones once it is below', function()
 	local s = snapshot({
 		fluids = { { name = IRON, amount = 905 }, { name = GOLD, amount = 20 } },
@@ -1908,14 +2051,137 @@ test('controller: manual cast picks an idle caster of the asked format', functio
 	expect(not ok, 'no idle basin left and only 90 mB: the cast must be refused')
 end)
 
+test('controller: a manual order is checked, poured, counted and leaves the queue once done', function()
+	FILES = {}
+	local fake = fakeTinkers()
+	fake.smeltery({ { name = IRON, amount = 2000 } })
+	local basin = fake.caster('tconstruct:basin_0', 810)
+	fake.chest('minecraft:chest_in', 27)
+	fake.chest('minecraft:chest_out', 27)
+	fake.install()
+
+	local c = controllerWith(fake)
+	local ok, err = pcall(function() quiet(function() c:queueOrder({ fluid = IRON, lines = { { format = 'block', count = 1 } } }) end) end)
+	expect(not ok and tostring(err.message or err):find('manual mode', 1, true), 'orders need manual mode: ' .. tostring(err))
+
+	quiet(function() c:setMode('manual'); c:tick() end)
+	ok, err = pcall(function() quiet(function() c:queueOrder({ fluid = IRON, lines = { { format = 'gear', count = 1 } } }) end) end)
+	expect(not ok and tostring(err.message or err):find('no gear cast', 1, true), 'a format with no caster must be refused: ' .. tostring(err))
+
+	quiet(function() c:queueOrder({ fluid = IRON, lines = { { format = 'block', count = 1 }, { format = 'block', count = 1 } } }) end)
+	expect(c:getState().orders[1].lines[1].count == 2, 'the same format twice must be added up')
+	local options = c:getState().castOptions
+	expect(options and options[1].fluid == IRON and options[1].casts[1].format == 'block' and options[1].casts[1].amount == 810,
+		'the state must say what iron can be cast into')
+	quiet(function() c:tick() end)
+	expect(basin.fluids.fluids[1] and basin.fluids.fluids[1].name == IRON, 'the order did not pour')
+	local view = c:getState().orders[1]
+	expect(view.lines[1].done == 1 and view.status == 'pouring', 'one block poured, the basin busy: '
+		.. tostring(view.lines[1].done) .. ' ' .. view.status)
+
+	local second = quiet(function() return c:queueOrder({ fluid = IRON, lines = { { format = 'block', count = 1 } } }) end)
+	quiet(function() c:cancelOrder({ id = second }) end)
+	expect(#c:getState().orders == 1, 'cancel must take the order out')
+
+	fake.cool(basin)
+	quiet(function() c:tick() end)
+	local log = table.concat(c.logLines, '\n')
+	expect(log:find('order #1: 2 block of molten_iron', 1, true), 'order not logged: ' .. log)
+	expect(log:find('order #2 cancelled: 0/1 poured', 1, true), 'cancel not logged: ' .. log)
+	expect(log:find('for #1', 1, true) and log:find('order #1 done: 2 poured', 1, true), 'second block not poured for #1: ' .. log)
+	expect(c:getState().orders == nil, 'a finished order must leave the queue')
+end)
+
+test('controller: craft casters are kept apart, show their recipes, and a craft order waits for its item', function()
+	FILES = {}
+	local APPLE, GOLDEN = 'minecraft:apple', 'minecraft:golden_apple'
+	local fake = fakeTinkers()
+	fake.smeltery({ { name = GOLD, amount = 2000 } })
+	fake.caster('tconstruct:basin_0', 810)
+	local craft = fake.caster('tconstruct:table_9', 1000, APPLE)
+	fake.chest('minecraft:chest_in', 27)
+	local out = fake.chest('minecraft:chest_out', 27)
+	fake.install()
+
+	local c = controllerWith(fake, function(config) config.craftCasters = { 'tconstruct:table_9' } end)
+	quiet(function() c:setMode('manual'); c:tick() end)
+	local state = c:getState()
+	expect(#state.casters == 1 and state.casters[1].name == 'tconstruct:basin_0', 'the craft table must not be a caster')
+	local view = state.craftCasters and state.craftCasters[1]
+	expect(view and view.name == 'tconstruct:table_9' and view.item == APPLE, 'the craft table and its apple must be in the state')
+	local recipe
+	for _, candidate in ipairs(view.recipes) do if candidate.result == GOLDEN then recipe = candidate end end
+	expect(recipe and recipe.fluid == GOLD and recipe.amount == 720 and recipe.consumed, 'apple + 720 mB gold: golden apple')
+
+	local ok, err = pcall(function() quiet(function() c:queueCraft({ caster = 'tconstruct:basin_0', recipe = recipe.index, count = 1 }) end) end)
+	expect(not ok and tostring(err.message or err):find('no craft caster', 1, true), 'a normal caster takes no craft: ' .. tostring(err))
+	quiet(function() c:queueCraft({ caster = 'tconstruct:table_9', recipe = recipe.index, count = 2 }) end)
+	quiet(function() c:tick() end)
+	expect(craft.fluids.fluids[1] and craft.fluids.fluids[1].amount == 720, 'the craft table must get 720 mB')
+
+	-- Cast: the apple is used up, the golden apple waits in the output slot.
+	craft.fluids.fluids = {}
+	craft.items.slots[1] = nil
+	craft.items.slots[2] = { name = GOLDEN, count = 1 }
+	quiet(function() c:tick() end)
+	expect(out.items.slots[1] and out.items.slots[1].name == GOLDEN, 'the golden apple must go to the output')
+	local order = c:getState().orders[1]
+	expect(order.status == 'waiting' and order.craft and order.craft.need == APPLE and order.lines[1].done == 1,
+		'the order must wait for an apple: ' .. order.status .. ' ' .. tostring(order.craft and order.craft.need))
+
+	craft.items.slots[1] = { name = APPLE, count = 1 }
+	quiet(function() c:tick() end)
+	craft.fluids.fluids = {}
+	craft.items.slots[1] = nil
+	craft.items.slots[2] = { name = GOLDEN, count = 1 }
+	quiet(function() c:tick() end)
+	local log = table.concat(c.logLines, '\n')
+	expect(log:find('order #1: 2 golden apple on tconstruct:table_9', 1, true), 'craft order not logged: ' .. log)
+	expect(log:find('order #1 done: 2 golden apple', 1, true), 'craft order not finished: ' .. log)
+	expect(c:getState().orders == nil and out.items.slots[1].count == 2, 'two golden apples, the queue empty')
+end)
+
+test('controller: a fluid goes to the trash can, all of it, from a reservoir or the Smeltery', function()
+	FILES = {}
+	local BLOOD = 'tconstruct:blood'
+	local fake = fakeTinkers()
+	fake.smeltery({ { name = IRON, amount = 300 } })
+	fake.caster('tconstruct:basin_0', 810)
+	local drum = fake.reservoir('drum_0', 4000, { { name = BLOOD, amount = 500 } })
+	local trash = fake.reservoir('trashcans:liquid_trash_can_0', math.huge, {}, 'trashcans:liquid_trash_can')
+	trash.fluids.single = false
+	fake.chest('minecraft:chest_in', 27)
+	fake.chest('minecraft:chest_out', 27)
+	fake.install()
+
+	local c = controllerWith(fake)
+	quiet(function() c:tick() end)
+	local state = c:getState()
+	expect(state.trash == 'trashcans:liquid_trash_can_0', 'the trash can must be found by its name')
+	for _, reservoir in ipairs(state.reservoirs) do
+		expect(reservoir.name ~= 'trashcans:liquid_trash_can_0', 'the trash can must not be a reservoir')
+	end
+
+	expect(quiet(function() return c:trashFluid({ fluid = BLOOD, reservoir = 'drum_0' }) end) == 500, 'all the blood must go')
+	expect(#drum.fluids.fluids == 0, 'the drum must be empty')
+	expect(quiet(function() return c:trashFluid({ fluid = IRON }) end) == 300, 'the iron of the Smeltery must go')
+	expect(#fake.devices['tconstruct:drain_0'].fluids.fluids == 0, 'the Smeltery must be empty')
+	local log = table.concat(c.logLines, '\n')
+	expect(log:find('trashed 500 mB blood from drum_0', 1, true) and log:find('from the Smeltery', 1, true), 'trash not logged: ' .. log)
+
+	local ok, err = pcall(function() quiet(function() c:trashFluid({ fluid = BLOOD, reservoir = 'drum_0' }) end) end)
+	expect(not ok and tostring(err.message or err):find('nothing trashed', 1, true), 'nothing left: must say so: ' .. tostring(err))
+end)
+
 test('controller: a caster refusing a fluid is learnt, saved, and the fluid then goes to the reservoirs', function()
 	FILES = {}
-	local QUARTZ = 'tconstruct:molten_quartz'
+	-- A fluid the modpack recipes do not list: only the refusal tells it has no ingot recipe.
+	local MYSTERY = 'testmod:molten_mystery'
 	local fake = fakeTinkers()
-	fake.smeltery({ { name = QUARTZ, amount = 300 } })
+	fake.smeltery({ { name = MYSTERY, amount = 300 } })
 	local ingots = fake.caster('tconstruct:table_0', 810, 'tconstruct:ingot_cast')
 	local accepts = ingots.fluids.accepts
-	ingots.fluids.accepts = function(name) return name ~= QUARTZ and accepts(name) end
+	ingots.fluids.accepts = function(name) return name ~= MYSTERY and accepts(name) end
 	local drum = fake.reservoir('drum_0', 4000)
 	fake.chest('minecraft:chest_in', 27)
 	fake.chest('minecraft:chest_out', 27)
@@ -1927,14 +2193,14 @@ test('controller: a caster refusing a fluid is learnt, saved, and the fluid then
 	quiet(function() c:setMode('auto'); c:tick() end)
 	local learnt = false
 	for _, entry in ipairs(catalogue.loadCatalogue('/smeltery/catalogue.db').castAmounts) do
-		if entry.format == 'ingot' and entry.fluid == QUARTZ and entry.amount == 0 then learnt = true end
+		if entry.format == 'ingot' and entry.fluid == MYSTERY and entry.amount == 0 then learnt = true end
 	end
 	expect(learnt, 'the refusal must be saved in the catalogue')
 	local log = table.concat(c.logLines, '\n')
 	expect(log:find('no ingot recipe', 1, true), 'the refusal must be logged: ' .. log)
 
 	quiet(function() c:tick() end)
-	expect(drum.fluids.fluids[1] and drum.fluids.fluids[1].name == QUARTZ and drum.fluids.fluids[1].amount == 300,
+	expect(drum.fluids.fluids[1] and drum.fluids.fluids[1].name == MYSTERY and drum.fluids.fluids[1].amount == 300,
 		'quartz, now uncastable here, must go to the reservoir')
 end)
 
@@ -2162,7 +2428,19 @@ local function screenFor(calls)
 	local screen = new(screenModule.SmelteryScreen, {
 		setMode = function(_, mode) calls[#calls + 1] = 'setMode ' .. mode end,
 		insert = function(_, r) calls[#calls + 1] = 'insert ' .. r.slot .. (r.force and ' force' or '') end,
-		cast = function(_, r) calls[#calls + 1] = 'cast ' .. r.fluid .. ' ' .. r.format end,
+		queueOrder = function(_, r, sent)
+			local lines = {}
+			for i, line in ipairs(r.lines) do lines[i] = line.count .. ' ' .. line.format end
+			calls[#calls + 1] = 'order ' .. r.fluid .. ': ' .. table.concat(lines, ', ')
+			sent()
+		end,
+		cancelOrder = function(_, id) calls[#calls + 1] = 'cancel ' .. id end,
+		insertReady = function() calls[#calls + 1] = 'insertReady' end,
+		queueCraft = function(_, r, sent)
+			calls[#calls + 1] = 'craft ' .. r.caster .. ' ' .. r.recipe .. ' x' .. r.count
+			sent()
+		end,
+		trashFluid = function(_, r) calls[#calls + 1] = 'trash ' .. r.fluid .. ' ' .. tostring(r.reservoir) end,
 		setFormat = function(_, r) calls[#calls + 1] = 'format ' .. r.format .. ' ' .. tostring(r.auto) end,
 		setAlloy = function(_, r) calls[#calls + 1] = 'alloy ' .. r.result .. ' ' .. tostring(r.target) .. (r.activate and ' on' or '') end,
 		setReservoir = function(_, r) calls[#calls + 1] = 'assign ' .. r.reservoir .. ' ' .. tostring(r.fluid) .. (r.capacity and (' ' .. r.capacity) or '') end,
@@ -2287,29 +2565,35 @@ test('display: Force asks twice before a forced insert, and can be cancelled', f
 	show(screen, runtime, state)
 	tap(runtime, terminal, 'MANUAL')
 	local text = screenText(terminal)
-	expect(text:find('RAW TIN', 1, true), 'manual tab does not list the input')
-	expect(text:find('MANUAL MODE IS OFF', 1, true) and select(2, text:gsub(' INSERT ', '')) == 1, 'off: banner, and no INSERT button')
+	expect(text:find('MANUAL MODE IS OFF', 1, true) and not text:find('INSERT', 1, true), 'off: banner, and no INSERT button')
 	tap(runtime, terminal, ' SWITCH TO MANUAL ')
-	expect(calls[1] == 'setMode manual', 'switch not asked: ' .. tostring(calls[1]))
+	expect(calls[#calls] == 'setMode manual', 'switch not asked: ' .. tostring(calls[#calls]))
 
 	state.mode = 'manual'
 	show(screen, runtime, state)
-	tap(runtime, terminal, ' INSERT ', 2) -- the first is the frame title
-	expect(calls[2] == 'insert 3', 'insert not asked: ' .. tostring(calls[2]))
+	expect(terminal.line(46):find('2 slots', 1, true) and terminal.line(46):find('1 ready', 1, true) and terminal.line(46):find('1 alloy', 1, true),
+		'the input band: ' .. terminal.line(46))
+	tap(runtime, terminal, ' INSERT READY ')
+	expect(calls[#calls] == 'insertReady', 'INSERT READY not asked: ' .. tostring(calls[#calls]))
+	tap(runtime, terminal, ' DETAILS ')
+	expect(screenText(terminal):find('RAW TIN', 1, true) and screenText(terminal):find('would form bronze', 1, true), 'the detail does not list the input')
+	local before = #calls
+	tap(runtime, terminal, ' INSERT  ')
+	expect(calls[before + 1] == 'insert 3', 'insert not asked: ' .. tostring(calls[before + 1]))
 
-	local fx, fy = tap(runtime, terminal, ' FORCE  ')
+	local fx, fy = tap(runtime, terminal, ' FORCE   ')
 	expect(screenText(terminal):find('step 1 of 2', 1, true) and screenText(terminal):find('bronze', 1, true), 'first confirmation not shown')
-	touch(runtime, 51, 14) -- Insert, outside the dialog: must do nothing
-	expect(#calls == 2, 'a button was pressed while the dialog is open')
+	touch(runtime, 88, 9) -- Insert, outside the dialog: must do nothing
+	expect(#calls == before + 1, 'a button was pressed while the dialog is open')
 	tap(runtime, terminal, ' CONTINUE ')
 	expect(screenText(terminal):find('step 2 of 2', 1, true), 'second confirmation not shown')
-	expect(#calls == 2, 'inserted after a single confirmation')
+	expect(#calls == before + 1, 'inserted after a single confirmation')
 	tap(runtime, terminal, ' FORCE INSERT ', 2) -- the first is the title
-	expect(calls[3] == 'insert 5 force', 'forced insert not asked: ' .. tostring(calls[3]))
+	expect(calls[before + 2] == 'insert 5 force', 'forced insert not asked: ' .. tostring(calls[before + 2]))
 
 	touch(runtime, fx, fy)
 	tap(runtime, terminal, ' CANCEL ')
-	expect(not screenText(terminal):find('FORCE INSERT', 1, true) and #calls == 3, 'cancel did not close the dialog')
+	expect(not screenText(terminal):find('FORCE INSERT', 1, true) and #calls == before + 2, 'cancel did not close the dialog')
 
 	touch(runtime, fx, fy)
 	tap(runtime, terminal, ' CONTINUE ')
@@ -2317,7 +2601,10 @@ test('display: Force asks twice before a forced insert, and can be cancelled', f
 	screen:tick()
 	runtime:invalidate({ reason = 'state', kind = 'full' })
 	runtime:render()
-	expect(not screenText(terminal):find('FORCE INSERT', 1, true) and #calls == 3, 'the second step must expire after 10 s')
+	expect(not screenText(terminal):find('FORCE INSERT', 1, true) and #calls == before + 2, 'the second step must expire after 10 s')
+
+	tap(runtime, terminal, ' BACK ')
+	expect(screenText(terminal):find('QUEUE', 1, true), 'BACK must show the order cards again')
 end)
 
 test('planner: auto empties the stock once the input is done, biggest stock first, one fluid at a time', function()
@@ -2911,24 +3198,27 @@ test('display: a pagination follows its list when it gets shorter', function()
 		for i = 1, n do list[i] = { slot = i, name = 'minecraft:raw_iron', count = 1, fluid = IRON, status = 'ok' } end
 		return list
 	end
-	show(screen, runtime, smelteryState({ mode = 'manual', inputItems = items(20) }))
+	show(screen, runtime, smelteryState({ mode = 'manual', inputItems = items(40) }))
 	tap(runtime, terminal, 'MANUAL')
-	expect(terminal.line(45):find('1/3', 1, true), 'three pages: ' .. terminal.line(45))
-	tap(runtime, terminal, '>', 1, 45)
-	tap(runtime, terminal, '>', 1, 45)
-	expect(terminal.line(45):find('3/3', 1, true), 'not on the last page: ' .. terminal.line(45))
+	tap(runtime, terminal, ' DETAILS ')
+	expect(terminal.line(40):find('1/3', 1, true), 'three pages: ' .. terminal.line(40))
+	tap(runtime, terminal, '>', 1, 40)
+	tap(runtime, terminal, '>', 1, 40)
+	expect(terminal.line(40):find('3/3', 1, true), 'not on the last page: ' .. terminal.line(40))
 
-	-- 12 items left: two pages, the screen shows the last one, and so must the pagination.
-	show(screen, runtime, smelteryState({ mode = 'manual', inputItems = items(12) }))
-	expect(terminal.line(45):find('2/2', 1, true), 'pagination left behind its list: ' .. terminal.line(45))
+	-- 20 items left: two pages, the screen shows the last one, and so must the pagination.
+	show(screen, runtime, smelteryState({ mode = 'manual', inputItems = items(20) }))
+	expect(terminal.line(40):find('2/2', 1, true), 'pagination left behind its list: ' .. terminal.line(40))
 	expect(screenText(terminal):find('RAW IRON', 1, true), 'the page past the end shows no item')
 end)
 
-test('display: the Manual tab lists stored fluids and pages its fluids and casts', function()
+test('display: the Manual tab writes an order (fluid, counts by shape), sends it and shows the queue', function()
 	local calls = {}
 	local screen, runtime, terminal = screenFor(calls)
+	local QUARTZ = 'tconstruct:molten_quartz'
 	local casters = {}
-	for i, format in ipairs({ 'block', 'ingot', 'nugget', 'gear', 'plate', 'rod', 'gem' }) do
+	local formats = { 'block', 'ingot', 'nugget', 'gear', 'plate', 'rod', 'gem', 'large_plate', 'pickaxe_head', 'hammer_head', 'sword_blade', 'tool_rod' }
+	for i, format in ipairs(formats) do
 		casters[i] = { name = 'tconstruct:table_' .. i, kind = 'table', status = 'idle', format = format, amount = 0 }
 	end
 	local reservoirs = {
@@ -2937,29 +3227,71 @@ test('display: the Manual tab lists stored fluids and pages its fluids and casts
 		{ name = 'drum_2', fluid = 'tconstruct:molten_cobalt', amount = 60 },
 		{ name = 'drum_3', fluid = GOLD, amount = 2000 },
 		{ name = 'drum_4', fluid = TIN, amount = 500 },
-		{ name = 'drum_5', fluid = 'tconstruct:molten_quartz', amount = 800 },
+		{ name = 'drum_5', fluid = QUARTZ, amount = 800 },
 		{ name = 'drum_6', amount = 0 },
 	}
-	show(screen, runtime, smelteryState({
+	local state = smelteryState({
 		mode = 'manual', casters = casters, reservoirs = reservoirs,
 		fluids = { { name = COPPER, amount = 270 }, { name = IRON, amount = 90 } },
-	}))
+	})
+	show(screen, runtime, state)
+	state.castOptions = {
+		{ fluid = COPPER, casts = { { format = 'block', amount = 810 }, { format = 'ingot', amount = 90 }, { format = 'gear', amount = 360 } } },
+		{ fluid = QUARTZ, casts = { { format = 'block', amount = 400 }, { format = 'gear', amount = 360 }, { format = 'gem', amount = 100 } } },
+	}
+	show(screen, runtime, state)
 	tap(runtime, terminal, 'MANUAL')
-	local text = screenText(terminal)
-	expect(text:find('iron 90 mB +4000 stored', 1, true), 'iron must show its stock')
-	expect(text:find('cobalt 1500 mB stored', 1, true), 'cobalt (two reservoirs) must be listed as stored')
-	expect(terminal.line(12):find('1/2', 1, true), 'fluids: two pages: ' .. terminal.line(12))
-	expect(terminal.line(25):find('1/2', 1, true), 'casts: two pages: ' .. terminal.line(25))
-	expect(text:find('quartz 800 mB stored', 1, true) and not text:find('tin 500', 1, true), 'stored only, biggest first: tin is the 6th, on page 2')
 
-	tap(runtime, terminal, '>', 1, 12)
-	expect(screenText(terminal):find('tin 500 mB stored', 1, true), 'page 2 of the fluids')
-	tap(runtime, terminal, 'tin 500')
-	tap(runtime, terminal, '>', 1, 25)
-	expect(screenText(terminal):find('rod  ', 1, true), 'page 2 of the casts')
-	tap(runtime, terminal, 'rod  ')
-	tap(runtime, terminal, ' POUR ')
-	expect(calls[#calls]:find('molten_tin', 1, true) and calls[#calls]:find(' rod', 1, true), 'cast not asked: ' .. tostring(calls[#calls]))
+	local text = screenText(terminal)
+	expect(text:find('+4k stored', 1, true), 'iron must show its stock')
+	expect(text:find('1.5k st.', 1, true), 'cobalt (two reservoirs) must be listed as stored')
+	expect(not text:find(' + ', 1, true), 'no count before a fluid is picked')
+	expect(terminal.line(17):find('1/2', 1, true), 'every shape before a fluid is picked, two pages: ' .. terminal.line(17))
+	tap(runtime, terminal, '>', 1, 17)
+	expect(screenText(terminal):find('tool rod', 1, true), 'page 2 of the shapes')
+
+	tap(runtime, terminal, 'copper')
+	text = screenText(terminal)
+	expect(text:find('ORDER ' .. string.char(183) .. ' COPPER', 1, true), 'the order card must name the fluid')
+	local shapes = {}
+	for y = 7, 15 do shapes[#shapes + 1] = terminal.line(y):sub(35) end
+	shapes = table.concat(shapes, '\n')
+	expect(shapes:find('block', 1, true) and shapes:find('gear', 1, true) and shapes:find('ingot', 1, true)
+		and not shapes:find('nugget', 1, true) and not shapes:find('rod', 1, true), 'only the shapes copper casts into: ' .. shapes)
+	expect(not terminal.line(17):find('1/', 1, true), 'three shapes: no pages: ' .. terminal.line(17))
+	tap(runtime, terminal, ' + ', 1, 7)  -- block
+	tap(runtime, terminal, ' + ', 1, 7)
+	tap(runtime, terminal, ' + ', 1, 11) -- ingot
+	text = screenText(terminal)
+	expect(text:find('2 block', 1, true) and text:find('1 ingot', 1, true), 'the order line: ' .. terminal.line(19))
+	expect(text:find('1710 mB copper', 1, true) and text:find('1440 mB: casts what it can, then waits', 1, true), 'needs and short: '
+		.. terminal.line(20) .. ' / ' .. terminal.line(22))
+
+	tap(runtime, terminal, 'SEND')
+	expect(calls[#calls] == 'order ' .. COPPER .. ': 2 block, 1 ingot', 'order not sent: ' .. tostring(calls[#calls]))
+	expect(screenText(terminal):find('nothing yet', 1, true), 'the counts must be cleared once sent')
+
+	tap(runtime, terminal, 'quartz')
+	shapes = {}
+	for y = 7, 15 do shapes[#shapes + 1] = terminal.line(y):sub(35) end
+	shapes = table.concat(shapes, '\n')
+	expect(shapes:find('gem', 1, true) and not shapes:find('ingot', 1, true), 'quartz: gem, never ingot: ' .. shapes)
+
+	state.orders = {
+		{ id = 4, fluid = TIN, lines = { { format = 'ingot', count = 3, done = 1 } }, status = 'waiting', missing = 300 },
+		{ id = 5, fluid = IRON, lines = { { format = 'block', count = 1, done = 0 } }, status = 'pouring' },
+	}
+	show(screen, runtime, state)
+	text = screenText(terminal)
+	expect(text:find('#4', 1, true) and text:find('WAITING', 1, true) and text:find('ingot 1/3', 1, true) and text:find('needs 300 mB', 1, true),
+		'the waiting order: ' .. terminal.line(33))
+	expect(text:find('POURING', 1, true), 'the pouring order: ' .. terminal.line(35))
+	tap(runtime, terminal, ' x ', 2)
+	expect(calls[#calls] == 'cancel 5', 'cancel not asked: ' .. tostring(calls[#calls]))
+
+	state.mode = 'auto'
+	show(screen, runtime, state)
+	expect(screenText(terminal):find('PAUSED', 1, true) and screenText(terminal):find(' x ', 1, true), 'outside manual the queue is paused, still cancellable')
 end)
 
 test('controller: the log keeps 100 lines; a configuration saved with the old 20 gets 100', function()
@@ -3203,6 +3535,71 @@ test('controller: a tick costs few game ticks; actions go at once, a collected c
 	end)
 	parallel.waitForAll = realWait
 	if not ok then error(err, 0) end
+end)
+
+test('display: the CRAFT view casts onto the item of a craft caster; the queue says which item to put', function()
+	local calls = {}
+	local screen, runtime, terminal = screenFor(calls)
+	local state = smelteryState({
+		mode = 'manual',
+		craftCasters = {
+			{ name = 'tconstruct:table_9', kind = 'table', status = 'idle', amount = 0, item = 'minecraft:apple', recipes = {
+				{ index = 4, fluid = GOLD, amount = 720, result = 'minecraft:golden_apple', consumed = true },
+			} },
+			{ name = 'tconstruct:basin_9', kind = 'basin', status = 'idle', amount = 0, recipes = {} },
+		},
+	})
+	show(screen, runtime, state)
+	tap(runtime, terminal, 'MANUAL')
+	tap(runtime, terminal, ' CRAFT ')
+	local text = screenText(terminal)
+	expect(text:find('holds apple', 1, true) and text:find('put an item on the basin', 1, true), 'the craft casters and their items')
+	tap(runtime, terminal, 'golden apple')
+	tap(runtime, terminal, ' + ', 1, 24)
+	text = screenText(terminal)
+	expect(text:find('1440 mB gold', 1, true) and text:find('one apple each', 1, true), 'needs: ' .. terminal.line(21))
+	tap(runtime, terminal, 'SEND')
+	expect(calls[#calls] == 'craft tconstruct:table_9 4 x2', 'craft not sent: ' .. tostring(calls[#calls]))
+
+	state.orders = { {
+		id = 3, fluid = GOLD, status = 'waiting', lines = { { format = 'craft', count = 2, done = 1 } },
+		craft = { caster = 'tconstruct:table_9', result = 'minecraft:golden_apple', need = '#minecraft:planks' },
+	} }
+	show(screen, runtime, state)
+	text = screenText(terminal)
+	expect(text:find('golden apple 1/2 on table 9', 1, true) and text:find('put any planks', 1, true), 'the queue row of a craft order: '
+		.. terminal.line(33))
+	tap(runtime, terminal, ' CAST ')
+	expect(screenText(terminal):find('FLUID', 1, true) and not screenText(terminal):find('holds apple', 1, true), 'back to the shapes')
+end)
+
+test('display: a fluid is trashed from STACK or from a reservoir, after two confirmations', function()
+	local calls = {}
+	local screen, runtime, terminal = screenFor(calls)
+	local state = smelteryState({ trash = 'trashcans:liquid_trash_can_0', reservoirs = {
+		{ name = 'drum_0', fluid = 'tconstruct:blood', amount = 500 },
+	} })
+	show(screen, runtime, state)
+	expect(screenText(terminal):find('touch a fluid to trash it', 1, true), 'STACK must say a fluid can be trashed')
+	tap(runtime, terminal, 'GOLD', 1, 24)
+	expect(screenText(terminal):find('TRASH FLUID', 1, true) and screenText(terminal):find('2700 mB gold', 1, true), 'first step')
+	tap(runtime, terminal, 'CONTINUE')
+	expect(screenText(terminal):find('cannot be undone', 1, true), 'second step')
+	tap(runtime, terminal, ' TRASH ', 1, 28)
+	expect(calls[#calls] == 'trash ' .. GOLD .. ' nil', 'gold not trashed from the Smeltery: ' .. tostring(calls[#calls]))
+
+	tap(runtime, terminal, 'STOCK')
+	tap(runtime, terminal, 'drum')
+	tap(runtime, terminal, ' TRASH ')
+	tap(runtime, terminal, 'CONTINUE')
+	tap(runtime, terminal, ' TRASH ', 1, 28)
+	expect(calls[#calls] == 'trash tconstruct:blood drum_0', 'blood not trashed from the drum: ' .. tostring(calls[#calls]))
+
+	-- Without a trash can, nothing offers to trash.
+	state.trash = nil
+	show(screen, runtime, state)
+	tap(runtime, terminal, 'OVERVIEW')
+	expect(not screenText(terminal):find('trash', 1, true), 'no trash can: no trash')
 end)
 
 realPrint(('\n%d passed, %d failed'):format(passed, failed))

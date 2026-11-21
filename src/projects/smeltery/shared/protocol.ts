@@ -33,6 +33,16 @@ export const Messages = {
 	insert:   'insert',
 	/** Display → controller, request (manual mode): CastRequest. */
 	cast:     'cast',
+	/** Display → controller, request (manual mode): QueueOrderRequest, a manual order joins the queue. */
+	queueOrder:  'queueOrder',
+	/** Display → controller, request: CancelOrderRequest. */
+	cancelOrder: 'cancelOrder',
+	/** Display → controller, request (manual mode): every input slot that is safe goes in. */
+	insertReady: 'insertReady',
+	/** Display → controller, request (manual mode): QueueCraftRequest, a casting onto an item joins the queue. */
+	queueCraft:  'queueCraft',
+	/** Display → controller, request: TrashFluidRequest, a fluid goes to the fluid trash can, all of it. */
+	trashFluid:  'trashFluid',
 	/** Display → controller, request: SetAlloyRequest. */
 	setAlloy: 'setAlloy',
 	/** Display → controller, request: SetFormatRequest. */
@@ -163,8 +173,95 @@ export interface SmelteryState {
 	forecast?: FluidForecast[];
 	/** Stocks too small for any cast auto mode makes (not a problem: they wait for more). */
 	smallStocks?: FluidStack[];
+	/** Manual orders, oldest first (the queue of the Manual tab). */
+	orders?: OrderView[];
+	/**
+	 * For each fluid of the Smeltery and the reservoirs: the formats on the network it can be cast into
+	 * (modpack recipes, minus the refusals learnt), with the mB of one casting. The Manual tab offers those.
+	 */
+	castOptions?: CastOption[];
+	/** The craft table and basin (craftCasters of the config): the item the player put there, its recipes. */
+	craftCasters?: CraftCasterView[];
+	/** The fluid trash can, when there is one: fluids can be trashed from the Stock and Overview tabs. */
+	trash?: string;
 	/** Latest events, newest last. */
 	log: string[];
+}
+
+export interface CastOption {
+	fluid: string;
+	casts: {format: string; amount: number}[];
+}
+
+/** A recipe casting onto the item of a craft caster (apple + 720 mB gold: golden apple). */
+export interface CraftRecipeView {
+	/** Position in the recipe table of the controller: what QueueCraftRequest names. */
+	index: number;
+	fluid: string;
+	/** mB of one casting. */
+	amount: number;
+	result: string;
+	/** The item is used up by each casting (the player puts another one). */
+	consumed: boolean;
+}
+
+/** A craft table or basin: the item on it (put by the player) and what can be cast onto that item. */
+export interface CraftCasterView {
+	name: string;
+	kind: CasterKind;
+	status: CasterStatus;
+	item?: string;
+	fluid?: string;
+	amount: number;
+	recipes: CraftRecipeView[];
+}
+
+/** One format of a manual order: how many castings are asked, and how many were poured. */
+export interface OrderLine {
+	format: string;
+	count: number;
+	done: number;
+}
+
+/**
+ * A manual order as the queue shows it. pouring: a caster is filling for it; waiting: the fluid lacks
+ * (`missing` mB, Smeltery and reservoirs together) or would form `alloy`; queued: its casters are busy.
+ */
+export interface OrderView {
+	id: number;
+	fluid: string;
+	lines: OrderLine[];
+	status: 'pouring' | 'waiting' | 'queued';
+	missing?: number;
+	alloy?: string;
+	/**
+	 * A casting onto an item (its one line has the format 'craft'): the caster, the result, and `need`,
+	 * the item to put on the caster when it is waiting for it.
+	 */
+	craft?: {caster: string; result: string; need?: string};
+}
+
+/** A manual order: castings of one fluid, by format. */
+export interface QueueOrderRequest {
+	fluid: string;
+	lines: {format: string; count: number}[];
+}
+
+export interface CancelOrderRequest {
+	id: number;
+}
+
+/** Manual mode: `count` castings of a recipe (CraftRecipeView.index) onto the item of a craft caster. */
+export interface QueueCraftRequest {
+	caster: string;
+	recipe: number;
+	count: number;
+}
+
+/** All of `fluid` goes to the trash can: from `reservoir`, or from the Smeltery when none is named. */
+export interface TrashFluidRequest {
+	fluid: string;
+	reservoir?: string;
 }
 
 /** Samples of SmelteryState.history: one every this many seconds, this many kept (10 minutes). */

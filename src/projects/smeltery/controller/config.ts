@@ -24,6 +24,13 @@ export interface ControllerConfig {
 	/** Casting tables and basins; empty: every one on the network. */
 	casters: string[];
 	/**
+	 * Tables and basins kept for casting onto an item the player puts there (apple + gold: golden apple),
+	 * from the Manual tab (CRAFT). Never used for other castings; their results go to the output.
+	 */
+	craftCasters: string[];
+	/** The fluid trash can (fluids trashed from the display); empty: the first fluid storage named '...trash...'. */
+	fluidTrash: string;
+	/**
 	 * A fuel tank of the Smeltery (a seared tank or gauge with a wired modem); empty: the first one found.
 	 * Its fluid gives the heat items are checked against.
 	 */
@@ -72,6 +79,8 @@ export function defaultControllerConfig(this: void): ControllerConfig {
 		drain:            '',
 		chute:            '',
 		casters:          [],
+		craftCasters:     [],
+		fluidTrash:       '',
 		fuelTank:         '',
 		fuel:             'minecraft:lava',
 		reservoirs:       [],

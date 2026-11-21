@@ -1,5 +1,5 @@
 import {Inventory}                 from '@core/inventory';
-import type {ItemSummary}          from '@core/inventory';
+import type {ItemDetail, ItemSummary} from '@core/inventory';
 import {Tank}                      from '@core/tank';
 
 import {CastAmounts}               from './fluidValues';
@@ -120,6 +120,11 @@ export class Caster {
 		}
 
 		return format === false ? undefined : format;
+	}
+
+	/** The item in the cast slot with its tags (one more peripheral call), or undefined when it is empty. */
+	public castDetail(): ItemDetail | undefined {
+		return this.inventory.getItem(CAST_SLOT);
 	}
 
 	/** Fluid one casting of `fluid` needs in this format, or undefined when it is unknown. */

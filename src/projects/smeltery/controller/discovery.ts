@@ -6,6 +6,10 @@ export interface Network {
 	drain?: string;
 	chute?: string;
 	casters: string[];
+	/** Tables and basins for casting onto an item (never among `casters`). */
+	craftCasters: string[];
+	/** The fluid trash can (never among `reservoirs`). */
+	trash?: string;
 	input?: string;
 	output?: string;
 	heatOutput?: string;
@@ -67,7 +71,7 @@ function findFuelTank(this: void): string | undefined {
 /** Finds the Smeltery peripherals: configured names first, otherwise the first (or every) one of the right type. */
 export function discoverNetwork(this: void, config: ControllerConfig): Network {
 	const problems: string[] = [];
-	const network: Network   = {casters: [], reservoirs: [], problems};
+	const network: Network   = {casters: [], craftCasters: [], reservoirs: [], problems};
 
 	const drain = pick(config.drain, 'tconstruct:drain', 'Smeltery drain', problems);
 	const chute = pick(config.chute, 'tconstruct:chute', 'Smeltery chute', problems);
@@ -89,15 +93,22 @@ export function discoverNetwork(this: void, config: ControllerConfig): Network {
 		if (unknown !== undefined) network.unknownOutput = unknown;
 	}
 
+	for (const name of config.craftCasters) {
+		if (peripheral.isPresent(name)) network.craftCasters.push(name);
+		else problems.push(`craft caster '${name}' not found on the network`);
+	}
+	const craft = new Set(config.craftCasters);
+
 	if (config.casters.length > 0) {
 		for (const name of config.casters) {
+			if (craft.has(name)) continue;
 			if (peripheral.isPresent(name)) network.casters.push(name);
 			else problems.push(`caster '${name}' not found on the network`);
 		}
 	}
 	else {
 		for (const name of [...namesOfType('tconstruct:table'), ...namesOfType('tconstruct:basin')]) {
-			network.casters.push(name);
+			if (!craft.has(name)) network.casters.push(name);
 		}
 	}
 
@@ -108,17 +119,29 @@ export function discoverNetwork(this: void, config: ControllerConfig): Network {
 	if (config.fuelTank !== '' && fuelTank === undefined) problems.push(`fuel tank '${config.fuelTank}' not found on the network`);
 	if (fuelTank !== undefined) network.fuelTank = fuelTank;
 
-	// Reservoirs: the configured ones, otherwise every other fluid storage (not the Smeltery, its casters
-	// nor its fuel tank).
+	// Optional: without a trash can, fluids cannot be trashed from the display.
+	let trash: string | undefined;
+	if (config.fluidTrash !== '') {
+		if (peripheral.isPresent(config.fluidTrash)) trash = config.fluidTrash;
+		else problems.push(`fluid trash '${config.fluidTrash}' not found on the network`);
+	}
+	else {
+		trash = namesOfType('fluid_storage').find((name) => name.includes('trash'));
+	}
+	if (trash !== undefined) network.trash = trash;
+
+	// Reservoirs: the configured ones, otherwise every other fluid storage (not the Smeltery, its casters,
+	// its fuel tank nor the trash can).
 	if (config.reservoirs.length > 0) {
 		for (const name of config.reservoirs) {
+			if (name === trash) continue;
 			if (peripheral.isPresent(name)) network.reservoirs.push(name);
 			else problems.push(`reservoir '${name}' not found on the network`);
 		}
 	}
 	else {
 		for (const name of namesOfType('fluid_storage')) {
-			if (name.startsWith('tconstruct:') || name === fuelTank) continue;
+			if (name.startsWith('tconstruct:') || name === fuelTank || name === trash) continue;
 			network.reservoirs.push(name);
 		}
 	}

@@ -3,7 +3,7 @@ import type {AlloyRatio}                     from '@modules/tinkers/index';
 import {ButtonComponent, PaginationComponent} from '@modules/ui/components';
 import type {Rect}                           from '@modules/ui/types';
 
-import type {AlloyOption, CastRequest, DeleteRecipeRequest, InputItemView, InsertRequest, Mode, SaveRecipeRequest, SetAlloyRequest, SetReservoirRequest, SetFormatRequest, SetSmelteryCapacityRequest, SmelteryState} from '../shared/protocol';
+import type {AlloyOption, CraftCasterView, CraftRecipeView, DeleteRecipeRequest, InputItemView, QueueCraftRequest, TrashFluidRequest, InsertRequest, Mode, OrderView, QueueOrderRequest, SaveRecipeRequest, SetAlloyRequest, SetReservoirRequest, SetFormatRequest, SetSmelteryCapacityRequest, SmelteryState} from '../shared/protocol';
 import {MAX_INGREDIENTS, MODES}              from '../shared/protocol';
 import {recipeProblem}                       from '../shared/recipes';
 
@@ -60,7 +60,13 @@ type Tab = 'overview' | 'modes' | 'manual' | 'stock' | 'log';
 export interface ScreenActions {
 	setMode(mode: Mode): void;
 	insert(request: InsertRequest): void;
-	cast(request: CastRequest): void;
+	/** `sent` runs once the controller took the order (the counts are then cleared). */
+	queueOrder(request: QueueOrderRequest, sent: () => void): void;
+	cancelOrder(id: number): void;
+	insertReady(): void;
+	/** `sent` runs once the controller took the order. */
+	queueCraft(request: QueueCraftRequest, sent: () => void): void;
+	trashFluid(request: TrashFluidRequest): void;
 	setFormat(request: SetFormatRequest): void;
 	setAlloy(request: SetAlloyRequest): void;
 	setReservoir(request: SetReservoirRequest): void;
@@ -70,8 +76,12 @@ export interface ScreenActions {
 	deleteRecipe(request: DeleteRecipeRequest): void;
 }
 
-/** A two-step confirmation: a forced insert, or deleting a recipe. */
-type Confirm = ({kind: 'force'; item: InputItemView} | {kind: 'delete'; option: AlloyOption}) & {
+/** A two-step confirmation: a forced insert, deleting a recipe, or trashing a fluid (from a reservoir or the Smeltery). */
+type Confirm = (
+	| {kind: 'force'; item: InputItemView}
+	| {kind: 'delete'; option: AlloyOption}
+	| {kind: 'trash'; fluid: string; amount: number; reservoir?: string | undefined}
+) & {
 	step: 1 | 2;
 	/** os.clock() after which the second step is cancelled. */
 	deadline: number;
@@ -145,12 +155,23 @@ const LOG_FILTERS: [LogFilter, string, number][] = [
 ];
 
 const CASTS_PER_PAGE  = 5;
-/** Manual tab, CAST: fluids and formats shown per page. */
-const MANUAL_ROWS     = 5;
+/** Manual tab: fluids of the FLUID card, shapes of the ORDER card (two columns), orders of the queue. */
+const FLUID_ROWS  = 10;
+const FORMAT_ROWS = 5;
+const FORMAT_PAGE = FORMAT_ROWS * 2;
+const ORDER_ROWS  = 5;
+/** Most castings of one shape an order may ask (the controller refuses more). */
+const MAX_COUNT   = 64;
+/** Overview: fluids of STACK shown (top first). */
+const STACK_ROWS  = 4;
+/** CRAFT view: craft casters shown, and recipe rows under each. */
+const CRAFT_CASTERS     = 3;
+const CRAFT_RECIPE_ROWS = 3;
 const ALLOYS_PER_PAGE = 10;
 /** mB of an ingot: the amounts of alloy mode are chosen in ingots. */
 const INGOT = 90;
-const ITEMS_PER_PAGE  = 8;
+/** Manual tab, input detail: slots per page. */
+const ITEMS_PER_PAGE  = 15;
 const RESERVOIRS_PER_PAGE = 15;
 /** The fluid picker (full screen): 4 columns of 18 fluids a page, and the KNOWN ones above. */
 const PICKER_COLUMNS = 4;
@@ -226,12 +247,6 @@ interface ManualFluid {
 	stored: number;
 }
 
-/** "Iron 90 mB", "Iron 90 mB +4000 stored", "Cobalt 1440 mB stored" (only in the reservoirs). */
-function manualFluidLabel(this: void, fluid: ManualFluid): string {
-	if (fluid.amount === 0) return `${fluidLabel(fluid.name)} ${fluid.stored} mB stored`;
-	return `${fluidLabel(fluid.name)} ${fluid.amount} mB${fluid.stored > 0 ? ` +${fluid.stored} stored` : ''}`;
-}
-
 export class SmelteryScreen {
 	public readonly root = new AbsoluteLayout(SCREEN_WIDTH, SCREEN_HEIGHT);
 
@@ -240,8 +255,18 @@ export class SmelteryScreen {
 	private tab: Tab  = 'overview';
 	private castPage  = 1;
 	private itemPage  = 1;
-	private manualFluidPage  = 1;
-	private manualFormatPage = 1;
+	private fluidPage  = 1;
+	private formatPage = 1;
+	private orderPage  = 1;
+	/** Manual tab: the input detail (slot by slot) covers the order cards. */
+	private inputDetails = false;
+	/** Manual tab: castings asked by shape, for the fluid picked. */
+	private readonly counts = new Map<string, number>();
+	/** Manual tab, ORDER card: castings into casts, or onto the item of a craft caster. */
+	private orderView: 'cast' | 'craft' = 'cast';
+	/** CRAFT view: the recipe picked (on its caster), and how many castings. */
+	private craftPick?: {caster: string; index: number} | undefined;
+	private craftCount = 1;
 	private stockPage = 1;
 	private logPage   = 1;
 	private logFilter: LogFilter = 'all';
@@ -263,7 +288,6 @@ export class SmelteryScreen {
 	private pickIngots = 16;
 	private nonstop    = false;
 	private fluid?: string | undefined;
-	private format?: string | undefined;
 	private confirm?: Confirm | undefined;
 	private message?: {text: string; color: number; until: number} | undefined;
 
@@ -272,9 +296,23 @@ export class SmelteryScreen {
 	private readonly modeButtons                   = new Map<Mode, ButtonComponent>();
 	private readonly itemButtons: ButtonComponent[] = [];
 	private readonly fluidButtons: ButtonComponent[] = [];
-	private readonly formatButtons: ButtonComponent[] = [];
+	private readonly countLess: ButtonComponent[] = [];
+	private readonly countMore: ButtonComponent[] = [];
+	private readonly cancelButtons: ButtonComponent[] = [];
+	private readonly craftButtons: ButtonComponent[] = [];
+	private readonly stackButtons: ButtonComponent[] = [];
+	private readonly castViewButton: ButtonComponent;
+	private readonly craftViewButton: ButtonComponent;
+	private readonly craftLess: ButtonComponent;
+	private readonly craftMore: ButtonComponent;
+	private readonly trashButton: ButtonComponent;
 	private readonly autoButtons: ButtonComponent[] = [];
-	private readonly castButton: ButtonComponent;
+	private readonly clearButton: ButtonComponent;
+	private readonly sendButton: ButtonComponent;
+	private readonly insertReadyButton: ButtonComponent;
+	private readonly detailsButton: ButtonComponent;
+	private readonly backButton: ButtonComponent;
+	private readonly detailsReadyButton: ButtonComponent;
 	private readonly switchManual: ButtonComponent;
 	private readonly filterButtons = new Map<LogFilter, ButtonComponent>();
 	private readonly logPages: PaginationComponent;
@@ -297,8 +335,9 @@ export class SmelteryScreen {
 	private readonly selectButton: ButtonComponent;
 	private readonly closePicker: ButtonComponent;
 	private readonly itemPages: PaginationComponent;
-	private readonly manualFluidPages: PaginationComponent;
-	private readonly manualFormatPages: PaginationComponent;
+	private readonly fluidPages: PaginationComponent;
+	private readonly formatPages: PaginationComponent;
+	private readonly orderPages: PaginationComponent;
 	private readonly stockPages: PaginationComponent;
 	private readonly reservoirButtons: ButtonComponent[] = [];
 	private readonly pickerButtons: ButtonComponent[] = [];
@@ -349,6 +388,11 @@ export class SmelteryScreen {
 			const index = row;
 			this.autoButtons.push(this.button('', {x: 91, y: 26 + index * 3, width: 6, height: 1}, () => this.toggleAuto(index)));
 		}
+		// The name of each fluid of STACK: touched, it goes to the trash can (when there is one).
+		for (let row = 0; row < STACK_ROWS; row++) {
+			const index = row;
+			this.stackButtons.push(this.button('', {x: 6, y: 26 + index * 3, width: 24, height: 1}, () => this.askTrashStack(index)));
+		}
 		this.setCapacity        = this.button(' SET CAPACITY ', {x: 6, y: 44, width: 14, height: 1}, () => this.openCapacity());
 		this.capacityLessButton = this.button(' - ', {x: 56, y: 17, width: 3, height: 1}, () => this.stepSmelteryCapacity(-1));
 		this.capacityMoreButton = this.button(' + ', {x: 80, y: 17, width: 3, height: 1}, () => this.stepSmelteryCapacity(1));
@@ -363,29 +407,57 @@ export class SmelteryScreen {
 		this.capacityAuto   = this.button(' AUTO ', {x: 63, y: 34, width: 6, height: 1}, () => this.saveCapacity(true));
 		this.capacityCancel = this.button(' CANCEL ', {x: 72, y: 34, width: 8, height: 1}, () => this.closeCapacity());
 
-		// Manual.
+		// Manual: the FLUID and ORDER cards, the queue, the input band; and the input detail.
 		this.switchManual = this.button(' SWITCH TO MANUAL ', {x: 78, y: 6, width: 18, height: 1}, () => this.actions.setMode('manual'));
+		for (let row = 0; row < FLUID_ROWS; row++) {
+			const index = row;
+			this.fluidButtons.push(this.button('', {x: 8, y: 7 + index * 2, width: 23, height: 1}, () => this.pickFluid(index)));
+		}
+		this.fluidPages = this.pagination(FLUID_ROWS, {x: 11, y: 27, width: 11, height: 1}, (page) => {
+			this.fluidPage = page;
+			this.sync();
+		});
+		for (let cell = 0; cell < FORMAT_PAGE; cell++) {
+			const index = cell;
+			const place = SmelteryScreen.formatPlace(index);
+			this.countLess.push(this.button(' - ', {x: place.x + 20, y: place.y, width: 3, height: 1}, () => this.stepCount(index, -1)));
+			this.countMore.push(this.button(' + ', {x: place.x + 27, y: place.y, width: 3, height: 1}, () => this.stepCount(index, 1)));
+		}
+		this.formatPages = this.pagination(FORMAT_PAGE, {x: 86, y: 17, width: 11, height: 1}, (page) => {
+			this.formatPage = page;
+			this.sync();
+		});
+		this.castViewButton  = this.button(' CAST ', {x: 82, y: 5, width: 6, height: 1}, () => this.setOrderView('cast'));
+		this.craftViewButton = this.button(' CRAFT ', {x: 89, y: 5, width: 7, height: 1}, () => this.setOrderView('craft'));
+		for (let slot = 0; slot < CRAFT_CASTERS * CRAFT_RECIPE_ROWS; slot++) {
+			const index = slot;
+			const place = SmelteryScreen.craftPlace(index);
+			this.craftButtons.push(this.button('', {x: place.x, y: place.y, width: 56, height: 1}, () => this.pickCraft(index)));
+		}
+		this.craftLess   = this.button(' - ', {x: 45, y: 24, width: 3, height: 1}, () => this.stepCraft(-1));
+		this.craftMore   = this.button(' + ', {x: 52, y: 24, width: 3, height: 1}, () => this.stepCraft(1));
+		this.clearButton = this.button(' CLEAR ', {x: 37, y: 26, width: 7, height: 1}, () => this.clearOrder());
+		this.sendButton  = this.button('', {x: 77, y: 26, width: 20, height: 1}, () => this.sendOrder());
+		for (let row = 0; row < ORDER_ROWS; row++) {
+			const index = row;
+			this.cancelButtons.push(this.button(' x ', {x: 94, y: 33 + index * 2, width: 3, height: 1}, () => this.cancelOrder(index)));
+		}
+		this.orderPages = this.pagination(ORDER_ROWS, {x: 84, y: 31, width: 11, height: 1}, (page) => {
+			this.orderPage = page;
+			this.sync();
+		});
+		this.insertReadyButton = this.button(' INSERT READY ', {x: 66, y: 46, width: 14, height: 1}, () => this.actions.insertReady());
+		this.detailsButton     = this.button(` DETAILS ${Glyph.right} `, {x: 83, y: 46, width: 11, height: 1}, () => this.openDetails(true));
 		for (let row = 0; row < ITEMS_PER_PAGE; row++) {
 			const index = row;
-			this.itemButtons.push(this.button('', {x: 50, y: 14 + index * 4, width: 8, height: 1}, () => this.pressItem(index)));
+			this.itemButtons.push(this.button('', {x: 86, y: 9 + index * 2, width: 9, height: 1}, () => this.pressItem(index)));
 		}
-		this.itemPages = this.pagination(ITEMS_PER_PAGE, {x: 6, y: 45, width: 11, height: 1}, (page) => {
+		this.itemPages = this.pagination(ITEMS_PER_PAGE, {x: 6, y: 40, width: 11, height: 1}, (page) => {
 			this.itemPage = page;
-		});
-		this.manualFluidPages = this.pagination(MANUAL_ROWS, {x: 86, y: 12, width: 11, height: 1}, (page) => {
-			this.manualFluidPage = page;
 			this.sync();
 		});
-		this.manualFormatPages = this.pagination(MANUAL_ROWS, {x: 86, y: 25, width: 11, height: 1}, (page) => {
-			this.manualFormatPage = page;
-			this.sync();
-		});
-		for (let row = 0; row < MANUAL_ROWS; row++) {
-			const index = row;
-			this.fluidButtons.push(this.button('', {x: 69, y: 14 + index * 2, width: 28, height: 1}, () => this.pickFluid(index)));
-			this.formatButtons.push(this.button('', {x: 66, y: 27 + index * 2, width: 31, height: 1}, () => this.pickFormat(index)));
-		}
-		this.castButton = this.button('', {x: 66, y: 39, width: 31, height: 1}, () => this.pressCast());
+		this.backButton         = this.button(` ${Glyph.left} BACK `, {x: 6, y: 45, width: 8, height: 1}, () => this.openDetails(false));
+		this.detailsReadyButton = this.button(' INSERT READY ', {x: 66, y: 45, width: 14, height: 1}, () => this.actions.insertReady());
 
 		// Log.
 		LOG_FILTERS.forEach(([filter, label], index) => {
@@ -431,6 +503,7 @@ export class SmelteryScreen {
 		this.capacityMore = this.button(` ${Glyph.right} `, {x: 94, y: 39, width: 3, height: 1}, () => this.stepCapacity(1));
 		this.panelSave    = this.button(' SAVE ', {x: 70, y: 43, width: 6, height: 1}, () => this.savePanel());
 		this.panelCancel  = this.button(' CANCEL ', {x: 79, y: 43, width: 8, height: 1}, () => this.cancelPanel());
+		this.trashButton  = this.button(' TRASH ', {x: 89, y: 43, width: 7, height: 1}, () => this.askTrashReservoir());
 
 		// The recipe editor.
 		this.resultButton = this.button('', {x: 9, y: 9, width: 20, height: 1}, () => this.pickSlot('result'));
@@ -495,7 +568,7 @@ export class SmelteryScreen {
 	/** Called every second: countdowns and the online dot. */
 	public tick(): void {
 		if (this.confirm !== undefined && this.confirm.step === 2 && os.clock() > this.confirm.deadline) {
-			this.notify(`${this.confirm.kind === 'force' ? 'force' : 'delete'} cancelled: not confirmed in time`);
+			this.notify(`${this.confirm.kind} cancelled: not confirmed in time`);
 			this.confirm = undefined;
 		}
 		this.sync();
@@ -516,6 +589,7 @@ export class SmelteryScreen {
 		this.assigning     = undefined;
 		this.capacityDraft = undefined;
 		this.choosing      = false;
+		this.inputDetails  = false;
 		this.sync();
 	}
 
@@ -895,6 +969,13 @@ export class SmelteryScreen {
 			this.confirm = undefined;
 			this.actions.insert({slot: confirm.item.slot, force: true});
 		}
+		else if (confirm.kind === 'trash') {
+			this.confirm = undefined;
+			const request: TrashFluidRequest = {fluid: confirm.fluid};
+			if (confirm.reservoir !== undefined) request.reservoir = confirm.reservoir;
+			this.actions.trashFluid(request);
+			if (confirm.reservoir !== undefined) this.assigning = undefined;
+		}
 		else {
 			this.confirm = undefined;
 			this.picked  = undefined;
@@ -930,20 +1011,76 @@ export class SmelteryScreen {
 		return [...list, ...only];
 	}
 
-	/** The page of manualFluids the CAST panel shows. */
+	/** The page of manualFluids the FLUID card shows. */
 	private fluids(): ManualFluid[] {
-		const start = (this.manualFluidPage - 1) * MANUAL_ROWS;
-		return this.manualFluids().slice(start, start + MANUAL_ROWS);
-	}
-
-	/** The page of cast formats the CAST panel shows. */
-	private manualGroups(): CastGroup[] {
-		const start = (this.manualFormatPage - 1) * MANUAL_ROWS;
-		return this.castGroups().slice(start, start + MANUAL_ROWS);
+		const start = (this.fluidPage - 1) * FLUID_ROWS;
+		return this.manualFluids().slice(start, start + FLUID_ROWS);
 	}
 
 	private castGroups(): CastGroup[] {
 		return groupCasters(this.state?.casters ?? [], this.state?.autoFormats ?? []);
+	}
+
+	/** The shapes an order can ask: the casts on the network that have a recipe for the fluid picked. */
+	private orderFormats(): CastGroup[] {
+		const fluid = this.fluid;
+		return this.castGroups().filter((group) => group.format !== 'no cast' && (fluid === undefined || this.castInfo(group.format, fluid).castable));
+	}
+
+	/** The page of orderFormats the ORDER card shows (two columns of FORMAT_ROWS). */
+	private pageFormats(): CastGroup[] {
+		const start = (this.formatPage - 1) * FORMAT_PAGE;
+		return this.orderFormats().slice(start, start + FORMAT_PAGE);
+	}
+
+	/** ORDER card: the place of the `index`-th shape of the page (its name; - at +20, + at +27). */
+	private static formatPlace(index: number): {x: number; y: number} {
+		return {x: index < FORMAT_ROWS ? 37 : 68, y: 7 + (index % FORMAT_ROWS) * 2};
+	}
+
+	private pageOrders(): OrderView[] {
+		const start = (this.orderPage - 1) * ORDER_ROWS;
+		return (this.state?.orders ?? []).slice(start, start + ORDER_ROWS);
+	}
+
+	/**
+	 * Whether `format` casts `fluid`, and the mB of one casting, from the controller's castOptions (the
+	 * modpack's recipes, minus what it learnt). A fluid it sent nothing for: castable, amount unknown.
+	 */
+	private castInfo(format: string, fluid: string): {castable: boolean; amount?: number} {
+		const option = this.state?.castOptions?.find((candidate) => candidate.fluid === fluid);
+		if (option === undefined) return {castable: true};
+		const cast = option.casts.find((candidate) => candidate.format === format);
+		return cast !== undefined ? {castable: true, amount: cast.amount} : {castable: false};
+	}
+
+	private countOf(format: string): number {
+		return this.counts.get(format) ?? 0;
+	}
+
+	/** The order being written: the shapes with a count that cast the fluid picked. */
+	private orderLines(): {format: string; count: number}[] {
+		const fluid = this.fluid;
+		if (fluid === undefined) return [];
+		return this.orderFormats()
+			.filter((group) => this.countOf(group.format) > 0 && this.castInfo(group.format, fluid).castable)
+			.map((group) => ({format: group.format, count: this.countOf(group.format)}));
+	}
+
+	/** What the order needs (undefined when an amount is unknown), and what the Smeltery and the stock hold. */
+	private orderNeeds(): {needs?: number; have: number; stored: number} {
+		const fluid = this.fluid;
+		const known = this.manualFluids().find((candidate) => candidate.name === fluid);
+		const result: {needs?: number; have: number; stored: number} = {have: known?.amount ?? 0, stored: known?.stored ?? 0};
+		if (fluid === undefined) return result;
+
+		let needs: number | undefined = 0;
+		for (const line of this.orderLines()) {
+			const amount = this.castInfo(line.format, fluid).amount;
+			needs = amount !== undefined && needs !== undefined ? needs + amount * line.count : undefined;
+		}
+		if (needs !== undefined) result.needs = needs;
+		return result;
 	}
 
 	private pickFluid(row: number): void {
@@ -951,8 +1088,120 @@ export class SmelteryScreen {
 		this.sync();
 	}
 
-	private pickFormat(row: number): void {
-		this.format = this.manualGroups()[row]?.format;
+	private stepCount(cell: number, direction: number): void {
+		const group = this.pageFormats()[cell];
+		if (group === undefined || this.fluid === undefined) return;
+		const count = Math.max(0, Math.min(MAX_COUNT, this.countOf(group.format) + direction));
+		if (count === 0) this.counts.delete(group.format);
+		else this.counts.set(group.format, count);
+		this.sync();
+	}
+
+	private clearOrder(): void {
+		this.counts.clear();
+		this.sync();
+	}
+
+	private sendOrder(): void {
+		if (this.orderView === 'craft') {
+			this.sendCraft();
+			return;
+		}
+		const fluid = this.fluid;
+		const lines = this.orderLines();
+		if (fluid === undefined) this.notify('pick a fluid first', N.red);
+		else if (lines.length === 0) this.notify('touch + on a shape first', N.red);
+		else {
+			this.actions.queueOrder({fluid, lines}, () => {
+				this.counts.clear();
+				this.sync();
+			});
+		}
+		this.sync();
+	}
+
+	private setOrderView(view: 'cast' | 'craft'): void {
+		this.orderView = view;
+		this.sync();
+	}
+
+	/** The craft casters the CRAFT view shows (CRAFT_CASTERS at most). */
+	private craftCasters(): CraftCasterView[] {
+		return (this.state?.craftCasters ?? []).slice(0, CRAFT_CASTERS);
+	}
+
+	/** CRAFT view: the place of a recipe row (CRAFT_RECIPE_ROWS under the line of each caster). */
+	private static craftPlace(slot: number): {x: number; y: number} {
+		const caster = Math.floor(slot / CRAFT_RECIPE_ROWS);
+		return {x: 39, y: 8 + caster * (CRAFT_RECIPE_ROWS + 1) + slot % CRAFT_RECIPE_ROWS};
+	}
+
+	/** The recipe of a row of the CRAFT view, with its caster. */
+	private craftAt(slot: number): {caster: CraftCasterView; recipe: CraftRecipeView} | undefined {
+		const caster = this.craftCasters()[Math.floor(slot / CRAFT_RECIPE_ROWS)];
+		const recipe = caster?.recipes[slot % CRAFT_RECIPE_ROWS];
+		return caster !== undefined && recipe !== undefined ? {caster, recipe} : undefined;
+	}
+
+	/** The recipe picked, while its caster still offers it (the item may have been taken off). */
+	private pickedCraft(): {caster: CraftCasterView; recipe: CraftRecipeView} | undefined {
+		const pick   = this.craftPick;
+		const caster = pick !== undefined ? this.state?.craftCasters?.find((candidate) => candidate.name === pick.caster) : undefined;
+		const recipe = caster?.recipes.find((candidate) => candidate.index === pick?.index);
+		return caster !== undefined && recipe !== undefined ? {caster, recipe} : undefined;
+	}
+
+	private pickCraft(slot: number): void {
+		const craft = this.craftAt(slot);
+		if (craft !== undefined) {
+			this.craftPick  = {caster: craft.caster.name, index: craft.recipe.index};
+			this.craftCount = 1;
+		}
+		this.sync();
+	}
+
+	private stepCraft(direction: number): void {
+		this.craftCount = Math.max(1, Math.min(MAX_COUNT, this.craftCount + direction));
+		this.sync();
+	}
+
+	private sendCraft(): void {
+		const craft = this.pickedCraft();
+		if (craft === undefined) {
+			this.notify('pick a recipe first', N.red);
+			this.sync();
+			return;
+		}
+		this.actions.queueCraft({caster: craft.caster.name, recipe: craft.recipe.index, count: this.craftCount}, () => {
+			this.craftCount = 1;
+			this.sync();
+		});
+	}
+
+	/** Overview, STACK: the fluid of that row (top first) goes to the trash can, after two confirmations. */
+	private askTrashStack(row: number): void {
+		const fluid = [...(this.state?.fluids ?? [])].reverse()[row];
+		if (fluid === undefined || this.state?.trash === undefined) return;
+		this.confirm = {kind: 'trash', fluid: fluid.name, amount: fluid.amount, step: 1, deadline: 0};
+		this.sync();
+	}
+
+	/** Stock, ASSIGN panel: what the reservoir holds goes to the trash can, after two confirmations. */
+	private askTrashReservoir(): void {
+		const name      = this.assigning?.reservoir;
+		const reservoir = this.state?.reservoirs.find((candidate) => candidate.name === name);
+		if (reservoir?.fluid === undefined || reservoir.amount <= 0 || this.state?.trash === undefined) return;
+		this.confirm = {kind: 'trash', fluid: reservoir.fluid, amount: reservoir.amount, reservoir: reservoir.name, step: 1, deadline: 0};
+		this.sync();
+	}
+
+	private cancelOrder(row: number): void {
+		const order = this.pageOrders()[row];
+		if (order !== undefined) this.actions.cancelOrder(order.id);
+	}
+
+	private openDetails(open: boolean): void {
+		this.inputDetails = open;
 		this.sync();
 	}
 
@@ -960,10 +1209,6 @@ export class SmelteryScreen {
 	private toggleAuto(row: number): void {
 		const group = this.castGroups()[(this.castPage - 1) * CASTS_PER_PAGE + row];
 		if (group !== undefined && group.format !== 'no cast') this.actions.setFormat({format: group.format, auto: !group.auto});
-	}
-
-	private pressCast(): void {
-		if (this.fluid !== undefined && this.format !== undefined) this.actions.cast({fluid: this.fluid, format: this.format});
 	}
 
 	// ------------------------------------------------------------------ log
@@ -1044,7 +1289,8 @@ export class SmelteryScreen {
 		this.syncLog();
 
 		const confirm = this.confirm;
-		const yes = confirm?.kind === 'delete' ? (confirm.step === 2 ? ' DELETE ' : ' CONTINUE ') : (confirm?.step === 2 ? ' FORCE INSERT ' : ' CONTINUE ');
+		const last = confirm?.kind === 'delete' ? ' DELETE ' : confirm?.kind === 'trash' ? ' TRASH ' : ' FORCE INSERT ';
+		const yes  = confirm?.step === 2 ? last : ' CONTINUE ';
 		this.neon(this.confirmYes, modal, yes, confirm?.step === 2 ? N.red : N.yellow, true);
 		this.neon(this.confirmNo, modal, ' CANCEL ', N.soft, false);
 
@@ -1053,7 +1299,7 @@ export class SmelteryScreen {
 			if (button !== this.confirmYes && button !== this.confirmNo) button.setProps({disabled: modal});
 		}
 		const paginations = [
-			this.castPages, this.itemPages, this.manualFluidPages, this.manualFormatPages,
+			this.castPages, this.itemPages, this.fluidPages, this.formatPages, this.orderPages,
 			this.stockPages, this.alloyPages, this.choicePages, this.logPages,
 		];
 		for (const pages of paginations) pages.setProps({disabled: modal});
@@ -1098,6 +1344,20 @@ export class SmelteryScreen {
 			this.neon(button, shown, group?.auto === true ? ' AUTO ' : ' off  ', group?.auto === true ? N.lime : N.dim, group?.auto === true);
 		});
 
+		// STACK: with a trash can, the name of each fluid is a button (the same text, painted over).
+		const stack    = [...(this.state?.fluids ?? [])].reverse();
+		const trashing = overview && !panel && this.state?.trash !== undefined;
+		this.stackButtons.forEach((button, row) => {
+			const fluid = stack[row];
+			if (!trashing || fluid === undefined) {
+				this.show(button, false);
+				return;
+			}
+			const width = 38 - `${fluid.amount} mB`.length;
+			const label = fit(fluidLabel(fluid.name).toUpperCase(), Math.min(24, width)).padEnd(24);
+			this.show(button, true, label, fluidColor(fluid.name), N.bg);
+		});
+
 		this.neon(this.setCapacity, overview, ' SET CAPACITY ', N.cyan, panel);
 		this.neon(this.capacityLessButton, panel, ' - ', N.cyan, true);
 		this.neon(this.capacityMoreButton, panel, ' + ', N.cyan, true);
@@ -1133,44 +1393,100 @@ export class SmelteryScreen {
 		const state   = this.state;
 		const tab     = this.tab === 'manual' && state !== undefined;
 		const manual  = tab && state.mode === 'manual';
-		const count   = state?.inputItems.length ?? 0;
-		// The input may have shrunk: never a page past the last one.
-		this.itemPage = Math.min(this.itemPage, Math.max(1, Math.ceil(count / ITEMS_PER_PAGE)));
-		const items   = this.pageItems();
-		const fluidCount = this.manualFluids().length;
-		const groupCount = this.castGroups().length;
-		this.manualFluidPage  = Math.min(this.manualFluidPage, Math.max(1, Math.ceil(fluidCount / MANUAL_ROWS)));
-		this.manualFormatPage = Math.min(this.manualFormatPage, Math.max(1, Math.ceil(groupCount / MANUAL_ROWS)));
-		this.manualFluidPages.setProps({visible: tab && fluidCount > MANUAL_ROWS, totalItems: fluidCount, page: this.manualFluidPage});
-		this.manualFormatPages.setProps({visible: tab && groupCount > MANUAL_ROWS, totalItems: groupCount, page: this.manualFormatPage});
-		const groups  = this.manualGroups();
+		const details = manual && this.inputDetails;
+		const compose = manual && !this.inputDetails;
+		const pages   = (count: number, size: number): number => Math.max(1, Math.ceil(count / size));
 
 		this.neon(this.switchManual, tab && !manual, ' SWITCH TO MANUAL ', N.yellow, true);
-		this.itemPages.setProps({visible: tab && count > ITEMS_PER_PAGE, totalItems: count, page: this.itemPage});
-		this.itemButtons.forEach((button, row) => {
-			const item = items[row];
-			if (!manual || item === undefined || item.status === 'unknown') this.show(button, false);
-			else if (item.status === 'ok') this.neon(button, true, ' INSERT ', N.lime, true);
-			else this.neon(button, true, ' FORCE  ', N.red, true);
-		});
 
+		// FLUID: the name of each fluid is its button; the lists may have shrunk (never a page past the end).
+		const fluidCount = this.manualFluids().length;
+		this.fluidPage   = Math.min(this.fluidPage, pages(fluidCount, FLUID_ROWS));
+		this.fluidPages.setProps({visible: compose && fluidCount > FLUID_ROWS, totalItems: fluidCount, page: this.fluidPage});
 		const fluids = this.fluids();
 		this.fluidButtons.forEach((button, row) => {
 			const fluid = fluids[row];
-			const label = fluid === undefined ? '' : fit(manualFluidLabel(fluid), 28);
-			this.show(button, manual && fluid !== undefined, label.padEnd(28), fluid?.name === this.fluid ? N.text : N.soft, N.bg);
+			const label = fluid === undefined ? '' : SmelteryScreen.fluidRow(fluid, 23);
+			this.show(button, compose && fluid !== undefined, label, fluid?.name === this.fluid ? N.text : N.soft, N.bg);
 		});
 
-		this.formatButtons.forEach((button, row) => {
-			const group = groups[row];
-			const total = group === undefined ? 0 : group.free + group.casting + group.ready;
-			const label = group === undefined ? '' : `${fit(formatLabel(group.format), 16).padEnd(17)}${group.free} free / ${total}`;
-			this.show(button, manual && group !== undefined, label.padEnd(31), group?.format === this.format ? N.text : N.soft, N.bg);
-		});
+		// ORDER: CAST (shapes) or CRAFT (onto the item of a craft caster), when there is a craft caster.
+		const crafting = (state?.craftCasters?.length ?? 0) > 0;
+		if (!crafting) this.orderView = 'cast';
+		const casting = compose && this.orderView === 'cast';
+		const craftView = compose && this.orderView === 'craft';
+		this.neon(this.castViewButton, compose && crafting, ' CAST ', N.yellow, this.orderView === 'cast');
+		this.neon(this.craftViewButton, compose && crafting, ' CRAFT ', N.yellow, this.orderView === 'craft');
 
-		const canCast   = this.fluid !== undefined && this.format !== undefined;
-		const castLabel = canCast ? fit(` POUR ${fluidLabel(this.fluid!)} INTO ${formatLabel(this.format!)} `.toUpperCase(), 31) : ' PICK A FLUID AND A CAST ';
-		this.neon(this.castButton, manual, castLabel, canCast ? N.orange : N.dim, canCast);
+		const picked = this.pickedCraft();
+		this.craftButtons.forEach((button, slot) => {
+			const craft = this.craftAt(slot);
+			if (!craftView || craft === undefined) {
+				this.show(button, false);
+				return;
+			}
+			const chosen = picked?.caster.name === craft.caster.name && picked.recipe.index === craft.recipe.index;
+			this.show(button, true, SmelteryScreen.craftRow(craft.recipe, 56), chosen ? N.yellow : N.soft, chosen ? N.panel : N.bg);
+		});
+		this.neon(this.craftLess, craftView && picked !== undefined, ' - ', N.cyan, this.craftCount > 1);
+		this.neon(this.craftMore, craftView && picked !== undefined, ' + ', N.cyan, true);
+
+		// CAST: - and + of each shape that casts the fluid picked.
+		const formatCount = this.orderFormats().length;
+		this.formatPage   = Math.min(this.formatPage, pages(formatCount, FORMAT_PAGE));
+		this.formatPages.setProps({visible: casting && formatCount > FORMAT_PAGE, totalItems: formatCount, page: this.formatPage});
+		const formats = this.pageFormats();
+		const fluid   = this.fluid;
+		for (let cell = 0; cell < FORMAT_PAGE; cell++) {
+			const group = formats[cell];
+			const shown = casting && group !== undefined && fluid !== undefined && this.castInfo(group.format, fluid).castable;
+			const count = group !== undefined ? this.countOf(group.format) : 0;
+			this.neon(this.countLess[cell]!, shown, ' - ', count > 0 ? N.cyan : N.dim, count > 0);
+			this.neon(this.countMore[cell]!, shown, ' + ', N.cyan, true);
+		}
+		const ready = this.orderView === 'craft' ? picked !== undefined : fluid !== undefined && this.orderLines().length > 0;
+		this.neon(this.clearButton, casting, ' CLEAR ', N.soft, false);
+		const send  = `SEND ${Glyph.right}`;
+		const left  = Math.floor((20 - send.length) / 2);
+		this.show(this.sendButton, compose, `${' '.repeat(left)}${send}`.padEnd(20), ready ? N.bg : N.dim, ready ? N.lime : N.panel);
+
+		// QUEUE: shown in every mode (paused outside manual), an order can always be cancelled.
+		const orderCount = state?.orders?.length ?? 0;
+		this.orderPage   = Math.min(this.orderPage, pages(orderCount, ORDER_ROWS));
+		this.orderPages.setProps({visible: tab && !details && orderCount > ORDER_ROWS, totalItems: orderCount, page: this.orderPage});
+		const orders = this.pageOrders();
+		this.cancelButtons.forEach((button, row) => this.neon(button, tab && !details && orders[row] !== undefined, ' x ', N.red, false));
+
+		// INPUT: the band, and the detail slot by slot (FORCE asks twice).
+		const items    = state?.inputItems ?? [];
+		const anyReady = items.some((item) => item.status === 'ok');
+		this.neon(this.insertReadyButton, compose, ' INSERT READY ', anyReady ? N.lime : N.dim, anyReady);
+		this.neon(this.detailsButton, compose, ` DETAILS ${Glyph.right} `, N.cyan, true);
+
+		this.itemPage = Math.min(this.itemPage, pages(items.length, ITEMS_PER_PAGE));
+		this.itemPages.setProps({visible: details && items.length > ITEMS_PER_PAGE, totalItems: items.length, page: this.itemPage});
+		const pageItems = this.pageItems();
+		this.itemButtons.forEach((button, row) => {
+			const item = pageItems[row];
+			if (!details || item === undefined || item.status === 'unknown') this.show(button, false);
+			else if (item.status === 'ok') this.neon(button, true, ' INSERT  ', N.lime, true);
+			else this.neon(button, true, ' FORCE   ', N.red, true);
+		});
+		this.neon(this.backButton, details, ` ${Glyph.left} BACK `, N.cyan, true);
+		this.neon(this.detailsReadyButton, details, ' INSERT READY ', anyReady ? N.lime : N.dim, anyReady);
+	}
+
+	/** A recipe of the CRAFT view: '720 mB Gold > golden apple', and whether the item stays. */
+	private static craftRow(recipe: CraftRecipeView, width: number): string {
+		const keeps = recipe.consumed ? '' : ' (item stays)';
+		return fit(`${recipe.amount} mB ${fluidLabel(recipe.fluid)} ${Glyph.right} ${placeLabel(recipe.result)}${keeps}`, width).padEnd(width);
+	}
+
+	/** A row of the FLUID card: its name, and on the right its mB in the Smeltery (or 'stored'). */
+	private static fluidRow(fluid: ManualFluid, width: number): string {
+		const amount = fluid.amount > 0 ? `${fluid.amount} mB` : `${shortAmount(fluid.stored)} st.`;
+		const name   = fit(fluidLabel(fluid.name), width - amount.length - 1);
+		return `${name}${' '.repeat(width - name.length - amount.length)}${amount}`;
 	}
 
 	private syncLog(): void {
@@ -1222,6 +1538,9 @@ export class SmelteryScreen {
 		const savable = assigning || this.editedRecipe().recipe !== undefined;
 		this.neon(this.panelSave, panel, ' SAVE ', savable ? N.lime : N.dim, true);
 		this.neon(this.panelCancel, panel, ' CANCEL ', N.soft, false);
+		const held = this.state?.reservoirs.find((candidate) => candidate.name === this.assigning?.reservoir);
+		const trashable = assigning && this.state?.trash !== undefined && held?.fluid !== undefined && held.amount > 0;
+		this.neon(this.trashButton, trashable, ' TRASH ', N.red, false);
 
 		const fluids = picking ? this.pickerFluids() : [];
 		this.choicePage = Math.min(this.choicePage, Math.max(1, Math.ceil(fluids.length / PICKER_PAGE)));
@@ -1261,7 +1580,8 @@ export class SmelteryScreen {
 		for (const button of this.tabButtons.values()) picker.add(button);
 		for (const button of this.allButtons) if (!picker.has(button)) button.setProps({visible: false});
 		const under = [
-			this.castPages, this.itemPages, this.manualFluidPages, this.manualFormatPages, this.stockPages, this.alloyPages, this.logPages,
+			this.castPages, this.itemPages, this.fluidPages, this.formatPages, this.orderPages,
+			this.stockPages, this.alloyPages, this.logPages,
 		];
 		for (const pages of under) pages.setProps({visible: false});
 	}
@@ -1406,17 +1726,18 @@ export class SmelteryScreen {
 		p.text(38, 11, fit(`${melting} item${melting === 1 ? '' : 's'}`, 10), N.soft);
 
 		// The fluids, top first (as in the Smeltery), and the fuel.
-		this.bracket(p, 3, 23, 46, 24, N.purple, 'STACK');
+		this.bracket(p, 3, 23, 46, 24, N.purple, state.trash !== undefined ? `STACK ${Glyph.mid} touch a fluid to trash it` : 'STACK');
 		const stack = [...state.fluids].reverse();
-		stack.slice(0, 4).forEach((fluid, index) => {
+		stack.slice(0, STACK_ROWS).forEach((fluid, index) => {
 			const y      = 26 + index * 3;
 			const color  = fluidColor(fluid.name);
 			const amount = `${fluid.amount} mB`;
-			p.text(6, y, fit(fluidLabel(fluid.name).toUpperCase(), 38 - amount.length), color);
+			// The same text as the trash button over it (stackButtons).
+			p.text(6, y, fit(fluidLabel(fluid.name).toUpperCase(), Math.min(24, 38 - amount.length)), color);
 			p.text(46 - amount.length, y, amount, N.text);
 			this.bar(p, 6, y + 1, 40, fluid.amount / scale, color);
 		});
-		if (stack.length > 4) p.text(6, 37, `+ ${stack.length - 4} more`, N.dim);
+		if (stack.length > STACK_ROWS) p.text(6, 37, `+ ${stack.length - STACK_ROWS} more`, N.dim);
 		if (stack.length === 0) p.text(6, 26, 'The Smeltery is empty.', N.dim);
 
 		p.text(6, 40, 'FUEL', N.yellow);
@@ -1725,45 +2046,215 @@ export class SmelteryScreen {
 
 	private paintManual(p: Painter, state: SmelteryState): void {
 		const manual = state.mode === 'manual';
-		const ink    = manual ? N.text : N.dim;
+		if (manual && this.inputDetails) {
+			this.paintInputDetails(p, state);
+			return;
+		}
 
-		p.fill(3, 5, 96, 3, N.panel);
-		p.fill(3, 5, 1, 3, manual ? N.lime : N.yellow);
-		if (manual) p.text(6, 6, fit(`MANUAL MODE ${Glyph.mid} touch INSERT, or pick a fluid and a cast`, 90), N.lime, N.panel);
-		else p.text(6, 6, fit(`MANUAL MODE IS OFF ${Glyph.mid} insert and cast need it`, 70), N.yellow, N.panel);
+		if (manual) {
+			this.paintFluidCard(p);
+			this.paintOrderCard(p);
+			this.paintInputBand(p, state);
+		}
+		else {
+			p.fill(3, 5, 96, 3, N.panel);
+			p.fill(3, 5, 1, 3, N.yellow);
+			p.text(6, 6, fit(`MANUAL MODE IS OFF ${Glyph.mid} orders and inserts need it`, 70), N.yellow, N.panel);
+		}
+		this.paintQueue(p, state, manual);
+	}
 
-		this.bracket(p, 3, 10, 58, 37, manual ? N.cyan : N.dim, 'INSERT');
+	private paintFluidCard(p: Painter): void {
+		this.bracket(p, 3, 5, 30, 25, N.cyan, `1 ${Glyph.mid} FLUID`);
+		const fluids = this.fluids();
+		fluids.forEach((fluid, row) => {
+			const y = 7 + row * 2;
+			if (fluid.name === this.fluid) p.text(4, y, Glyph.right, N.yellow);
+			p.fill(5, y, 2, 1, fluidColor(fluid.name));
+			if (fluid.amount > 0 && fluid.stored > 0) {
+				const stored = `+${shortAmount(fluid.stored)} stored`;
+				p.text(31 - stored.length, y + 1, stored, N.dim);
+			}
+		});
+		if (fluids.length === 0) {
+			p.text(5, 7, 'No fluid in the Smeltery', N.dim);
+			p.text(5, 8, 'nor in the reservoirs.', N.dim);
+		}
+	}
+
+	private paintOrderCard(p: Painter): void {
+		const fluid = this.fluid;
+		const craft = this.orderView === 'craft';
+		let title = fluid !== undefined ? `2 ${Glyph.mid} ORDER ${Glyph.mid} ${fluidLabel(fluid).toUpperCase()}` : `2 ${Glyph.mid} ORDER`;
+		if (craft) title = `2 ${Glyph.mid} CRAFT ${Glyph.mid} onto an item`;
+		// The CAST / CRAFT switch sits on the frame, right of the title.
+		this.bracket(p, 35, 5, 64, 25, N.yellow, (this.state?.craftCasters?.length ?? 0) > 0 ? fit(title, 40) : title);
+		if (craft) {
+			this.paintCraftView(p);
+			return;
+		}
+
+		const formats = this.pageFormats();
+		// With a fluid picked, only the shapes it has a recipe for (orderFormats).
+		formats.forEach((group, cell) => {
+			const {x, y} = SmelteryScreen.formatPlace(cell);
+			const count  = this.countOf(group.format);
+			p.text(x, y, fit(formatLabel(group.format), 13), fluid === undefined ? N.dim : count > 0 ? N.yellow : N.soft);
+			p.text(x + 14, y, `${group.free}/${group.free + group.casting + group.ready}`.padStart(5), N.dim);
+			if (fluid !== undefined) p.text(x + 24, y, `${count}`.padStart(2), count > 0 ? N.yellow : N.dim);
+		});
+		if (formats.length === 0) {
+			const none = fluid !== undefined ? `No cast on the network has a recipe for ${fluidLabel(fluid)}.` : 'No cast on the network.';
+			p.text(37, 7, fit(none, 60), N.dim);
+		}
+
+		if (fluid === undefined) {
+			p.text(37, 19, 'Pick a fluid on the left, then set how many', N.dim);
+			p.text(37, 20, 'castings of each shape (free / casters).', N.dim);
+			return;
+		}
+
+		const lines = this.orderLines();
+		const {needs, have, stored} = this.orderNeeds();
+		const total = have + stored;
+		p.text(37, 19, 'ORDER', N.dim);
+		const what = lines.map((line) => `${line.count} ${formatLabel(line.format)}`).join(` ${Glyph.mid} `);
+		p.text(45, 19, fit(lines.length > 0 ? what : 'nothing yet: touch + on a shape', 52), lines.length > 0 ? N.soft : N.dim);
+		p.text(37, 20, 'NEEDS', N.dim);
+		p.text(45, 20, needs !== undefined ? `${needs} mB ${fluidLabel(fluid)}` : '? mB (cast amounts unknown)', N.text);
+		p.text(37, 21, 'HAVE', N.dim);
+		p.text(45, 21, fit(stored > 0 ? `${have} + ${stored} stored = ${total} mB` : `${have} mB`, 52), N.text);
+		if (lines.length > 0 && needs !== undefined) {
+			if (needs > total) {
+				p.text(37, 22, 'SHORT', N.dim);
+				p.text(45, 22, fit(`${needs - total} mB: casts what it can, then waits`, 52), N.orange);
+			}
+			else {
+				p.text(45, 22, 'enough: it all casts', N.lime);
+			}
+		}
+
+		const ready = lines.length > 0;
+		p.fill(77, 25, 20, 3, ready ? N.lime : N.panel);
+	}
+
+	/** CRAFT view: each craft caster, the item on it and its recipes; the recipe picked, its count and needs. */
+	private paintCraftView(p: Painter): void {
+		const casters = this.craftCasters();
+		casters.forEach((caster, index) => {
+			const y    = 7 + index * (CRAFT_RECIPE_ROWS + 1);
+			const kind = caster.kind === 'basin' ? 'BASIN' : 'TABLE';
+			p.text(37, y, kind, N.cyan);
+			p.text(43, y, fit(placeLabel(caster.name), 16), N.dim);
+			const more  = caster.recipes.length > CRAFT_RECIPE_ROWS ? ` (+${caster.recipes.length - CRAFT_RECIPE_ROWS} recipes)` : '';
+			const holds = caster.item !== undefined ? `holds ${placeLabel(caster.item)}${more}` : `put an item on the ${kind.toLowerCase()}`;
+			p.text(60, y, fit(holds, 37), caster.item !== undefined ? N.text : N.dim);
+			if (caster.item !== undefined && caster.recipes.length === 0) p.text(39, y + 1, 'No recipe casts onto this item.', N.dim);
+		});
+		const extra = (this.state?.craftCasters?.length ?? 0) - casters.length;
+		if (extra > 0) p.text(37, 19, `+ ${extra} craft caster(s) not shown`, N.dim);
+
+		const picked = this.pickedCraft();
+		if (picked === undefined) {
+			p.text(37, 21, 'Put an item on a craft caster, pick a recipe,', N.dim);
+			p.text(37, 22, 'then set how many castings.', N.dim);
+			return;
+		}
+
+		const {caster, recipe} = picked;
+		const known  = this.manualFluids().find((candidate) => candidate.name === recipe.fluid);
+		const have   = known?.amount ?? 0, stored = known?.stored ?? 0;
+		const needs  = recipe.amount * this.craftCount;
+		p.text(37, 20, 'CRAFT', N.dim);
+		p.text(45, 20, fit(`${placeLabel(recipe.result)} on ${placeLabel(caster.name)}`, 52), N.yellow);
+		p.text(37, 21, 'NEEDS', N.dim);
+		p.text(45, 21, fit(`${needs} mB ${fluidLabel(recipe.fluid)}${recipe.consumed && this.craftCount > 1 ? `, one ${placeLabel(caster.item ?? 'item')} each` : ''}`, 52), N.text);
+		p.text(37, 22, 'HAVE', N.dim);
+		p.text(45, 22, fit(stored > 0 ? `${have} + ${stored} stored = ${have + stored} mB` : `${have} mB`, 30), needs > have + stored ? N.orange : N.text);
+		p.text(37, 24, 'COUNT', N.dim);
+		p.text(49, 24, `${this.craftCount}`.padStart(2), N.yellow);
+		p.fill(77, 25, 20, 3, N.lime);
+	}
+
+	private paintQueue(p: Painter, state: SmelteryState, manual: boolean): void {
+		const orders = state.orders ?? [];
+		const how    = manual ? 'side by side' : 'PAUSED';
+		this.bracket(p, 3, 31, 96, 13, N.magenta, `QUEUE ${Glyph.mid} ${orders.length} ${Glyph.mid} ${how}`);
+		if (orders.length === 0) p.text(5, 33, manual ? 'No order. Pick a fluid, set the counts, then SEND.' : 'No order.', N.dim);
+
+		this.pageOrders().forEach((order, row) => {
+			const y = 33 + row * 2;
+			p.text(5, y, `#${order.id}`, N.dim);
+			p.fill(10, y, 2, 1, fluidColor(order.fluid));
+			p.text(13, y, fit(fluidLabel(order.fluid), 10), N.text);
+
+			let status: [string, number] = ['QUEUED', N.soft];
+			if (!manual) status = ['PAUSED', N.dim];
+			else if (order.status === 'pouring') status = ['POURING', N.lime];
+			else if (order.status === 'waiting') status = ['WAITING', N.orange];
+			p.text(24, y, status[0], status[1]);
+
+			const craft = order.craft;
+			const lines = craft !== undefined
+			              ? `${placeLabel(craft.result)} ${order.lines[0]?.done ?? 0}/${order.lines[0]?.count ?? 0} on ${placeLabel(craft.caster)}`
+			              : order.lines.map((line) => `${formatLabel(line.format)} ${line.done}/${line.count}`).join('  ');
+			p.text(33, y, fit(lines, 37), N.soft);
+			if (order.status === 'waiting') {
+				const need = craft?.need;
+				const why  = need !== undefined
+				             ? `put ${need.startsWith('#') ? `any ${placeLabel(need.substring(1))}` : placeLabel(need)}`
+				             : order.alloy !== undefined ? `would form ${fluidLabel(order.alloy)}` : `needs ${order.missing ?? '?'} mB`;
+				p.text(72, y, fit(why, 21), N.orange);
+			}
+		});
+	}
+
+	/** The input in one line: how many slots, and what INSERT READY would send. */
+	private paintInputBand(p: Painter, state: SmelteryState): void {
+		const items = state.inputItems;
+		p.fill(3, 45, 96, 3, N.panel);
+		p.text(5, 46, 'INPUT', N.cyan, N.panel);
+		if (items.length === 0) {
+			p.text(12, 46, 'empty', N.dim, N.panel);
+			return;
+		}
+
+		const count = (status: InputItemView['status']): number => items.filter((item) => item.status === status).length;
+		const parts: [string, number][] = [[`${items.length} slot${items.length > 1 ? 's' : ''}`, N.text]];
+		if (count('ok') > 0) parts.push([`${count('ok')} ready`, N.lime]);
+		if (count('alloy') > 0) parts.push([`${count('alloy')} alloy`, N.red]);
+		if (count('heat') > 0) parts.push([`${count('heat')} too hot`, N.orange]);
+		if (count('unknown') > 0) parts.push([`${count('unknown')} no fluid`, N.dim]);
+		let x = 12;
+		for (const [text, color] of parts) {
+			p.text(x, 46, text, color, N.panel);
+			x += text.length + 2;
+		}
+	}
+
+	/** The input slot by slot: INSERT what is safe, FORCE (asked twice) an alloy or a cold fuel. */
+	private paintInputDetails(p: Painter, state: SmelteryState): void {
+		const items = state.inputItems;
+		this.bracket(p, 3, 5, 96, 38, N.cyan, `INPUT ${Glyph.mid} ${items.length} slot${items.length === 1 ? '' : 's'}`);
+		p.text(6, 7, 'SLOT', N.dim);
+		p.text(12, 7, 'ITEM', N.dim);
+		p.text(46, 7, 'COUNT', N.dim);
+		p.text(53, 7, 'STATUS', N.dim);
+
 		this.pageItems().forEach((item, row) => {
-			const y = 13 + row * 4;
-			p.text(6, y, fit(placeLabel(item.name).toUpperCase(), 42), ink);
-			let detail = `x${item.count} ${Glyph.right} ${item.fluid !== undefined ? fluidLabel(item.fluid) : 'no fluid'}`;
-			let color  = manual ? N.soft : N.dim;
-			if (item.status === 'alloy') {
-				detail += ` ${Glyph.mid} would form ${fluidLabel(item.alloy ?? 'an alloy')}`;
-				color = manual ? N.red : N.dim;
-			}
-			else if (item.status === 'heat') {
-				detail += ` ${Glyph.mid} needs ${item.temperature ?? '?'} K`;
-				color = manual ? N.red : N.dim;
-			}
-			p.text(6, y + 1, fit(detail, 42), color);
-		});
-		if (state.inputItems.length === 0) p.text(6, 13, 'The input is empty.', N.dim);
+			const y = 9 + row * 2;
+			p.text(6, y, `${item.slot}`.padStart(3), N.dim);
+			p.text(12, y, fit(placeLabel(item.name).toUpperCase(), 32), N.text);
+			p.text(46, y, `${item.count}`.padStart(5), N.soft);
 
-		this.bracket(p, 63, 10, 36, 37, manual ? N.orange : N.dim, 'CAST');
-		p.text(66, 12, 'FLUID', N.dim);
-		this.fluids().forEach((fluid, row) => {
-			const y = 14 + row * 2;
-			if (fluid.name === this.fluid) p.text(64, y, Glyph.right, N.yellow);
-			p.fill(66, y, 2, 1, manual ? fluidColor(fluid.name) : N.dim);
-			if (!manual) p.text(69, y, fit(manualFluidLabel(fluid), 28), N.dim);
+			let status: [string, number] = [`ready ${Glyph.right} ${item.fluid !== undefined ? fluidLabel(item.fluid) : ''}`, N.lime];
+			if (item.status === 'alloy') status = [`would form ${fluidLabel(item.alloy ?? 'an alloy')}`, N.red];
+			else if (item.status === 'heat') status = [`needs ${item.temperature ?? '?'} K`, N.orange];
+			else if (item.status === 'unknown') status = ['melts into nothing known', N.dim];
+			p.text(53, y, fit(status[0], 31), status[1]);
 		});
-		p.text(66, 25, 'INTO', N.dim);
-		this.manualGroups().forEach((group, row) => {
-			const y = 27 + row * 2;
-			if (group.format === this.format) p.text(64, y, Glyph.right, N.yellow);
-			if (!manual) p.text(66, y, `${fit(formatLabel(group.format), 16).padEnd(17)}${group.free} free / ${group.free + group.casting + group.ready}`, N.dim);
-		});
+		if (items.length === 0) p.text(6, 9, 'The input is empty.', N.dim);
+		p.text(items.length > ITEMS_PER_PAGE ? 20 : 6, 40, fit(`FORCE asks twice ${Glyph.mid} INSERT READY skips what is refused`, 70), N.dim);
 	}
 
 	// ------------------------------------------------------------------ stock
@@ -1956,6 +2447,20 @@ export class SmelteryScreen {
 
 		if (confirm.kind === 'delete') {
 			this.paintDelete(p, confirm.option, confirm.step, confirm.deadline, x, y, color);
+			return;
+		}
+		if (confirm.kind === 'trash') {
+			p.text(x + 3, y + 2, 'TRASH FLUID', color);
+			p.text(x + 15, y + 2, `step ${confirm.step} of 2`, N.dim);
+			p.text(x + 3, y + 4, fit(`${confirm.amount} mB ${fluidLabel(confirm.fluid)}`, 45), fluidColor(confirm.fluid));
+			p.text(x + 3, y + 5, fit(`from ${confirm.reservoir !== undefined ? placeLabel(confirm.reservoir) : 'the Smeltery'}, all of it`, 45), N.soft);
+			if (confirm.step === 1) {
+				p.text(x + 3, y + 7, 'It goes to the fluid trash can.', N.dim);
+			}
+			else {
+				p.text(x + 3, y + 7, 'It cannot be undone.', N.dim);
+				p.text(x + 21, y + 12, `${Math.max(0, Math.ceil(confirm.deadline - os.clock()))} s`, N.dim);
+			}
 			return;
 		}
 
