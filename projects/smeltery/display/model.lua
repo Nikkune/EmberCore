@@ -374,6 +374,31 @@ local function __TS__ArraySlice(self, first, last)
     end
     return out
 end
+
+local function __TS__ArrayIndexOf(self, searchElement, fromIndex)
+    if fromIndex == nil then
+        fromIndex = 0
+    end
+    local len = #self
+    if len == 0 then
+        return -1
+    end
+    if fromIndex >= len then
+        return -1
+    end
+    if fromIndex < 0 then
+        fromIndex = len + fromIndex
+        if fromIndex < 0 then
+            fromIndex = 0
+        end
+    end
+    for i = fromIndex + 1, len do
+        if self[i] == searchElement then
+            return i - 1
+        end
+    end
+    return -1
+end
 -- End of Lua Library inline imports
 local ____exports = {}
 local ____protocol = require("projects.smeltery.shared.protocol")
@@ -651,6 +676,26 @@ function ____exports.parseLogLine(line)
                     " "
                 )) .. ")"
             }
+        end
+        ____cond39 = ____cond39 or ____switch39 == "injected"
+        if ____cond39 then
+            do
+                local into = __TS__ArrayIndexOf(words, "into")
+                local from = table.concat(
+                    __TS__ArraySlice(words, 5, into > 5 and into or nil),
+                    " "
+                )
+                local forms = __TS__StringIncludes(body, "(forms ") and ", " .. __TS__StringSubstring(
+                    body,
+                    (string.find(body, "(forms ", nil, true) or 0) - 1 + 1,
+                    #body - 1
+                ) or ""
+                return {
+                    time = time,
+                    kind = "stock",
+                    text = (((((____exports.fluidLabel(word(nil, 3)) .. " ") .. word(nil, 1)) .. " mB > Smeltery (from ") .. ____exports.placeLabel(from)) .. forms) .. ")"
+                }
+            end
         end
         ____cond39 = ____cond39 or ____switch39 == "restored"
         if ____cond39 then

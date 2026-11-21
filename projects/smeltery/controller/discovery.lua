@@ -501,13 +501,24 @@ function ____exports.discoverNetwork(config)
     if trash ~= nil then
         network.trash = trash
     end
+    local fluidInput
+    if config.fluidInput ~= "" then
+        if peripheral.isPresent(config.fluidInput) then
+            fluidInput = config.fluidInput
+        else
+            problems[#problems + 1] = ("fluid input '" .. config.fluidInput) .. "' not found on the network"
+        end
+    end
+    if fluidInput ~= nil then
+        network.fluidInput = fluidInput
+    end
     if #config.reservoirs > 0 then
         for ____, name in ipairs(config.reservoirs) do
             do
-                local __continue52
+                local __continue56
                 repeat
-                    if name == trash then
-                        __continue52 = true
+                    if name == trash or name == fluidInput then
+                        __continue56 = true
                         break
                     end
                     if peripheral.isPresent(name) then
@@ -516,9 +527,9 @@ function ____exports.discoverNetwork(config)
                     else
                         problems[#problems + 1] = ("reservoir '" .. name) .. "' not found on the network"
                     end
-                    __continue52 = true
+                    __continue56 = true
                 until true
-                if not __continue52 then
+                if not __continue56 then
                     break
                 end
             end
@@ -526,17 +537,17 @@ function ____exports.discoverNetwork(config)
     else
         for ____, name in ipairs(namesOfType("fluid_storage")) do
             do
-                local __continue58
+                local __continue62
                 repeat
-                    if __TS__StringStartsWith(name, "tconstruct:") or name == fuelTank or name == trash then
-                        __continue58 = true
+                    if __TS__StringStartsWith(name, "tconstruct:") or name == fuelTank or name == trash or name == fluidInput then
+                        __continue62 = true
                         break
                     end
                     local ____network_reservoirs_6 = network.reservoirs
                     ____network_reservoirs_6[#____network_reservoirs_6 + 1] = name
-                    __continue58 = true
+                    __continue62 = true
                 until true
-                if not __continue58 then
+                if not __continue62 then
                     break
                 end
             end

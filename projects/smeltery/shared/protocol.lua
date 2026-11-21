@@ -33,6 +33,7 @@ ____exports.Messages = {
     insertReady = "insertReady",
     queueCraft = "queueCraft",
     trashFluid = "trashFluid",
+    injectFluid = "injectFluid",
     setAlloy = "setAlloy",
     setFormat = "setFormat",
     setReservoir = "setReservoir",

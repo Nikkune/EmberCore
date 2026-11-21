@@ -176,6 +176,15 @@ function ____exports.runDisplay()
                     (string.find(trash.fluid, ":", nil, true) or 0) - 1 + 1
                 ) .. " trashed"
             ) end,
+            injectFluid = function(____, inject) return request(
+                nil,
+                Messages.injectFluid,
+                inject,
+                __TS__StringSubstring(
+                    inject.fluid,
+                    (string.find(inject.fluid, ":", nil, true) or 0) - 1 + 1
+                ) .. " injected"
+            ) end,
             setFormat = function(____, format) return request(nil, Messages.setFormat, format, (format.format .. ": ") .. (format.auto and "auto" or "off")) end,
             setAlloy = function(____, alloy) return request(
                 nil,

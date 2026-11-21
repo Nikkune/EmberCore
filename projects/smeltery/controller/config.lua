@@ -21,6 +21,7 @@ function ____exports.defaultControllerConfig()
         casters = {},
         craftCasters = {},
         fluidTrash = "",
+        fluidInput = "",
         fuelTank = "",
         fuel = "minecraft:lava",
         reservoirs = {},

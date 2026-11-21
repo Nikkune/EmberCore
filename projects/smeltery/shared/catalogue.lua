@@ -297,6 +297,53 @@ local function __TS__ArraySort(self, compareFn)
     return self
 end
 
+local __TS__StringSplit
+do
+    local sub = string.sub
+    local find = string.find
+    function __TS__StringSplit(source, separator, limit)
+        if limit == nil then
+            limit = 4294967295
+        end
+        if limit == 0 then
+            return {}
+        end
+        local result = {}
+        local resultIndex = 1
+        if separator == nil or separator == "" then
+            for i = 1, #source do
+                result[resultIndex] = sub(source, i, i)
+                resultIndex = resultIndex + 1
+            end
+        else
+            local currentPos = 1
+            while resultIndex <= limit do
+                local startPos, endPos = find(source, separator, currentPos, true)
+                if not startPos then
+                    break
+                end
+                result[resultIndex] = sub(source, currentPos, startPos - 1)
+                resultIndex = resultIndex + 1
+                currentPos = endPos + 1
+            end
+            if resultIndex <= limit then
+                result[resultIndex] = sub(source, currentPos)
+            end
+        end
+        return result
+    end
+end
+
+local function __TS__ObjectEntries(obj)
+    local result = {}
+    local len = 0
+    for key in pairs(obj) do
+        len = len + 1
+        result[len] = {key, obj[key]}
+    end
+    return result
+end
+
 local Map
 do
     Map = __TS__Class()
@@ -461,6 +508,8 @@ local DEFAULT_MOLTEN_FLUIDS = ____catalogueData.DEFAULT_MOLTEN_FLUIDS
 local ____temperaturesData = require("projects.smeltery.shared.temperaturesData")
 local DEFAULT_FUELS = ____temperaturesData.DEFAULT_FUELS
 local DEFAULT_MELTING_TEMPERATURES = ____temperaturesData.DEFAULT_MELTING_TEMPERATURES
+local ____meltingData = require("projects.smeltery.shared.meltingData")
+local MELTING = ____meltingData.MELTING
 local ____temperaturesData = require("projects.smeltery.shared.temperaturesData")
 local FluidTemperature = ____temperaturesData.FluidTemperature
 ____exports.CATALOGUE_PATH = "/smeltery/catalogue.db"
@@ -519,7 +568,18 @@ function ____exports.catalogueFluids(catalogue)
     return __TS__ArraySort({__TS__Spread(fluids)})
 end
 function ____exports.materialMapOf(catalogue)
-    return __TS__New(MaterialMap, {fluids = catalogue.moltenFluids, overrides = catalogue.overrides})
+    local overrides = {}
+    for ____, ____value in ipairs(__TS__ObjectEntries(MELTING)) do
+        local fluid = ____value[1]
+        local items = ____value[2]
+        for ____, item in ipairs(__TS__StringSplit(items, " ")) do
+            overrides[#overrides + 1] = {item = item, fluid = fluid}
+        end
+    end
+    for ____, override in ipairs(catalogue.overrides) do
+        overrides[#overrides + 1] = override
+    end
+    return __TS__New(MaterialMap, {fluids = catalogue.moltenFluids, overrides = overrides})
 end
 function ____exports.castAmountsOf(catalogue)
     return __TS__New(CastAmounts, catalogue.castAmounts, CAST_RECIPES)
