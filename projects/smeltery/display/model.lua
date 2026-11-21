@@ -641,6 +641,17 @@ function ____exports.parseLogLine(line)
                 text = ((((____exports.fluidLabel(word(nil, 3)) .. " ") .. word(nil, 1)) .. " mB > reservoirs (") .. reasonOf(body)) .. ")"
             }
         end
+        ____cond39 = ____cond39 or ____switch39 == "trashed"
+        if ____cond39 then
+            return {
+                time = time,
+                kind = "store",
+                text = ((((____exports.fluidLabel(word(nil, 3)) .. " ") .. word(nil, 1)) .. " mB > trash (from ") .. table.concat(
+                    __TS__ArraySlice(words, 5),
+                    " "
+                )) .. ")"
+            }
+        end
         ____cond39 = ____cond39 or ____switch39 == "restored"
         if ____cond39 then
             return {

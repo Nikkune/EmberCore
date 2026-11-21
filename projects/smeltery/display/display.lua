@@ -146,7 +146,36 @@ function ____exports.runDisplay()
         {
             setMode = function(____, mode) return request(nil, Messages.setMode, {mode = mode}, "mode " .. mode) end,
             insert = function(____, insert) return request(nil, Messages.insert, insert, insert.force == true and "forced insert sent" or "inserted") end,
-            cast = function(____, cast) return request(nil, Messages.cast, cast, "cast") end,
+            queueOrder = function(____, order, sent) return request(
+                nil,
+                Messages.queueOrder,
+                order,
+                ("order sent: " .. tostring(#order.lines)) .. " shape(s)",
+                sent
+            ) end,
+            cancelOrder = function(____, id) return request(
+                nil,
+                Messages.cancelOrder,
+                {id = id},
+                ("order #" .. tostring(id)) .. " cancelled"
+            ) end,
+            insertReady = function() return request(nil, Messages.insertReady, nil, "inserting what is ready") end,
+            queueCraft = function(____, craft, sent) return request(
+                nil,
+                Messages.queueCraft,
+                craft,
+                ("craft sent: " .. tostring(craft.count)) .. " casting(s)",
+                sent
+            ) end,
+            trashFluid = function(____, trash) return request(
+                nil,
+                Messages.trashFluid,
+                trash,
+                __TS__StringSubstring(
+                    trash.fluid,
+                    (string.find(trash.fluid, ":", nil, true) or 0) - 1 + 1
+                ) .. " trashed"
+            ) end,
             setFormat = function(____, format) return request(nil, Messages.setFormat, format, (format.format .. ": ") .. (format.auto and "auto" or "off")) end,
             setAlloy = function(____, alloy) return request(
                 nil,

@@ -584,6 +584,15 @@ local function __TS__SparseArraySpread(sparseArray)
     return _unpack(sparseArray, 1, sparseArray.sparseLength)
 end
 
+local function __TS__ArrayEvery(self, callbackfn, thisArg)
+    for i = 1, #self do
+        if not callbackfn(thisArg, self[i], i - 1, self) then
+            return false
+        end
+    end
+    return true
+end
+
 local function __TS__ArrayIncludes(self, searchElement, fromIndex)
     if fromIndex == nil then
         fromIndex = 0
@@ -788,6 +797,43 @@ local function __TS__StringSubstring(self, start, ____end)
     return string.sub(self, start, ____end)
 end
 
+local __TS__StringSplit
+do
+    local sub = string.sub
+    local find = string.find
+    function __TS__StringSplit(source, separator, limit)
+        if limit == nil then
+            limit = 4294967295
+        end
+        if limit == 0 then
+            return {}
+        end
+        local result = {}
+        local resultIndex = 1
+        if separator == nil or separator == "" then
+            for i = 1, #source do
+                result[resultIndex] = sub(source, i, i)
+                resultIndex = resultIndex + 1
+            end
+        else
+            local currentPos = 1
+            while resultIndex <= limit do
+                local startPos, endPos = find(source, separator, currentPos, true)
+                if not startPos then
+                    break
+                end
+                result[resultIndex] = sub(source, currentPos, startPos - 1)
+                resultIndex = resultIndex + 1
+                currentPos = endPos + 1
+            end
+            if resultIndex <= limit then
+                result[resultIndex] = sub(source, currentPos)
+            end
+        end
+        return result
+    end
+end
+
 local function __TS__InstanceOf(obj, classTbl)
     if type(classTbl) ~= "table" then
         error("Right-hand side of 'instanceof' is not an object", 0)
@@ -856,8 +902,14 @@ local PROTOCOL = ____protocol.PROTOCOL
 local ____protocol = require("projects.smeltery.shared.protocol")
 local AlloyOption = ____protocol.AlloyOption
 local AlloyView = ____protocol.AlloyView
+local CancelOrderRequest = ____protocol.CancelOrderRequest
 local CasterView = ____protocol.CasterView
+local CastOption = ____protocol.CastOption
 local CastRequest = ____protocol.CastRequest
+local CraftCasterView = ____protocol.CraftCasterView
+local CraftRecipeView = ____protocol.CraftRecipeView
+local QueueCraftRequest = ____protocol.QueueCraftRequest
+local TrashFluidRequest = ____protocol.TrashFluidRequest
 local DeleteRecipeRequest = ____protocol.DeleteRecipeRequest
 local FluidForecast = ____protocol.FluidForecast
 local FuelView = ____protocol.FuelView
@@ -865,6 +917,8 @@ local InputItemView = ____protocol.InputItemView
 local InsertRequest = ____protocol.InsertRequest
 local InventoryView = ____protocol.InventoryView
 local Mode = ____protocol.Mode
+local OrderView = ____protocol.OrderView
+local QueueOrderRequest = ____protocol.QueueOrderRequest
 local SaveRecipeRequest = ____protocol.SaveRecipeRequest
 local SetAlloyRequest = ____protocol.SetAlloyRequest
 local SetReservoirRequest = ____protocol.SetReservoirRequest
@@ -873,6 +927,8 @@ local SetModeRequest = ____protocol.SetModeRequest
 local SetSmelteryCapacityRequest = ____protocol.SetSmelteryCapacityRequest
 local SmelteryState = ____protocol.SmelteryState
 local WaitingItem = ____protocol.WaitingItem
+local ____craftRecipesData = require("projects.smeltery.shared.craftRecipesData")
+local CRAFT_RECIPES = ____craftRecipesData.CRAFT_RECIPES
 local ____recipes = require("projects.smeltery.shared.recipes")
 local checkIndex = ____recipes.checkIndex
 local deleteRecipe = ____recipes.deleteRecipe
@@ -898,14 +954,19 @@ local Network = ____discovery.Network
 local ____planner = require("projects.smeltery.controller.planner")
 local assessInput = ____planner.assessInput
 local assessItem = ____planner.assessItem
+local CRAFT_FORMAT = ____planner.CRAFT_FORMAT
+local craftInputMatches = ____planner.craftInputMatches
 local planTick = ____planner.planTick
 local ____planner = require("projects.smeltery.controller.planner")
 local Action = ____planner.Action
 local InputSlot = ____planner.InputSlot
+local OrderJob = ____planner.OrderJob
+local OrderStatus = ____planner.OrderStatus
 local Plan = ____planner.Plan
 local PlanContext = ____planner.PlanContext
 local Snapshot = ____planner.Snapshot
 local INPUT_PACE_SECONDS = 300
+local MAX_ORDER_COUNT = 64
 local LOG_FILE_BYTES = 16 * 1024
 ____exports.Controller = __TS__Class()
 local Controller = ____exports.Controller
@@ -914,10 +975,14 @@ function Controller.prototype.____constructor(self, config, catalogue, modePath)
     self.config = config
     self.catalogue = catalogue
     self.modePath = modePath
-    self.network = {casters = {}, reservoirs = {}, problems = {}}
+    self.network = {casters = {}, craftCasters = {}, reservoirs = {}, problems = {}}
     self.alloyResults = __TS__New(Set)
     self.alloyRatios = {}
     self.casters = {}
+    self.craftCasters = {}
+    self.craftTags = __TS__New(Map)
+    self.craftMatches = __TS__New(Map)
+    self.refusedCrafts = __TS__New(Set)
     self.fluidCache = __TS__New(Map)
     self.logLines = {}
     self.inputItems = {}
@@ -930,6 +995,10 @@ function Controller.prototype.____constructor(self, config, catalogue, modePath)
     self.lastSample = -math.huge
     self.inserts = {}
     self.worked = false
+    self.orders = {}
+    self.orderStatuses = {}
+    self.nextOrderId = 1
+    self.insertReadyWanted = false
     self.materials = materialMapOf(catalogue)
     self.amounts = castAmountsOf(catalogue)
     self:applyRecipes()
@@ -1255,7 +1324,14 @@ function Controller.prototype.tick(self)
                 local context = self:planContext()
                 self.inputItems = assessInput(snapshot, context)
                 plan = planTick(self.mode, snapshot, context)
+                if context.insertReady == true then
+                    self.insertReadyWanted = false
+                end
                 self:execute(plan)
+                if plan.orders ~= nil then
+                    self.orderStatuses = plan.orders
+                end
+                self:settleOrders()
                 if #plan.actions > 0 then
                     self:refreshReading()
                 end
@@ -1289,6 +1365,386 @@ function Controller.prototype.tick(self)
         self.lastAlerts = alertText
     end
     return self.worked
+end
+function Controller.prototype.queueOrder(self, request)
+    self:requireManual()
+    local fluid = request.fluid
+    if type(fluid) ~= "string" or fluid == "" then
+        error(
+            __TS__New(EmberError, "choose a fluid first", "SMELTERY_ERROR"),
+            0
+        )
+    end
+    if type(request.lines) ~= "table" then
+        error(
+            __TS__New(EmberError, "the order is empty", "SMELTERY_ERROR"),
+            0
+        )
+    end
+    local lines = {}
+    for ____, line in ipairs(request.lines) do
+        local format = line.format
+        local count = line.count
+        if type(format) ~= "string" or not (type(count) == "number" and count > 0 and count % 1 == 0) then
+            error(
+                __TS__New(EmberError, "each line needs a format and a positive count", "SMELTERY_ERROR"),
+                0
+            )
+        end
+        if not __TS__ArraySome(
+            self.casters,
+            function(____, caster)
+                local ____opt_9 = self.lastRead
+                if ____opt_9 ~= nil then
+                    local ____opt_10 = self.lastRead
+                    ____opt_9 = __TS__ArrayFind(
+                        ____opt_10 and ____opt_10.casters,
+                        function(____, view) return view.name == caster.name end
+                    )
+                end
+                return (____opt_9 and ____opt_9.format) == format
+            end
+        ) then
+            error(
+                __TS__New(EmberError, ("no " .. format) .. " cast on the network", "SMELTERY_ERROR"),
+                0
+            )
+        end
+        if self.amounts:get(format, fluid) == nil then
+            error(
+                __TS__New(
+                    EmberError,
+                    (("no " .. format) .. " recipe for ") .. ____exports.Controller:shortName(fluid),
+                    "SMELTERY_ERROR"
+                ),
+                0
+            )
+        end
+        local same = __TS__ArrayFind(
+            lines,
+            function(____, candidate) return candidate.format == format end
+        )
+        if same ~= nil then
+            same.count = same.count + count
+        else
+            lines[#lines + 1] = {format = format, count = count, done = 0}
+        end
+    end
+    if #lines == 0 then
+        error(
+            __TS__New(EmberError, "the order is empty", "SMELTERY_ERROR"),
+            0
+        )
+    end
+    local tooMany = __TS__ArrayFind(
+        lines,
+        function(____, line) return line.count > MAX_ORDER_COUNT end
+    )
+    if tooMany ~= nil then
+        error(
+            __TS__New(
+                EmberError,
+                ((("at most " .. tostring(MAX_ORDER_COUNT)) .. " ") .. tooMany.format) .. " per order",
+                "SMELTERY_ERROR"
+            ),
+            0
+        )
+    end
+    local ____self_13, ____nextOrderId_14 = self, "nextOrderId"
+    local ____self_nextOrderId_15 = ____self_13[____nextOrderId_14]
+    ____self_13[____nextOrderId_14] = ____self_nextOrderId_15 + 1
+    local id = ____self_nextOrderId_15
+    local ____self_orders_16 = self.orders
+    ____self_orders_16[#____self_orders_16 + 1] = {id = id, fluid = fluid, lines = lines}
+    local ____self_orderStatuses_17 = self.orderStatuses
+    ____self_orderStatuses_17[#____self_orderStatuses_17 + 1] = {id = id, status = "queued"}
+    self.state.orders = self:orderViews()
+    self:log((("order #" .. tostring(id)) .. ": ") .. ____exports.Controller:orderText(fluid, lines))
+    return id
+end
+function Controller.prototype.cancelOrder(self, request)
+    local order = __TS__ArrayFind(
+        self.orders,
+        function(____, candidate) return candidate.id == request.id end
+    )
+    if order == nil then
+        error(
+            __TS__New(
+                EmberError,
+                "no order #" .. tostring(request.id),
+                "SMELTERY_ERROR"
+            ),
+            0
+        )
+    end
+    self.orders = __TS__ArrayFilter(
+        self.orders,
+        function(____, candidate) return candidate ~= order end
+    )
+    self.orderStatuses = __TS__ArrayFilter(
+        self.orderStatuses,
+        function(____, status) return status.id ~= order.id end
+    )
+    self.state.orders = self:orderViews()
+    local done = __TS__ArrayReduce(
+        order.lines,
+        function(____, sum, line) return sum + line.done end,
+        0
+    )
+    local total = __TS__ArrayReduce(
+        order.lines,
+        function(____, sum, line) return sum + line.count end,
+        0
+    )
+    self:log(((((("order #" .. tostring(order.id)) .. " cancelled: ") .. tostring(done)) .. "/") .. tostring(total)) .. " poured")
+end
+function Controller.prototype.insertReady(self)
+    self:requireManual()
+    self.insertReadyWanted = true
+end
+function Controller.prototype.queueCraft(self, request)
+    self:requireManual()
+    local caster = __TS__ArrayFind(
+        self.craftCasters,
+        function(____, candidate) return candidate.name == request.caster end
+    )
+    if caster == nil then
+        error(
+            __TS__New(
+                EmberError,
+                "no craft caster " .. tostring(request.caster),
+                "SMELTERY_ERROR"
+            ),
+            0
+        )
+    end
+    local index = request.recipe
+    local ____temp_18
+    if type(index) == "number" and index % 1 == 0 then
+        ____temp_18 = CRAFT_RECIPES[index + 1]
+    else
+        ____temp_18 = nil
+    end
+    local recipe = ____temp_18
+    if recipe == nil or recipe[1] ~= caster.kind then
+        error(
+            __TS__New(EmberError, "unknown craft recipe", "SMELTERY_ERROR"),
+            0
+        )
+    end
+    local count = request.count
+    if not (type(count) == "number" and count > 0 and count % 1 == 0) then
+        error(
+            __TS__New(EmberError, "the count must be positive", "SMELTERY_ERROR"),
+            0
+        )
+    end
+    if count > MAX_ORDER_COUNT then
+        error(
+            __TS__New(
+                EmberError,
+                ("at most " .. tostring(MAX_ORDER_COUNT)) .. " castings per order",
+                "SMELTERY_ERROR"
+            ),
+            0
+        )
+    end
+    local ____, input, fluid, amount, result, consumed = unpack(recipe, 1, 6)
+    local ____self_19, ____nextOrderId_20 = self, "nextOrderId"
+    local ____self_nextOrderId_21 = ____self_19[____nextOrderId_20]
+    ____self_19[____nextOrderId_20] = ____self_nextOrderId_21 + 1
+    local id = ____self_nextOrderId_21
+    local craft = {
+        caster = caster.name,
+        input = input,
+        result = result,
+        amount = amount,
+        consumed = consumed
+    }
+    local ____self_orders_22 = self.orders
+    ____self_orders_22[#____self_orders_22 + 1] = {id = id, fluid = fluid, lines = {{format = CRAFT_FORMAT, count = count, done = 0}}, craft = craft}
+    local ____self_orderStatuses_23 = self.orderStatuses
+    ____self_orderStatuses_23[#____self_orderStatuses_23 + 1] = {id = id, status = "queued"}
+    self.state.orders = self:orderViews()
+    self:log(((((((((((("order #" .. tostring(id)) .. ": ") .. tostring(count)) .. " ") .. ____exports.Controller:itemName(result)) .. " on ") .. caster.name) .. " (") .. tostring(amount)) .. " mB ") .. ____exports.Controller:shortName(fluid)) .. " each)")
+    return id
+end
+function Controller.prototype.trashFluid(self, request)
+    local trash = self.trash
+    if trash == nil then
+        error(
+            __TS__New(EmberError, "no fluid trash can on the network", "SMELTERY_ERROR"),
+            0
+        )
+    end
+    local fluid = request.fluid
+    if type(fluid) ~= "string" or fluid == "" then
+        error(
+            __TS__New(EmberError, "choose a fluid first", "SMELTERY_ERROR"),
+            0
+        )
+    end
+    local source
+    if request.reservoir ~= nil then
+        local ____opt_24 = self.pool
+        if (____opt_24 and ____opt_24:has(request.reservoir)) ~= true then
+            error(
+                __TS__New(
+                    EmberError,
+                    "no reservoir " .. tostring(request.reservoir),
+                    "SMELTERY_ERROR"
+                ),
+                0
+            )
+        end
+        source = Tank:fromName(request.reservoir)
+    else
+        local ____opt_26 = self.smeltery
+        source = ____opt_26 and ____opt_26.drain
+        if source == nil then
+            error(
+                __TS__New(EmberError, "no Smeltery on the network", "SMELTERY_ERROR"),
+                0
+            )
+        end
+    end
+    local trashed = 0
+    do
+        local pass = 0
+        while pass < 64 do
+            local left = source:getAmount(fluid)
+            if left <= 0 then
+                break
+            end
+            local moved = source:pushTo(trash, left, fluid)
+            if moved <= 0 then
+                break
+            end
+            trashed = trashed + moved
+            pass = pass + 1
+        end
+    end
+    local from = request.reservoir or "the Smeltery"
+    if trashed <= 0 then
+        error(
+            __TS__New(
+                EmberError,
+                ((("nothing trashed: no " .. ____exports.Controller:shortName(fluid)) .. " in ") .. from) .. ", or the trash refused it",
+                "SMELTERY_ERROR"
+            ),
+            0
+        )
+    end
+    self:log((((("trashed " .. tostring(trashed)) .. " mB ") .. ____exports.Controller:shortName(fluid)) .. " from ") .. from)
+    local ____opt_28 = self.pool
+    if ____opt_28 ~= nil then
+        ____opt_28:refresh()
+    end
+    self.tickWanted = true
+    return trashed
+end
+function Controller.prototype.settleOrders(self)
+    local kept = {}
+    for ____, order in ipairs(self.orders) do
+        do
+            local __continue115
+            repeat
+                if self.refusedCrafts:has(order.id) then
+                    local ____self_log_33 = self.log
+                    local ____order_id_32 = order.id
+                    local ____opt_30 = order.craft
+                    ____self_log_33(
+                        self,
+                        (((("order #" .. tostring(____order_id_32)) .. " dropped: ") .. (____opt_30 and ____opt_30.caster or "the caster")) .. " took no ") .. ____exports.Controller:shortName(order.fluid)
+                    )
+                    __continue115 = true
+                    break
+                end
+                order.lines = __TS__ArrayFilter(
+                    order.lines,
+                    function(____, line)
+                        if order.craft ~= nil then
+                            return true
+                        end
+                        if line.done >= line.count or self.amounts:get(line.format, order.fluid) ~= nil then
+                            return true
+                        end
+                        self:log(((((((("order #" .. tostring(order.id)) .. ": no ") .. line.format) .. " recipe for ") .. ____exports.Controller:shortName(order.fluid)) .. ", ") .. tostring(line.count - line.done)) .. " dropped")
+                        return false
+                    end
+                )
+                if __TS__ArrayEvery(
+                    order.lines,
+                    function(____, line) return line.done >= line.count end
+                ) then
+                    local total = __TS__ArrayReduce(
+                        order.lines,
+                        function(____, sum, line) return sum + line.done end,
+                        0
+                    )
+                    self:log((((("order #" .. tostring(order.id)) .. " done: ") .. tostring(total)) .. " ") .. (order.craft ~= nil and ____exports.Controller:itemName(order.craft.result) or "poured"))
+                    __continue115 = true
+                    break
+                end
+                kept[#kept + 1] = order
+                __continue115 = true
+            until true
+            if not __continue115 then
+                break
+            end
+        end
+    end
+    self.refusedCrafts:clear()
+    self.orders = kept
+    self.orderStatuses = __TS__ArrayFilter(
+        self.orderStatuses,
+        function(____, status) return __TS__ArraySome(
+            kept,
+            function(____, order) return order.id == status.id end
+        ) end
+    )
+end
+function Controller.prototype.orderViews(self)
+    return __TS__ArrayMap(
+        self.orders,
+        function(____, order)
+            local status = __TS__ArrayFind(
+                self.orderStatuses,
+                function(____, candidate) return candidate.id == order.id end
+            )
+            local view = {
+                id = order.id,
+                fluid = order.fluid,
+                lines = __TS__ArrayMap(
+                    order.lines,
+                    function(____, line) return __TS__ObjectAssign({}, line) end
+                ),
+                status = status and status.status or "queued"
+            }
+            if (status and status.missing) ~= nil then
+                view.missing = status.missing
+            end
+            if (status and status.alloy) ~= nil then
+                view.alloy = status.alloy
+            end
+            if order.craft ~= nil then
+                view.craft = {caster = order.craft.caster, result = order.craft.result}
+                if (status and status.need) ~= nil then
+                    view.craft.need = status.need
+                end
+            end
+            return view
+        end
+    )
+end
+function Controller.orderText(self, fluid, lines)
+    return (table.concat(
+        __TS__ArrayMap(
+            lines,
+            function(____, line) return (tostring(line.count) .. " ") .. line.format end
+        ),
+        ", "
+    ) .. " of ") .. ____exports.Controller:shortName(fluid)
 end
 function Controller.prototype.insert(self, request)
     self:requireManual()
@@ -1349,8 +1805,8 @@ function Controller.prototype.insert(self, request)
     end
     local moved = smeltery:insert(input, request.slot, request.count)
     if moved > 0 then
-        local ____self_inserts_7 = self.inserts
-        ____self_inserts_7[#____self_inserts_7 + 1] = {
+        local ____self_inserts_42 = self.inserts
+        ____self_inserts_42[#____self_inserts_42 + 1] = {
             time = os.clock(),
             count = moved
         }
@@ -1375,13 +1831,13 @@ function Controller.prototype.cast(self, request)
     local candidates = __TS__ArrayFilter(
         self.casters,
         function(____, caster)
-            local ____temp_8
+            local ____temp_43
             if request.caster ~= nil then
-                ____temp_8 = caster.name == request.caster
+                ____temp_43 = caster.name == request.caster
             else
-                ____temp_8 = request.format ~= nil and caster:read().format == request.format
+                ____temp_43 = request.format ~= nil and caster:read().format == request.format
             end
-            return ____temp_8
+            return ____temp_43
         end
     )
     if #candidates == 0 then
@@ -1410,15 +1866,15 @@ function Controller.prototype.cast(self, request)
             refused = (((caster.name .. " has no ") .. state.format) .. " recipe for ") .. ____exports.Controller:shortName(request.fluid)
         end
         if moved > 0 then
-            local ____opt_11 = self.lastRead
-            if ____opt_11 ~= nil then
-                local ____opt_12 = self.lastRead
-                ____opt_11 = __TS__ArrayFind(
-                    ____opt_12 and ____opt_12.casters,
+            local ____opt_46 = self.lastRead
+            if ____opt_46 ~= nil then
+                local ____opt_47 = self.lastRead
+                ____opt_46 = __TS__ArrayFind(
+                    ____opt_47 and ____opt_47.casters,
                     function(____, view) return view.name == caster.name end
                 )
             end
-            local format = ____opt_11 and ____opt_11.format or request.format
+            local format = ____opt_46 and ____opt_46.format or request.format
             self:log(((((("poured " .. tostring(moved)) .. " mB ") .. ____exports.Controller:shortName(request.fluid)) .. " into ") .. caster.name) .. (format ~= nil and (" (" .. format) .. ")" or ""))
             return moved
         end
@@ -1441,8 +1897,8 @@ function Controller.prototype.learnUncastable(self, caster, format, fluid)
         self.catalogue.castAmounts,
         function(____, entry) return entry.format ~= format or entry.fluid ~= fluid end
     )
-    local ____self_catalogue_castAmounts_15 = self.catalogue.castAmounts
-    ____self_catalogue_castAmounts_15[#____self_catalogue_castAmounts_15 + 1] = {format = format, amount = 0, fluid = fluid}
+    local ____self_catalogue_castAmounts_50 = self.catalogue.castAmounts
+    ____self_catalogue_castAmounts_50[#____self_catalogue_castAmounts_50 + 1] = {format = format, amount = 0, fluid = fluid}
     if self.cataloguePath ~= nil then
         saveCatalogue(self.catalogue, self.cataloguePath)
     end
@@ -1456,9 +1912,9 @@ function Controller.prototype.castRefusal(self, smeltery, request, idle, need)
     if need == nil then
         return ("cannot cast " .. fluid) .. " now"
     end
-    local ____temp_18 = smeltery:amountOf(request.fluid)
-    local ____opt_16 = self.pool
-    local total = ____temp_18 + (____opt_16 and ____opt_16:stored(request.fluid) or 0)
+    local ____temp_53 = smeltery:amountOf(request.fluid)
+    local ____opt_51 = self.pool
+    local total = ____temp_53 + (____opt_51 and ____opt_51:stored(request.fluid) or 0)
     return (((((("only " .. tostring(total)) .. " mB ") .. fluid) .. " (Smeltery + reservoirs): a ") .. need.format) .. " needs ") .. tostring(need.amount)
 end
 function Controller.prototype.bringBackForCast(self, smeltery, fluid, need)
@@ -1531,6 +1987,46 @@ function Controller.prototype.serve(self, channel)
         Messages.cast,
         function(____, payload)
             self:cast(payload)
+            self.tickWanted = true
+            return self.state
+        end
+    )
+    channel:on(
+        Messages.queueOrder,
+        function(____, payload)
+            self:queueOrder(payload)
+            self.tickWanted = true
+            return self.state
+        end
+    )
+    channel:on(
+        Messages.cancelOrder,
+        function(____, payload)
+            self:cancelOrder(payload)
+            self.tickWanted = true
+            return self.state
+        end
+    )
+    channel:on(
+        Messages.queueCraft,
+        function(____, payload)
+            self:queueCraft(payload)
+            self.tickWanted = true
+            return self.state
+        end
+    )
+    channel:on(
+        Messages.trashFluid,
+        function(____, payload)
+            self:trashFluid(payload)
+            self.tickWanted = true
+            return self.state
+        end
+    )
+    channel:on(
+        Messages.insertReady,
+        function()
+            self:insertReady()
             self.tickWanted = true
             return self.state
         end
@@ -1625,11 +2121,11 @@ end
 function Controller.prototype.connect(self)
     self.network = discoverNetwork(self.config)
     self.needsDiscovery = false
-    local ____self_network_21 = self.network
-    local drain = ____self_network_21.drain
-    local chute = ____self_network_21.chute
-    local input = ____self_network_21.input
-    local output = ____self_network_21.output
+    local ____self_network_56 = self.network
+    local drain = ____self_network_56.drain
+    local chute = ____self_network_56.chute
+    local input = ____self_network_56.input
+    local output = ____self_network_56.output
     self.smeltery = drain ~= nil and chute ~= nil and Smeltery:fromNames(drain, chute) or nil
     self.input = input ~= nil and Inventory:fromName(input) or nil
     self.output = output ~= nil and Inventory:fromName(output) or nil
@@ -1661,10 +2157,10 @@ function Controller.prototype.connect(self)
             assignments = assignments
         }
     )
-    local ____self_network_22 = self.network
-    local heatOutput = ____self_network_22.heatOutput
-    local unknownOutput = ____self_network_22.unknownOutput
-    local fuelTank = ____self_network_22.fuelTank
+    local ____self_network_57 = self.network
+    local heatOutput = ____self_network_57.heatOutput
+    local unknownOutput = ____self_network_57.unknownOutput
+    local fuelTank = ____self_network_57.fuelTank
     self.fuelTank = fuelTank ~= nil and Tank:fromName(fuelTank) or nil
     self.heatOutput = heatOutput ~= nil and Inventory:fromName(heatOutput) or nil
     self.unknownOutput = unknownOutput ~= nil and Inventory:fromName(unknownOutput) or nil
@@ -1672,7 +2168,13 @@ function Controller.prototype.connect(self)
         self.network.casters,
         function(____, name) return Caster:fromName(name, self.amounts) end
     )
-    self:log((("network: " .. tostring(#self.casters)) .. " caster(s)") .. (#self.network.problems > 0 and (", " .. tostring(#self.network.problems)) .. " problem(s)" or ""))
+    self.craftCasters = __TS__ArrayMap(
+        self.network.craftCasters,
+        function(____, name) return Caster:fromName(name, self.amounts) end
+    )
+    self.trash = self.network.trash ~= nil and Tank:fromName(self.network.trash) or nil
+    local extras = (#self.craftCasters > 0 and (", " .. tostring(#self.craftCasters)) .. " craft" or "") .. (self.trash ~= nil and ", trash " .. self.trash.name or "")
+    self:log(((("network: " .. tostring(#self.casters)) .. " caster(s)") .. extras) .. (#self.network.problems > 0 and (", " .. tostring(#self.network.problems)) .. " problem(s)" or ""))
     for ____, caster in ipairs(self.casters) do
         do
             local function ____catch(____error)
@@ -1695,15 +2197,8 @@ function Controller.prototype.read(self)
         return nil
     end
     local present = self:readPresent(smeltery)
-    local states = {}
-    if #self.casters > 0 then
-        Parallel:all(unpack(__TS__ArrayMap(
-            self.casters,
-            function(____, caster, index) return function()
-                states[index + 1] = caster:read()
-            end end
-        )))
-    end
+    local states = self:readCasters()
+    local craft = self:readCraft(states)
     local outputUsed = self.output ~= nil and ____exports.Controller:usedSlots(self.output) or 0
     local outputSize = self.output ~= nil and self:sizeOf(self.output) or 0
     local pool = self.pool
@@ -1728,6 +2223,9 @@ function Controller.prototype.read(self)
         input = {},
         outputFree = outputSize - outputUsed
     }
+    if #craft > 0 then
+        snapshot.craft = craft
+    end
     if present.uncertain then
         snapshot.uncertain = true
     end
@@ -1742,8 +2240,8 @@ function Controller.prototype.read(self)
             if fluid ~= nil then
                 entry.fluid = fluid
             end
-            local ____snapshot_input_27 = snapshot.input
-            ____snapshot_input_27[#____snapshot_input_27 + 1] = entry
+            local ____snapshot_input_62 = snapshot.input
+            ____snapshot_input_62[#____snapshot_input_62 + 1] = entry
         end
         __TS__ArraySort(
             snapshot.input,
@@ -1756,7 +2254,8 @@ function Controller.prototype.read(self)
         casters = __TS__ArrayMap(
             self.casters,
             function(____, caster, index) return ____exports.Controller:viewOf(caster, states[index + 1]) end
-        )
+        ),
+        craft = craft
     }
     if input ~= nil then
         reading.input = {
@@ -1771,6 +2270,122 @@ function Controller.prototype.read(self)
     self.lastRead = reading
     self:sampleHistory(reading)
     return snapshot
+end
+function Controller.prototype.readCasters(self)
+    local ____array_63 = __TS__SparseArrayNew(unpack(self.casters))
+    __TS__SparseArrayPush(
+        ____array_63,
+        unpack(self.craftCasters)
+    )
+    local all = {__TS__SparseArraySpread(____array_63)}
+    local states = {}
+    if #all > 0 then
+        Parallel:all(unpack(__TS__ArrayMap(
+            all,
+            function(____, caster, index) return function()
+                states[index + 1] = caster:read()
+            end end
+        )))
+    end
+    return states
+end
+function Controller.prototype.readCraft(self, states)
+    return __TS__ArrayMap(
+        self.craftCasters,
+        function(____, caster, index)
+            local state = states[#self.casters + index + 1]
+            return {
+                name = caster.name,
+                state = state,
+                tags = self:tagsOf(caster, state.cast)
+            }
+        end
+    )
+end
+function Controller.prototype.tagsOf(self, caster, item)
+    if item == nil then
+        return {}
+    end
+    local known = self.craftTags:get(item)
+    if known ~= nil then
+        return known
+    end
+    local detail = caster:castDetail()
+    if (detail and detail.name) ~= item then
+        return {}
+    end
+    local tags = {}
+    if detail.tags ~= nil then
+        for tag, present in pairs(detail.tags) do
+            if present then
+                tags[#tags + 1] = tag
+            end
+        end
+    end
+    self.craftTags:set(item, tags)
+    return tags
+end
+function Controller.prototype.craftView(self, caster, entry)
+    local state = entry.state
+    local view = {
+        name = caster.name,
+        kind = caster.kind,
+        status = state.status,
+        amount = state.amount,
+        recipes = {}
+    }
+    if state.fluid ~= nil then
+        view.fluid = state.fluid
+    end
+    local item = state.cast
+    if item == nil then
+        return view
+    end
+    view.item = item
+    local key = (caster.kind .. " ") .. item
+    local recipes = self.craftMatches:get(key)
+    if recipes == nil then
+        recipes = {}
+        __TS__ArrayForEach(
+            CRAFT_RECIPES,
+            function(____, ____bindingPattern0, index)
+                local consumed
+                local result
+                local amount
+                local fluid
+                local input
+                local kind
+                kind = ____bindingPattern0[1]
+                input = ____bindingPattern0[2]
+                fluid = ____bindingPattern0[3]
+                amount = ____bindingPattern0[4]
+                result = ____bindingPattern0[5]
+                consumed = ____bindingPattern0[6]
+                if kind ~= caster.kind or not craftInputMatches(input, item, entry.tags) then
+                    return
+                end
+                recipes[#recipes + 1] = {
+                    index = index,
+                    fluid = fluid,
+                    amount = amount,
+                    result = result,
+                    consumed = consumed
+                }
+            end
+        )
+        self.craftMatches:set(key, recipes)
+    end
+    view.recipes = recipes
+    return view
+end
+function Controller.prototype.casterNamed(self, name)
+    return __TS__ArrayFind(
+        self.casters,
+        function(____, caster) return caster.name == name end
+    ) or __TS__ArrayFind(
+        self.craftCasters,
+        function(____, caster) return caster.name == name end
+    )
 end
 function Controller.prototype.checkIdle(self, plan, snapshot)
     if self.mode ~= "auto" and self.mode ~= "alloy" and self.mode ~= "melt" then
@@ -1799,15 +2414,15 @@ function Controller.prototype.finish(self)
         self:log("drain finished")
         self:setMode("idle")
     elseif self.mode == "purge" or self.mode == "alloy" then
-        local ____self_log_31 = self.log
-        local ____temp_30
+        local ____self_log_69 = self.log
+        local ____temp_68
         if self.mode == "purge" then
-            ____temp_30 = "purge finished"
+            ____temp_68 = "purge finished"
         else
-            local ____opt_28 = self.alloy
-            ____temp_30 = ("alloy finished: " .. tostring(____opt_28 and ____opt_28.made or 0)) .. " mB cast"
+            local ____opt_66 = self.alloy
+            ____temp_68 = ("alloy finished: " .. tostring(____opt_66 and ____opt_66.made or 0)) .. " mB cast"
         end
-        ____self_log_31(self, ____temp_30)
+        ____self_log_69(self, ____temp_68)
         self:setMode(____exports.Controller:ends(self.previousMode) and "idle" or self.previousMode)
     end
 end
@@ -1815,10 +2430,10 @@ function Controller.storedFluids(self, pool)
     local stored = {}
     for ____, view in ipairs(pool and pool:views() or ({})) do
         do
-            local __continue168
+            local __continue260
             repeat
                 if view.fluid == nil then
-                    __continue168 = true
+                    __continue260 = true
                     break
                 end
                 local entry = __TS__ArrayFind(
@@ -1830,9 +2445,9 @@ function Controller.storedFluids(self, pool)
                 else
                     stored[#stored + 1] = {fluid = view.fluid, amount = view.amount}
                 end
-                __continue168 = true
+                __continue260 = true
             until true
-            if not __continue168 then
+            if not __continue260 then
                 break
             end
         end
@@ -1846,8 +2461,13 @@ function Controller.prototype.refreshReading(self)
         return
     end
     local states = {}
+    local ____array_72 = __TS__SparseArrayNew(unpack(self.casters))
+    __TS__SparseArrayPush(
+        ____array_72,
+        unpack(self.craftCasters)
+    )
     local tasks = __TS__ArrayMap(
-        self.casters,
+        {__TS__SparseArraySpread(____array_72)},
         function(____, caster, index) return function()
             states[index + 1] = caster:read()
         end end
@@ -1877,6 +2497,7 @@ function Controller.prototype.refreshReading(self)
         self.casters,
         function(____, caster, index) return ____exports.Controller:viewOf(caster, states[index + 1]) end
     )
+    reading.craft = self:readCraft(states)
 end
 function Controller.prototype.execute(self, plan)
     local actions = plan.actions
@@ -1887,9 +2508,9 @@ function Controller.prototype.execute(self, plan)
         index = index + 1
         if kind == "collect" or kind == "pour" or kind == "insert" then
             while index < #actions and actions[index + 1].kind == kind do
-                local ____index_34 = index
-                index = ____index_34 + 1
-                batch[#batch + 1] = actions[____index_34 + 1]
+                local ____index_73 = index
+                index = ____index_73 + 1
+                batch[#batch + 1] = actions[____index_73 + 1]
             end
         end
         local left = {}
@@ -1911,8 +2532,8 @@ function Controller.prototype.execute(self, plan)
                     ____exports.Controller:addWaiting(plan.waiting, action.name, notMoved)
                 end
                 if action.kind == "reject" and notMoved > 0 then
-                    local ____plan_alerts_35 = plan.alerts
-                    ____plan_alerts_35[#____plan_alerts_35 + 1] = ((((action.reason .. " output full: ") .. tostring(notMoved)) .. " ") .. action.name) .. " left in the input"
+                    local ____plan_alerts_74 = plan.alerts
+                    ____plan_alerts_74[#____plan_alerts_74 + 1] = ((((action.reason .. " output full: ") .. tostring(notMoved)) .. " ") .. action.name) .. " left in the input"
                 end
             end
         )
@@ -1921,28 +2542,38 @@ end
 function Controller.prototype.apply(self, action)
     local smeltery = self.smeltery
     repeat
-        local ____switch197 = action.kind
-        local ____cond197 = ____switch197 == "collect"
-        if ____cond197 then
+        local ____switch289 = action.kind
+        local ____cond289 = ____switch289 == "collect"
+        if ____cond289 then
             do
-                local caster = __TS__ArrayFind(
-                    self.casters,
-                    function(____, candidate) return candidate.name == action.caster end
-                )
+                local caster = self:casterNamed(action.caster)
                 local output = self.output
                 if caster == nil or output == nil then
                     return 0
                 end
-                local ____opt_40 = self.lastRead
-                if ____opt_40 ~= nil then
-                    local ____opt_41 = self.lastRead
-                    ____opt_40 = __TS__ArrayFind(
-                        ____opt_41 and ____opt_41.casters,
+                local ____opt_79 = self.lastRead
+                if ____opt_79 ~= nil then
+                    local ____opt_80 = self.lastRead
+                    ____opt_79 = __TS__ArrayFind(
+                        ____opt_80 and ____opt_80.casters,
                         function(____, view) return view.name == caster.name end
                     )
                 end
-                local ____opt_36 = ____opt_40 and ____opt_40.output
-                local item = ____opt_36 and ____opt_36.name
+                local ____opt_75 = ____opt_79 and ____opt_79.output
+                local ____temp_91 = ____opt_75 and ____opt_75.name
+                if ____temp_91 == nil then
+                    local ____opt_87 = self.lastRead
+                    if ____opt_87 ~= nil then
+                        local ____opt_88 = self.lastRead
+                        ____opt_87 = __TS__ArrayFind(
+                            ____opt_88 and ____opt_88.craft,
+                            function(____, entry) return entry.name == caster.name end
+                        )
+                    end
+                    local ____opt_83 = ____opt_87 and ____opt_87.state.output
+                    ____temp_91 = ____opt_83 and ____opt_83.name
+                end
+                local item = ____temp_91
                 local moved = caster:collectPlanned(output)
                 if moved > 0 then
                     self.worked = true
@@ -1953,34 +2584,57 @@ function Controller.prototype.apply(self, action)
                 return 0
             end
         end
-        ____cond197 = ____cond197 or ____switch197 == "pour"
-        if ____cond197 then
+        ____cond289 = ____cond289 or ____switch289 == "pour"
+        if ____cond289 then
             do
-                local caster = __TS__ArrayFind(
-                    self.casters,
-                    function(____, candidate) return candidate.name == action.caster end
-                )
+                local caster = self:casterNamed(action.caster)
                 if caster == nil then
                     return 0
                 end
                 local moved = caster:pourPlanned(smeltery, action.fluid, action.amount)
-                local ____opt_46 = self.lastRead
-                if ____opt_46 ~= nil then
-                    local ____opt_47 = self.lastRead
-                    ____opt_46 = __TS__ArrayFind(
-                        ____opt_47 and ____opt_47.casters,
-                        function(____, view) return view.name == caster.name end
-                    )
+                local ____opt_92 = action.order
+                local craft = (____opt_92 and ____opt_92.format) == CRAFT_FORMAT
+                local ____craft_100
+                if craft then
+                    ____craft_100 = CRAFT_FORMAT
+                else
+                    local ____opt_96 = self.lastRead
+                    if ____opt_96 ~= nil then
+                        local ____opt_97 = self.lastRead
+                        ____opt_96 = __TS__ArrayFind(
+                            ____opt_97 and ____opt_97.casters,
+                            function(____, view) return view.name == caster.name end
+                        )
+                    end
+                    ____craft_100 = ____opt_96 and ____opt_96.format
                 end
-                local format = ____opt_46 and ____opt_46.format
-                if moved == 0 and format ~= nil then
+                local format = ____craft_100
+                if moved == 0 and craft then
+                    self.refusedCrafts:add(action.order.id)
+                elseif moved == 0 and format ~= nil then
                     self:learnUncastable(caster.name, format, action.fluid)
                 end
                 if moved > 0 then
                     self.worked = true
                 end
+                local forOrder = action.order ~= nil and " for #" .. tostring(action.order.id) or ""
                 if moved > 0 then
-                    self:log(((((("poured " .. tostring(moved)) .. " mB ") .. ____exports.Controller:shortName(action.fluid)) .. " into ") .. caster.name) .. (format ~= nil and (" (" .. format) .. ")" or ""))
+                    self:log((((((("poured " .. tostring(moved)) .. " mB ") .. ____exports.Controller:shortName(action.fluid)) .. " into ") .. caster.name) .. (format ~= nil and (" (" .. format) .. ")" or "")) .. forOrder)
+                end
+                local ordered = action.order
+                if moved > 0 and ordered ~= nil then
+                    local order = __TS__ArrayFind(
+                        self.orders,
+                        function(____, candidate) return candidate.id == ordered.id end
+                    )
+                    local ____opt_101 = order
+                    local line = ____opt_101 and __TS__ArrayFind(
+                        order and order.lines,
+                        function(____, candidate) return candidate.format == ordered.format end
+                    )
+                    if line ~= nil then
+                        line.done = line.done + 1
+                    end
                 end
                 local alloy = self.alloy
                 if moved > 0 and self.mode == "alloy" and alloy ~= nil and alloy.result == action.fluid then
@@ -1990,16 +2644,16 @@ function Controller.prototype.apply(self, action)
                 return 0
             end
         end
-        ____cond197 = ____cond197 or ____switch197 == "reject"
-        if ____cond197 then
+        ____cond289 = ____cond289 or ____switch289 == "reject"
+        if ____cond289 then
             do
-                local ____temp_50
+                local ____temp_105
                 if action.reason == "heat" then
-                    ____temp_50 = self.heatOutput
+                    ____temp_105 = self.heatOutput
                 else
-                    ____temp_50 = self.unknownOutput
+                    ____temp_105 = self.unknownOutput
                 end
-                local target = ____temp_50
+                local target = ____temp_105
                 if target == nil then
                     return action.count
                 end
@@ -2014,8 +2668,8 @@ function Controller.prototype.apply(self, action)
                 return action.count - moved
             end
         end
-        ____cond197 = ____cond197 or ____switch197 == "store"
-        if ____cond197 then
+        ____cond289 = ____cond289 or ____switch289 == "store"
+        if ____cond289 then
             do
                 local pool = self.pool
                 if pool == nil then
@@ -2045,35 +2699,35 @@ function Controller.prototype.apply(self, action)
                 return 0
             end
         end
-        ____cond197 = ____cond197 or ____switch197 == "restore"
-        if ____cond197 then
+        ____cond289 = ____cond289 or ____switch289 == "restore"
+        if ____cond289 then
             do
-                local ____opt_51 = self.pool
-                local taken = ____opt_51 and ____opt_51:take(smeltery.drain, action.fluid, action.amount) or 0
-                local ____temp_55 = taken < action.amount
-                if ____temp_55 then
-                    local ____opt_53 = self.pool
-                    ____temp_55 = (____opt_53 and ____opt_53:stored(action.fluid) or 0) > 0
+                local ____opt_106 = self.pool
+                local taken = ____opt_106 and ____opt_106:take(smeltery.drain, action.fluid, action.amount) or 0
+                local ____temp_110 = taken < action.amount
+                if ____temp_110 then
+                    local ____opt_108 = self.pool
+                    ____temp_110 = (____opt_108 and ____opt_108:stored(action.fluid) or 0) > 0
                 end
-                if ____temp_55 then
+                if ____temp_110 then
                     self:learnSmelteryCapacity(smeltery)
                 end
-                local ____temp_61
+                local ____temp_116
                 if action.why == "stock" then
-                    ____temp_61 = "from the stock"
+                    ____temp_116 = "from the stock"
                 else
-                    local ____temp_60
+                    local ____temp_115
                     if action.why == "alloy" then
-                        local ____exports_Controller_58 = ____exports.Controller
-                        local ____exports_Controller_shortName_59 = ____exports.Controller.shortName
-                        local ____opt_56 = self.alloy
-                        ____temp_60 = "for " .. ____exports_Controller_shortName_59(____exports_Controller_58, ____opt_56 and ____opt_56.result or "the alloy")
+                        local ____exports_Controller_113 = ____exports.Controller
+                        local ____exports_Controller_shortName_114 = ____exports.Controller.shortName
+                        local ____opt_111 = self.alloy
+                        ____temp_115 = "for " .. ____exports_Controller_shortName_114(____exports_Controller_113, ____opt_111 and ____opt_111.result or "the alloy")
                     else
-                        ____temp_60 = "to complete a cast"
+                        ____temp_115 = action.why == "order" and "for an order" or "to complete a cast"
                     end
-                    ____temp_61 = ____temp_60
+                    ____temp_116 = ____temp_115
                 end
-                local why = ____temp_61
+                local why = ____temp_116
                 if taken > 0 then
                     self.worked = true
                 end
@@ -2090,8 +2744,8 @@ function Controller.prototype.apply(self, action)
                     self.worked = true
                 end
                 if moved > 0 then
-                    local ____self_inserts_62 = self.inserts
-                    ____self_inserts_62[#____self_inserts_62 + 1] = {
+                    local ____self_inserts_117 = self.inserts
+                    ____self_inserts_117[#____self_inserts_117 + 1] = {
                         time = os.clock(),
                         count = moved
                     }
@@ -2121,13 +2775,13 @@ function Controller.prototype.fluidOf(self, name, detail)
         fluid = self.materials:fluidOf(item) or false
         self.fluidCache:set(name, fluid)
     end
-    local ____temp_63
+    local ____temp_118
     if fluid == false then
-        ____temp_63 = nil
+        ____temp_118 = nil
     else
-        ____temp_63 = fluid
+        ____temp_118 = fluid
     end
-    return ____temp_63
+    return ____temp_118
 end
 function Controller.prototype.planContext(self)
     local context = {
@@ -2152,6 +2806,14 @@ function Controller.prototype.planContext(self)
         }
         if alloy.target ~= nil then
             context.alloy.remaining = alloy.target - alloy.made
+        end
+    end
+    if self.mode == "manual" then
+        if #self.orders > 0 then
+            context.orders = self.orders
+        end
+        if self.insertReadyWanted then
+            context.insertReady = true
         end
     end
     return context
@@ -2213,15 +2875,15 @@ function Controller.prototype.presentFluids(self, smeltery)
             0
         )
     end
-    local ____array_66 = __TS__SparseArrayNew(unpack(present.melting))
+    local ____array_121 = __TS__SparseArrayNew(unpack(present.melting))
     __TS__SparseArrayPush(
-        ____array_66,
+        ____array_121,
         unpack(__TS__ArrayMap(
             present.fluids,
             function(____, fluid) return fluid.name end
         ))
     )
-    return {__TS__SparseArraySpread(____array_66)}
+    return {__TS__SparseArraySpread(____array_121)}
 end
 function Controller.prototype.requireManual(self)
     if self.mode ~= "manual" then
@@ -2232,33 +2894,36 @@ function Controller.prototype.requireManual(self)
     end
 end
 function Controller.prototype.buildState(self, alerts, waiting, smallStocks)
-    local ____self_mode_69 = self.mode
-    local ____os_epoch_result_70 = os.epoch("utc")
-    local ____temp_71 = {}
-    local ____temp_72 = {}
-    local ____temp_73 = {}
-    local ____waiting_74 = waiting
-    local ____alerts_75 = alerts
-    local ____temp_76 = {unpack(self.logLines)}
-    local ____self_inputItems_77 = self.inputItems
-    local ____self_config_formatPriority_78 = self.config.formatPriority
-    local ____opt_67 = self.pool
+    local ____self_mode_124 = self.mode
+    local ____os_epoch_result_125 = os.epoch("utc")
+    local ____temp_126 = {}
+    local ____temp_127 = {}
+    local ____temp_128 = {}
+    local ____waiting_129 = waiting
+    local ____alerts_130 = alerts
+    local ____temp_131 = {unpack(self.logLines)}
+    local ____self_inputItems_132 = self.inputItems
+    local ____self_config_formatPriority_133 = self.config.formatPriority
+    local ____opt_122 = self.pool
     local state = {
-        mode = ____self_mode_69,
-        time = ____os_epoch_result_70,
-        fluids = ____temp_71,
-        melting = ____temp_72,
-        casters = ____temp_73,
-        waiting = ____waiting_74,
-        alerts = ____alerts_75,
-        log = ____temp_76,
-        inputItems = ____self_inputItems_77,
-        autoFormats = ____self_config_formatPriority_78,
-        reservoirs = ____opt_67 and ____opt_67:views() or ({}),
+        mode = ____self_mode_124,
+        time = ____os_epoch_result_125,
+        fluids = ____temp_126,
+        melting = ____temp_127,
+        casters = ____temp_128,
+        waiting = ____waiting_129,
+        alerts = ____alerts_130,
+        log = ____temp_131,
+        inputItems = ____self_inputItems_132,
+        autoFormats = ____self_config_formatPriority_133,
+        reservoirs = ____opt_122 and ____opt_122:views() or ({}),
         alloyOptions = self:alloyOptions()
     }
     if self.alloy ~= nil then
         state.alloy = __TS__ObjectAssign({}, self.alloy)
+    end
+    if #self.orders > 0 then
+        state.orders = self:orderViews()
     end
     if smallStocks ~= nil then
         state.smallStocks = smallStocks
@@ -2290,6 +2955,23 @@ function Controller.prototype.buildState(self, alerts, waiting, smallStocks)
             state.output = reading.output
         end
         state.forecast = self:forecast(reading)
+        state.castOptions = self:castOptions(reading)
+        local craft = {}
+        for ____, entry in ipairs(reading.craft) do
+            local caster = __TS__ArrayFind(
+                self.craftCasters,
+                function(____, candidate) return candidate.name == entry.name end
+            )
+            if caster ~= nil then
+                craft[#craft + 1] = self:craftView(caster, entry)
+            end
+        end
+        if #craft > 0 then
+            state.craftCasters = craft
+        end
+    end
+    if self.trash ~= nil then
+        state.trash = self.trash.name
     end
     return state
 end
@@ -2311,8 +2993,8 @@ function Controller.prototype.sampleHistory(self, reading)
         return
     end
     self.lastSample = now
-    local ____self_history_79 = self.history
-    ____self_history_79[#____self_history_79 + 1] = __TS__ArrayReduce(
+    local ____self_history_134 = self.history
+    ____self_history_134[#____self_history_134 + 1] = __TS__ArrayReduce(
         reading.fluids,
         function(____, sum, fluid) return sum + fluid.amount end,
         0
@@ -2376,18 +3058,18 @@ function Controller.prototype.forecast(self, reading)
                 local format = ____value.format
                 local amount = ____value.amount
                 do
-                    local __continue287
+                    local __continue393
                     repeat
                         local count = math.floor(left / amount)
                         if count <= 0 then
-                            __continue287 = true
+                            __continue393 = true
                             break
                         end
                         casts[#casts + 1] = {format = format, count = count}
                         left = left - count * amount
-                        __continue287 = true
+                        __continue393 = true
                     until true
-                    if not __continue287 then
+                    if not __continue393 then
                         break
                     end
                 end
@@ -2396,14 +3078,53 @@ function Controller.prototype.forecast(self, reading)
         end
     )
 end
+function Controller.prototype.castOptions(self, reading)
+    local formats = {}
+    for ____, caster in ipairs(reading.casters) do
+        if caster.format ~= nil and not __TS__ArrayIncludes(formats, caster.format) then
+            formats[#formats + 1] = caster.format
+        end
+    end
+    local fluids = {}
+    local ____array_135 = __TS__SparseArrayNew(unpack(__TS__ArrayMap(
+        reading.fluids,
+        function(____, fluid) return fluid.name end
+    )))
+    __TS__SparseArrayPush(
+        ____array_135,
+        unpack(__TS__ArrayMap(
+            ____exports.Controller:storedFluids(self.pool),
+            function(____, entry) return entry.fluid end
+        ))
+    )
+    local names = {__TS__SparseArraySpread(____array_135)}
+    for ____, name in ipairs(names) do
+        if not __TS__ArrayIncludes(fluids, name) then
+            fluids[#fluids + 1] = name
+        end
+    end
+    return __TS__ArrayMap(
+        fluids,
+        function(____, fluid)
+            local casts = {}
+            for ____, format in ipairs(formats) do
+                local amount = self.amounts:get(format, fluid)
+                if amount ~= nil then
+                    casts[#casts + 1] = {format = format, amount = amount}
+                end
+            end
+            return {fluid = fluid, casts = casts}
+        end
+    )
+end
 function Controller.prototype.alloyOptions(self)
     local stored = ____exports.Controller:storedFluids(self.pool)
     local function stockOf(____, fluid)
-        local ____opt_80 = __TS__ArrayFind(
+        local ____opt_136 = __TS__ArrayFind(
             stored,
             function(____, entry) return entry.fluid == fluid end
         )
-        return ____opt_80 and ____opt_80.amount or 0
+        return ____opt_136 and ____opt_136.amount or 0
     end
     local options = {}
     __TS__ArrayForEach(
@@ -2461,8 +3182,8 @@ end
 function Controller.prototype.log(self, line)
     local stamped = (tostring(os.date("%H:%M:%S")) .. " ") .. line
     print(stamped)
-    local ____self_logLines_82 = self.logLines
-    ____self_logLines_82[#____self_logLines_82 + 1] = stamped
+    local ____self_logLines_138 = self.logLines
+    ____self_logLines_138[#____self_logLines_138 + 1] = stamped
     if self.logFile ~= nil then
         local path = self.logFile
         if fs.exists(path) and fs.getSize(path) >= LOG_FILE_BYTES then
@@ -2519,6 +3240,18 @@ function Controller.addWaiting(self, waiting, name, count)
     end
     waiting[#waiting + 1] = {name = name, count = count, reason = "full"}
 end
+function Controller.itemName(self, item)
+    return table.concat(
+        __TS__StringSplit(
+            __TS__StringSubstring(
+                item,
+                (string.find(item, ":", nil, true) or 0) - 1 + 1
+            ),
+            "_"
+        ),
+        " "
+    )
+end
 function Controller.shortName(self, fluid)
     local colon = (string.find(fluid, ":", nil, true) or 0) - 1
     return colon >= 0 and __TS__StringSubstring(fluid, colon + 1) or fluid
@@ -2562,18 +3295,18 @@ function ____exports.runController()
     local function listen()
         while true do
             do
-                local __continue326
+                local __continue446
                 repeat
                     local event = {os.pullEvent("rednet_message")}
                     if event[4] ~= PROTOCOL then
-                        __continue326 = true
+                        __continue446 = true
                         break
                     end
                     inbox[#inbox + 1] = event
                     os.queueEvent(WAKE_EVENT)
-                    __continue326 = true
+                    __continue446 = true
                 until true
-                if not __continue326 then
+                if not __continue446 then
                     break
                 end
             end
@@ -2585,7 +3318,7 @@ function ____exports.runController()
         local timer = os.startTimer(0)
         while true do
             do
-                local __continue329
+                local __continue449
                 repeat
                     local event = {os.pullEvent()}
                     while #inbox > 0 do
@@ -2593,7 +3326,7 @@ function ____exports.runController()
                     end
                     local timerDue = event[1] == "timer" and event[2] == timer
                     if not timerDue and not controller:wantsTick() then
-                        __continue329 = true
+                        __continue449 = true
                         break
                     end
                     if not timerDue then
@@ -2602,7 +3335,7 @@ function ____exports.runController()
                     local worked = controller:tick()
                     timer = os.startTimer(worked and config.activeTickSeconds or config.tickSeconds)
                     if not online then
-                        __continue329 = true
+                        __continue449 = true
                         break
                     end
                     local state = controller:getState()
@@ -2612,9 +3345,9 @@ function ____exports.runController()
                         lastSent = text
                         lastSentClock = os.clock()
                     end
-                    __continue329 = true
+                    __continue449 = true
                 until true
-                if not __continue329 then
+                if not __continue449 then
                     break
                 end
             end

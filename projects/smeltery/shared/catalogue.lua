@@ -452,6 +452,8 @@ local CastAmount = ____index.CastAmount
 local MaterialOverride = ____index.MaterialOverride
 local ____castAmountsData = require("projects.smeltery.shared.castAmountsData")
 local DEFAULT_CAST_AMOUNTS = ____castAmountsData.DEFAULT_CAST_AMOUNTS
+local ____castRecipesData = require("projects.smeltery.shared.castRecipesData")
+local CAST_RECIPES = ____castRecipesData.CAST_RECIPES
 local ____catalogueData = require("projects.smeltery.shared.catalogueData")
 local DEFAULT_ALLOY_RATIOS = ____catalogueData.DEFAULT_ALLOY_RATIOS
 local DEFAULT_ALLOYS = ____catalogueData.DEFAULT_ALLOYS
@@ -520,7 +522,7 @@ function ____exports.materialMapOf(catalogue)
     return __TS__New(MaterialMap, {fluids = catalogue.moltenFluids, overrides = catalogue.overrides})
 end
 function ____exports.castAmountsOf(catalogue)
-    return __TS__New(CastAmounts, catalogue.castAmounts)
+    return __TS__New(CastAmounts, catalogue.castAmounts, CAST_RECIPES)
 end
 function ____exports.temperatureMap(temperatures)
     local map = __TS__New(Map)

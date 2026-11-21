@@ -259,6 +259,7 @@ local ____exports = {}
 local ____inventory = require("core.inventory")
 local Inventory = ____inventory.Inventory
 local ____inventory = require("core.inventory")
+local ItemDetail = ____inventory.ItemDetail
 local ItemSummary = ____inventory.ItemSummary
 local ____tank = require("core.tank")
 local Tank = ____tank.Tank
@@ -390,6 +391,9 @@ function Caster.prototype.formatOf(self, castName)
         ____temp_6 = format
     end
     return ____temp_6
+end
+function Caster.prototype.castDetail(self)
+    return self.inventory:getItem(CAST_SLOT)
 end
 function Caster.prototype.amountFor(self, format, fluid)
     return self.amounts:get(format, fluid)

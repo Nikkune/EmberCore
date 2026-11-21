@@ -715,6 +715,19 @@ local function __TS__SparseArraySpread(sparseArray)
     return _unpack(sparseArray, 1, sparseArray.sparseLength)
 end
 
+local function __TS__ArrayReverse(self)
+    local i = 1
+    local j = #self
+    while i < j do
+        local temp = self[j]
+        self[j] = self[i]
+        self[i] = temp
+        i = i + 1
+        j = j - 1
+    end
+    return self
+end
+
 local function __TS__StringPadEnd(self, maxLength, fillString)
     if fillString == nil then
         fillString = " "
@@ -742,6 +755,15 @@ local function __TS__StringPadEnd(self, maxLength, fillString)
     )
 end
 
+local function __TS__ArraySome(self, callbackfn, thisArg)
+    for i = 1, #self do
+        if callbackfn(thisArg, self[i], i - 1, self) then
+            return true
+        end
+    end
+    return false
+end
+
 local function __TS__ArrayReduce(self, callbackFn, ...)
     local len = #self
     local k = 0
@@ -764,19 +786,6 @@ local function __TS__ArrayReduce(self, callbackFn, ...)
         )
     end
     return accumulator
-end
-
-local function __TS__ArrayReverse(self)
-    local i = 1
-    local j = #self
-    while i < j do
-        local temp = self[j]
-        self[j] = self[i]
-        self[i] = temp
-        i = i + 1
-        j = j - 1
-    end
-    return self
 end
 
 local function __TS__StringPadStart(self, maxLength, fillString)
@@ -812,15 +821,6 @@ local function __TS__StringStartsWith(self, searchString, position)
     end
     return string.sub(self, position + 1, #searchString + position) == searchString
 end
-
-local function __TS__ArraySome(self, callbackfn, thisArg)
-    for i = 1, #self do
-        if callbackfn(thisArg, self[i], i - 1, self) then
-            return true
-        end
-    end
-    return false
-end
 -- End of Lua Library inline imports
 local ____exports = {}
 local ____index = require("modules.fluids.index")
@@ -834,11 +834,16 @@ local ____types = require("modules.ui.types.index")
 local Rect = ____types.Rect
 local ____protocol = require("projects.smeltery.shared.protocol")
 local AlloyOption = ____protocol.AlloyOption
-local CastRequest = ____protocol.CastRequest
+local CraftCasterView = ____protocol.CraftCasterView
+local CraftRecipeView = ____protocol.CraftRecipeView
 local DeleteRecipeRequest = ____protocol.DeleteRecipeRequest
 local InputItemView = ____protocol.InputItemView
+local QueueCraftRequest = ____protocol.QueueCraftRequest
+local TrashFluidRequest = ____protocol.TrashFluidRequest
 local InsertRequest = ____protocol.InsertRequest
 local Mode = ____protocol.Mode
+local OrderView = ____protocol.OrderView
+local QueueOrderRequest = ____protocol.QueueOrderRequest
 local SaveRecipeRequest = ____protocol.SaveRecipeRequest
 local SetAlloyRequest = ____protocol.SetAlloyRequest
 local SetReservoirRequest = ____protocol.SetReservoirRequest
@@ -956,10 +961,17 @@ local LOG_FILTERS = {
     {"alert", "ALERT", N.red}
 }
 local CASTS_PER_PAGE = 5
-local MANUAL_ROWS = 5
+local FLUID_ROWS = 10
+local FORMAT_ROWS = 5
+local FORMAT_PAGE = FORMAT_ROWS * 2
+local ORDER_ROWS = 5
+local MAX_COUNT = 64
+local STACK_ROWS = 4
+local CRAFT_CASTERS = 3
+local CRAFT_RECIPE_ROWS = 3
 local ALLOYS_PER_PAGE = 10
 local INGOT = 90
-local ITEMS_PER_PAGE = 8
+local ITEMS_PER_PAGE = 15
 local RESERVOIRS_PER_PAGE = 15
 local PICKER_COLUMNS = 4
 local PICKER_ROWS = 18
@@ -1054,12 +1066,6 @@ local function reservoirLines(name, width)
     }
 end
 local FULL_SCREEN = {x = 1, y = 1, width = ____exports.SCREEN_WIDTH, height = ____exports.SCREEN_HEIGHT}
-local function manualFluidLabel(fluid)
-    if fluid.amount == 0 then
-        return ((fluidLabel(fluid.name) .. " ") .. tostring(fluid.stored)) .. " mB stored"
-    end
-    return (((fluidLabel(fluid.name) .. " ") .. tostring(fluid.amount)) .. " mB") .. (fluid.stored > 0 and (" +" .. tostring(fluid.stored)) .. " stored" or "")
-end
 ____exports.SmelteryScreen = __TS__Class()
 local SmelteryScreen = ____exports.SmelteryScreen
 SmelteryScreen.name = "SmelteryScreen"
@@ -1070,8 +1076,13 @@ function SmelteryScreen.prototype.____constructor(self, actions)
     self.tab = "overview"
     self.castPage = 1
     self.itemPage = 1
-    self.manualFluidPage = 1
-    self.manualFormatPage = 1
+    self.fluidPage = 1
+    self.formatPage = 1
+    self.orderPage = 1
+    self.inputDetails = false
+    self.counts = __TS__New(Map)
+    self.orderView = "cast"
+    self.craftCount = 1
     self.stockPage = 1
     self.logPage = 1
     self.logFilter = "all"
@@ -1087,7 +1098,11 @@ function SmelteryScreen.prototype.____constructor(self, actions)
     self.modeButtons = __TS__New(Map)
     self.itemButtons = {}
     self.fluidButtons = {}
-    self.formatButtons = {}
+    self.countLess = {}
+    self.countMore = {}
+    self.cancelButtons = {}
+    self.craftButtons = {}
+    self.stackButtons = {}
     self.autoButtons = {}
     self.filterButtons = __TS__New(Map)
     self.capacityStepButtons = {}
@@ -1156,6 +1171,19 @@ function SmelteryScreen.prototype.____constructor(self, actions)
             row = row + 1
         end
     end
+    do
+        local row = 0
+        while row < STACK_ROWS do
+            local index = row
+            local ____self_stackButtons_1 = self.stackButtons
+            ____self_stackButtons_1[#____self_stackButtons_1 + 1] = self:button(
+                "",
+                {x = 6, y = 26 + index * 3, width = 24, height = 1},
+                function() return self:askTrashStack(index) end
+            )
+            row = row + 1
+        end
+    end
     self.setCapacity = self:button(
         " SET CAPACITY ",
         {x = 6, y = 44, width = 14, height = 1},
@@ -1175,8 +1203,8 @@ function SmelteryScreen.prototype.____constructor(self, actions)
     for ____, step in ipairs(CAPACITY_STEPS) do
         local label = (" " .. tostring(step)) .. " "
         local rect = {x = capacityX, y = 22, width = #label, height = 1}
-        local ____self_capacityStepButtons_1 = self.capacityStepButtons
-        ____self_capacityStepButtons_1[#____self_capacityStepButtons_1 + 1] = self:button(
+        local ____self_capacityStepButtons_2 = self.capacityStepButtons
+        ____self_capacityStepButtons_2[#____self_capacityStepButtons_2 + 1] = self:button(
             label,
             rect,
             function() return self:setCapacityStep(step) end
@@ -1205,12 +1233,136 @@ function SmelteryScreen.prototype.____constructor(self, actions)
     )
     do
         local row = 0
+        while row < FLUID_ROWS do
+            local index = row
+            local ____self_fluidButtons_3 = self.fluidButtons
+            ____self_fluidButtons_3[#____self_fluidButtons_3 + 1] = self:button(
+                "",
+                {x = 8, y = 7 + index * 2, width = 23, height = 1},
+                function() return self:pickFluid(index) end
+            )
+            row = row + 1
+        end
+    end
+    self.fluidPages = self:pagination(
+        FLUID_ROWS,
+        {x = 11, y = 27, width = 11, height = 1},
+        function(____, page)
+            self.fluidPage = page
+            self:sync()
+        end
+    )
+    do
+        local cell = 0
+        while cell < FORMAT_PAGE do
+            local index = cell
+            local place = ____exports.SmelteryScreen:formatPlace(index)
+            local ____self_countLess_4 = self.countLess
+            ____self_countLess_4[#____self_countLess_4 + 1] = self:button(
+                " - ",
+                {x = place.x + 20, y = place.y, width = 3, height = 1},
+                function() return self:stepCount(index, -1) end
+            )
+            local ____self_countMore_5 = self.countMore
+            ____self_countMore_5[#____self_countMore_5 + 1] = self:button(
+                " + ",
+                {x = place.x + 27, y = place.y, width = 3, height = 1},
+                function() return self:stepCount(index, 1) end
+            )
+            cell = cell + 1
+        end
+    end
+    self.formatPages = self:pagination(
+        FORMAT_PAGE,
+        {x = 86, y = 17, width = 11, height = 1},
+        function(____, page)
+            self.formatPage = page
+            self:sync()
+        end
+    )
+    self.castViewButton = self:button(
+        " CAST ",
+        {x = 82, y = 5, width = 6, height = 1},
+        function() return self:setOrderView("cast") end
+    )
+    self.craftViewButton = self:button(
+        " CRAFT ",
+        {x = 89, y = 5, width = 7, height = 1},
+        function() return self:setOrderView("craft") end
+    )
+    do
+        local slot = 0
+        while slot < CRAFT_CASTERS * CRAFT_RECIPE_ROWS do
+            local index = slot
+            local place = ____exports.SmelteryScreen:craftPlace(index)
+            local ____self_craftButtons_6 = self.craftButtons
+            ____self_craftButtons_6[#____self_craftButtons_6 + 1] = self:button(
+                "",
+                {x = place.x, y = place.y, width = 56, height = 1},
+                function() return self:pickCraft(index) end
+            )
+            slot = slot + 1
+        end
+    end
+    self.craftLess = self:button(
+        " - ",
+        {x = 45, y = 24, width = 3, height = 1},
+        function() return self:stepCraft(-1) end
+    )
+    self.craftMore = self:button(
+        " + ",
+        {x = 52, y = 24, width = 3, height = 1},
+        function() return self:stepCraft(1) end
+    )
+    self.clearButton = self:button(
+        " CLEAR ",
+        {x = 37, y = 26, width = 7, height = 1},
+        function() return self:clearOrder() end
+    )
+    self.sendButton = self:button(
+        "",
+        {x = 77, y = 26, width = 20, height = 1},
+        function() return self:sendOrder() end
+    )
+    do
+        local row = 0
+        while row < ORDER_ROWS do
+            local index = row
+            local ____self_cancelButtons_7 = self.cancelButtons
+            ____self_cancelButtons_7[#____self_cancelButtons_7 + 1] = self:button(
+                " x ",
+                {x = 94, y = 33 + index * 2, width = 3, height = 1},
+                function() return self:cancelOrder(index) end
+            )
+            row = row + 1
+        end
+    end
+    self.orderPages = self:pagination(
+        ORDER_ROWS,
+        {x = 84, y = 31, width = 11, height = 1},
+        function(____, page)
+            self.orderPage = page
+            self:sync()
+        end
+    )
+    self.insertReadyButton = self:button(
+        " INSERT READY ",
+        {x = 66, y = 46, width = 14, height = 1},
+        function() return self.actions:insertReady() end
+    )
+    self.detailsButton = self:button(
+        (" DETAILS " .. Glyph.right) .. " ",
+        {x = 83, y = 46, width = 11, height = 1},
+        function() return self:openDetails(true) end
+    )
+    do
+        local row = 0
         while row < ITEMS_PER_PAGE do
             local index = row
-            local ____self_itemButtons_2 = self.itemButtons
-            ____self_itemButtons_2[#____self_itemButtons_2 + 1] = self:button(
+            local ____self_itemButtons_8 = self.itemButtons
+            ____self_itemButtons_8[#____self_itemButtons_8 + 1] = self:button(
                 "",
-                {x = 50, y = 14 + index * 4, width = 8, height = 1},
+                {x = 86, y = 9 + index * 2, width = 9, height = 1},
                 function() return self:pressItem(index) end
             )
             row = row + 1
@@ -1218,50 +1370,21 @@ function SmelteryScreen.prototype.____constructor(self, actions)
     end
     self.itemPages = self:pagination(
         ITEMS_PER_PAGE,
-        {x = 6, y = 45, width = 11, height = 1},
+        {x = 6, y = 40, width = 11, height = 1},
         function(____, page)
             self.itemPage = page
-        end
-    )
-    self.manualFluidPages = self:pagination(
-        MANUAL_ROWS,
-        {x = 86, y = 12, width = 11, height = 1},
-        function(____, page)
-            self.manualFluidPage = page
             self:sync()
         end
     )
-    self.manualFormatPages = self:pagination(
-        MANUAL_ROWS,
-        {x = 86, y = 25, width = 11, height = 1},
-        function(____, page)
-            self.manualFormatPage = page
-            self:sync()
-        end
+    self.backButton = self:button(
+        (" " .. Glyph.left) .. " BACK ",
+        {x = 6, y = 45, width = 8, height = 1},
+        function() return self:openDetails(false) end
     )
-    do
-        local row = 0
-        while row < MANUAL_ROWS do
-            local index = row
-            local ____self_fluidButtons_3 = self.fluidButtons
-            ____self_fluidButtons_3[#____self_fluidButtons_3 + 1] = self:button(
-                "",
-                {x = 69, y = 14 + index * 2, width = 28, height = 1},
-                function() return self:pickFluid(index) end
-            )
-            local ____self_formatButtons_4 = self.formatButtons
-            ____self_formatButtons_4[#____self_formatButtons_4 + 1] = self:button(
-                "",
-                {x = 66, y = 27 + index * 2, width = 31, height = 1},
-                function() return self:pickFormat(index) end
-            )
-            row = row + 1
-        end
-    end
-    self.castButton = self:button(
-        "",
-        {x = 66, y = 39, width = 31, height = 1},
-        function() return self:pressCast() end
+    self.detailsReadyButton = self:button(
+        " INSERT READY ",
+        {x = 66, y = 45, width = 14, height = 1},
+        function() return self.actions:insertReady() end
     )
     __TS__ArrayForEach(
         LOG_FILTERS,
@@ -1299,8 +1422,8 @@ function SmelteryScreen.prototype.____constructor(self, actions)
         while slot < RESERVOIRS_PER_PAGE do
             local index = slot
             local place = ____exports.SmelteryScreen:reservoirPlace(index)
-            local ____self_reservoirButtons_5 = self.reservoirButtons
-            ____self_reservoirButtons_5[#____self_reservoirButtons_5 + 1] = self:button(
+            local ____self_reservoirButtons_9 = self.reservoirButtons
+            ____self_reservoirButtons_9[#____self_reservoirButtons_9 + 1] = self:button(
                 "",
                 {x = place.x, y = place.y + 6, width = 11, height = 1},
                 function() return self:pressReservoir(index) end
@@ -1318,8 +1441,8 @@ function SmelteryScreen.prototype.____constructor(self, actions)
         local row = 0
         while row < ALLOYS_PER_PAGE do
             local index = row
-            local ____self_alloyButtons_6 = self.alloyButtons
-            ____self_alloyButtons_6[#____self_alloyButtons_6 + 1] = self:button(
+            local ____self_alloyButtons_10 = self.alloyButtons
+            ____self_alloyButtons_10[#____self_alloyButtons_10 + 1] = self:button(
                 "",
                 {x = 10, y = 7 + index * 3, width = 36, height = 1},
                 function() return self:pickAlloy(index) end
@@ -1404,6 +1527,11 @@ function SmelteryScreen.prototype.____constructor(self, actions)
         {x = 79, y = 43, width = 8, height = 1},
         function() return self:cancelPanel() end
     )
+    self.trashButton = self:button(
+        " TRASH ",
+        {x = 89, y = 43, width = 7, height = 1},
+        function() return self:askTrashReservoir() end
+    )
     self.resultButton = self:button(
         "",
         {x = 9, y = 9, width = 20, height = 1},
@@ -1424,26 +1552,26 @@ function SmelteryScreen.prototype.____constructor(self, actions)
         while row < MAX_INGREDIENTS do
             local index = row
             local y = 14 + index * 2
-            local ____self_inputButtons_7 = self.inputButtons
-            ____self_inputButtons_7[#____self_inputButtons_7 + 1] = self:button(
+            local ____self_inputButtons_11 = self.inputButtons
+            ____self_inputButtons_11[#____self_inputButtons_11 + 1] = self:button(
                 "",
                 {x = 9, y = y, width = 20, height = 1},
                 function() return self:pickSlot(index) end
             )
-            local ____self_inputLess_8 = self.inputLess
-            ____self_inputLess_8[#____self_inputLess_8 + 1] = self:button(
+            local ____self_inputLess_12 = self.inputLess
+            ____self_inputLess_12[#____self_inputLess_12 + 1] = self:button(
                 " - ",
                 {x = 31, y = y, width = 3, height = 1},
                 function() return self:stepAmount(index, -1) end
             )
-            local ____self_inputMore_9 = self.inputMore
-            ____self_inputMore_9[#____self_inputMore_9 + 1] = self:button(
+            local ____self_inputMore_13 = self.inputMore
+            ____self_inputMore_13[#____self_inputMore_13 + 1] = self:button(
                 " + ",
                 {x = 44, y = y, width = 3, height = 1},
                 function() return self:stepAmount(index, 1) end
             )
-            local ____self_inputRemove_10 = self.inputRemove
-            ____self_inputRemove_10[#____self_inputRemove_10 + 1] = self:button(
+            local ____self_inputRemove_14 = self.inputRemove
+            ____self_inputRemove_14[#____self_inputRemove_14 + 1] = self:button(
                 " x ",
                 {x = 49, y = y, width = 3, height = 1},
                 function() return self:removeInput(index) end
@@ -1459,8 +1587,8 @@ function SmelteryScreen.prototype.____constructor(self, actions)
     local stepX = 12
     for ____, step in ipairs(STEPS) do
         local label = (" " .. tostring(step)) .. " "
-        local ____self_stepButtons_11 = self.stepButtons
-        ____self_stepButtons_11[#____self_stepButtons_11 + 1] = self:button(
+        local ____self_stepButtons_15 = self.stepButtons
+        ____self_stepButtons_15[#____self_stepButtons_15 + 1] = self:button(
             label,
             {x = stepX, y = 25, width = #label, height = 1},
             function() return self:setStep(step) end
@@ -1472,8 +1600,8 @@ function SmelteryScreen.prototype.____constructor(self, actions)
         while cell < PICKER_PAGE do
             local index = cell
             local x = 9 + math.floor(index / PICKER_ROWS) * 23
-            local ____self_pickerButtons_12 = self.pickerButtons
-            ____self_pickerButtons_12[#____self_pickerButtons_12 + 1] = self:button(
+            local ____self_pickerButtons_16 = self.pickerButtons
+            ____self_pickerButtons_16[#____self_pickerButtons_16 + 1] = self:button(
                 "",
                 {x = x, y = 13 + index % PICKER_ROWS, width = 20, height = 1},
                 function() return self:pressPicker(index) end
@@ -1485,8 +1613,8 @@ function SmelteryScreen.prototype.____constructor(self, actions)
         local cell = 0
         while cell < PICKER_KNOWN do
             local index = cell
-            local ____self_knownButtons_13 = self.knownButtons
-            ____self_knownButtons_13[#____self_knownButtons_13 + 1] = self:button(
+            local ____self_knownButtons_17 = self.knownButtons
+            ____self_knownButtons_17[#____self_knownButtons_17 + 1] = self:button(
                 "",
                 {x = 9 + index * 23, y = 10, width = 20, height = 1},
                 function() return self:pressKnown(index) end
@@ -1499,8 +1627,8 @@ function SmelteryScreen.prototype.____constructor(self, actions)
         while letter < #LETTERS do
             local index = letter
             local label = (" " .. string.upper(__TS__StringCharAt(LETTERS, index))) .. " "
-            local ____self_letterButtons_14 = self.letterButtons
-            ____self_letterButtons_14[#____self_letterButtons_14 + 1] = self:button(
+            local ____self_letterButtons_18 = self.letterButtons
+            ____self_letterButtons_18[#____self_letterButtons_18 + 1] = self:button(
                 label,
                 {x = 6 + index * 3, y = 7, width = 3, height = 1},
                 function() return self:jumpTo(index) end
@@ -1561,7 +1689,7 @@ function SmelteryScreen.prototype.notify(self, text, color)
 end
 function SmelteryScreen.prototype.tick(self)
     if self.confirm ~= nil and self.confirm.step == 2 and os.clock() > self.confirm.deadline then
-        self:notify((self.confirm.kind == "force" and "force" or "delete") .. " cancelled: not confirmed in time")
+        self:notify(self.confirm.kind .. " cancelled: not confirmed in time")
         self.confirm = nil
     end
     self:sync()
@@ -1577,11 +1705,12 @@ function SmelteryScreen.prototype.showTab(self, tab)
     self.assigning = nil
     self.capacityDraft = nil
     self.choosing = false
+    self.inputDetails = false
     self:sync()
 end
 function SmelteryScreen.prototype.openCapacity(self)
-    local ____opt_15 = self.state
-    self.capacityDraft = ____opt_15 and ____opt_15.smelteryCapacity or 10000
+    local ____opt_19 = self.state
+    self.capacityDraft = ____opt_19 and ____opt_19.smelteryCapacity or 10000
     self:sync()
 end
 function SmelteryScreen.prototype.closeCapacity(self)
@@ -1618,9 +1747,9 @@ function SmelteryScreen.prototype.sortedReservoirs(self)
     local function rank(____, reservoir)
         return reservoir.fluid ~= nil and 0 or (reservoir.assigned ~= nil and 1 or 2)
     end
-    local ____opt_17 = self.state
+    local ____opt_21 = self.state
     return __TS__ArraySort(
-        {unpack(____opt_17 and ____opt_17.reservoirs or ({}))},
+        {unpack(____opt_21 and ____opt_21.reservoirs or ({}))},
         function(____, a, b)
             if rank(nil, a) ~= rank(nil, b) then
                 return rank(nil, a) - rank(nil, b)
@@ -1645,15 +1774,15 @@ function SmelteryScreen.prototype.pressReservoir(self, slot)
     if reservoir == nil then
         return
     end
-    local ____reservoir_name_20 = reservoir.name
-    local ____reservoir_assigned_21 = reservoir.assigned
-    local ____temp_19
+    local ____reservoir_name_24 = reservoir.name
+    local ____reservoir_assigned_25 = reservoir.assigned
+    local ____temp_23
     if reservoir.capacitySource == "set" then
-        ____temp_19 = reservoir.capacity
+        ____temp_23 = reservoir.capacity
     else
-        ____temp_19 = nil
+        ____temp_23 = nil
     end
-    self.assigning = {reservoir = ____reservoir_name_20, fluid = ____reservoir_assigned_21, capacity = ____temp_19}
+    self.assigning = {reservoir = ____reservoir_name_24, fluid = ____reservoir_assigned_25, capacity = ____temp_23}
     self.choicePage = 1
     self:sync()
 end
@@ -1776,14 +1905,14 @@ function SmelteryScreen.prototype.chosenFluid(self)
     if editor == nil or editor.slot == nil then
         return nil
     end
-    local ____temp_24
+    local ____temp_28
     if editor.slot == "result" then
-        ____temp_24 = editor.result
+        ____temp_28 = editor.result
     else
-        local ____opt_22 = editor.inputs[editor.slot + 1]
-        ____temp_24 = ____opt_22 and ____opt_22.fluid
+        local ____opt_26 = editor.inputs[editor.slot + 1]
+        ____temp_28 = ____opt_26 and ____opt_26.fluid
     end
-    return ____temp_24
+    return ____temp_28
 end
 function SmelteryScreen.prototype.savePanel(self)
     local assigning = self.assigning
@@ -1809,16 +1938,16 @@ function SmelteryScreen.prototype.stepCapacity(self, direction)
     end
     local current = assigning.capacity
     if direction > 0 then
-        local ____temp_25
+        local ____temp_29
         if current == nil then
-            ____temp_25 = CAPACITIES[1]
+            ____temp_29 = CAPACITIES[1]
         else
-            ____temp_25 = __TS__ArrayFind(
+            ____temp_29 = __TS__ArrayFind(
                 CAPACITIES,
                 function(____, capacity) return capacity > current end
             ) or current
         end
-        assigning.capacity = ____temp_25
+        assigning.capacity = ____temp_29
     elseif current ~= nil then
         local smaller = __TS__ArrayFilter(
             CAPACITIES,
@@ -1895,8 +2024,8 @@ function SmelteryScreen.prototype.addIngredient(self)
     if editor == nil or #editor.inputs >= MAX_INGREDIENTS then
         return
     end
-    local ____editor_inputs_26 = editor.inputs
-    ____editor_inputs_26[#____editor_inputs_26 + 1] = {amount = INGOT}
+    local ____editor_inputs_30 = editor.inputs
+    ____editor_inputs_30[#____editor_inputs_30 + 1] = {amount = INGOT}
     editor.slot = #editor.inputs - 1
     self.choosing = true
     self.choicePage = 1
@@ -1929,9 +2058,9 @@ function SmelteryScreen.prototype.editedRecipe(self)
 end
 function SmelteryScreen.prototype.saveEditor(self)
     local editor = self.editor
-    local ____temp_27 = self:editedRecipe()
-    local recipe = ____temp_27.recipe
-    local problem = ____temp_27.problem
+    local ____temp_31 = self:editedRecipe()
+    local recipe = ____temp_31.recipe
+    local problem = ____temp_31.problem
     if editor == nil or recipe == nil then
         self:notify(problem or "cannot save", N.red)
         return
@@ -1961,19 +2090,19 @@ function SmelteryScreen.prototype.askDelete(self)
     self:sync()
 end
 function SmelteryScreen.prototype.alloyOptions(self)
-    local ____opt_28 = self.state
-    return ____opt_28 and ____opt_28.alloyOptions or ({})
+    local ____opt_32 = self.state
+    return ____opt_32 and ____opt_32.alloyOptions or ({})
 end
 function SmelteryScreen.prototype.openPicker(self)
-    local ____opt_30 = self.state
-    local alloy = ____opt_30 and ____opt_30.alloy
+    local ____opt_34 = self.state
+    local alloy = ____opt_34 and ____opt_34.alloy
     local options = self:alloyOptions()
     self.picking = true
-    local ____opt_32 = __TS__ArrayFind(
+    local ____opt_36 = __TS__ArrayFind(
         options,
         function(____, option) return option.result == (alloy and alloy.result) end
     ) or options[1]
-    self.picked = ____opt_32 and ____opt_32.index
+    self.picked = ____opt_36 and ____opt_36.index
     self.nonstop = alloy ~= nil and alloy.target == nil
     if (alloy and alloy.target) ~= nil then
         self.pickIngots = math.max(
@@ -2005,8 +2134,8 @@ function SmelteryScreen.prototype.toggleNonstop(self)
     self:sync()
 end
 function SmelteryScreen.prototype.selectAlloy(self)
-    local ____opt_38 = self:pickedOption()
-    local result = ____opt_38 and ____opt_38.result
+    local ____opt_42 = self:pickedOption()
+    local result = ____opt_42 and ____opt_42.result
     if result == nil then
         return
     end
@@ -2019,8 +2148,8 @@ function SmelteryScreen.prototype.selectAlloy(self)
     self:sync()
 end
 function SmelteryScreen.prototype.pageItems(self)
-    local ____opt_40 = self.state
-    local items = ____opt_40 and ____opt_40.inputItems or ({})
+    local ____opt_44 = self.state
+    local items = ____opt_44 and ____opt_44.inputItems or ({})
     local start = (self.itemPage - 1) * ITEMS_PER_PAGE
     return __TS__ArraySlice(items, start, start + ITEMS_PER_PAGE)
 end
@@ -2053,6 +2182,16 @@ function SmelteryScreen.prototype.confirmStep(self)
     elseif confirm.kind == "force" then
         self.confirm = nil
         self.actions:insert({slot = confirm.item.slot, force = true})
+    elseif confirm.kind == "trash" then
+        self.confirm = nil
+        local request = {fluid = confirm.fluid}
+        if confirm.reservoir ~= nil then
+            request.reservoir = confirm.reservoir
+        end
+        self.actions:trashFluid(request)
+        if confirm.reservoir ~= nil then
+            self.assigning = nil
+        end
     else
         self.confirm = nil
         self.picked = nil
@@ -2066,8 +2205,8 @@ function SmelteryScreen.prototype.cancelConfirm(self)
 end
 function SmelteryScreen.prototype.manualFluids(self)
     local stored = __TS__New(Map)
-    local ____opt_42 = self.state
-    for ____, reservoir in ipairs(____opt_42 and ____opt_42.reservoirs or ({})) do
+    local ____opt_46 = self.state
+    for ____, reservoir in ipairs(____opt_46 and ____opt_46.reservoirs or ({})) do
         local fluid = reservoir.fluid
         if fluid ~= nil and reservoir.amount > 0 then
             stored:set(
@@ -2076,9 +2215,9 @@ function SmelteryScreen.prototype.manualFluids(self)
             )
         end
     end
-    local ____opt_44 = self.state
+    local ____opt_48 = self.state
     local list = __TS__ArrayMap(
-        ____opt_44 and ____opt_44.fluids or ({}),
+        ____opt_48 and ____opt_48.fluids or ({}),
         function(____, fluid) return {
             name = fluid.name,
             amount = fluid.amount,
@@ -2102,55 +2241,296 @@ function SmelteryScreen.prototype.manualFluids(self)
         only,
         function(____, a, b) return b.stored - a.stored end
     )
-    local ____array_46 = __TS__SparseArrayNew(unpack(list))
+    local ____array_50 = __TS__SparseArrayNew(unpack(list))
     __TS__SparseArrayPush(
-        ____array_46,
+        ____array_50,
         unpack(only)
     )
-    return {__TS__SparseArraySpread(____array_46)}
+    return {__TS__SparseArraySpread(____array_50)}
 end
 function SmelteryScreen.prototype.fluids(self)
-    local start = (self.manualFluidPage - 1) * MANUAL_ROWS
+    local start = (self.fluidPage - 1) * FLUID_ROWS
     return __TS__ArraySlice(
         self:manualFluids(),
         start,
-        start + MANUAL_ROWS
-    )
-end
-function SmelteryScreen.prototype.manualGroups(self)
-    local start = (self.manualFormatPage - 1) * MANUAL_ROWS
-    return __TS__ArraySlice(
-        self:castGroups(),
-        start,
-        start + MANUAL_ROWS
+        start + FLUID_ROWS
     )
 end
 function SmelteryScreen.prototype.castGroups(self)
-    local ____groupCasters_52 = groupCasters
-    local ____opt_47 = self.state
-    local ____temp_51 = ____opt_47 and ____opt_47.casters or ({})
-    local ____opt_49 = self.state
-    return ____groupCasters_52(____temp_51, ____opt_49 and ____opt_49.autoFormats or ({}))
+    local ____groupCasters_56 = groupCasters
+    local ____opt_51 = self.state
+    local ____temp_55 = ____opt_51 and ____opt_51.casters or ({})
+    local ____opt_53 = self.state
+    return ____groupCasters_56(____temp_55, ____opt_53 and ____opt_53.autoFormats or ({}))
+end
+function SmelteryScreen.prototype.orderFormats(self)
+    local fluid = self.fluid
+    return __TS__ArrayFilter(
+        self:castGroups(),
+        function(____, group) return group.format ~= "no cast" and (fluid == nil or self:castInfo(group.format, fluid).castable) end
+    )
+end
+function SmelteryScreen.prototype.pageFormats(self)
+    local start = (self.formatPage - 1) * FORMAT_PAGE
+    return __TS__ArraySlice(
+        self:orderFormats(),
+        start,
+        start + FORMAT_PAGE
+    )
+end
+function SmelteryScreen.formatPlace(self, index)
+    return {x = index < FORMAT_ROWS and 37 or 68, y = 7 + index % FORMAT_ROWS * 2}
+end
+function SmelteryScreen.prototype.pageOrders(self)
+    local start = (self.orderPage - 1) * ORDER_ROWS
+    local ____opt_57 = self.state
+    return __TS__ArraySlice(____opt_57 and ____opt_57.orders or ({}), start, start + ORDER_ROWS)
+end
+function SmelteryScreen.prototype.castInfo(self, format, fluid)
+    local ____opt_63 = self.state
+    local ____opt_59 = ____opt_63 and ____opt_63.castOptions
+    if ____opt_59 ~= nil then
+        local ____opt_60 = self.state
+        ____opt_59 = __TS__ArrayFind(
+            ____opt_60 and ____opt_60.castOptions,
+            function(____, candidate) return candidate.fluid == fluid end
+        )
+    end
+    local option = ____opt_59
+    if option == nil then
+        return {castable = true}
+    end
+    local cast = __TS__ArrayFind(
+        option.casts,
+        function(____, candidate) return candidate.format == format end
+    )
+    return cast ~= nil and ({castable = true, amount = cast.amount}) or ({castable = false})
+end
+function SmelteryScreen.prototype.countOf(self, format)
+    return self.counts:get(format) or 0
+end
+function SmelteryScreen.prototype.orderLines(self)
+    local fluid = self.fluid
+    if fluid == nil then
+        return {}
+    end
+    return __TS__ArrayMap(
+        __TS__ArrayFilter(
+            self:orderFormats(),
+            function(____, group) return self:countOf(group.format) > 0 and self:castInfo(group.format, fluid).castable end
+        ),
+        function(____, group) return {
+            format = group.format,
+            count = self:countOf(group.format)
+        } end
+    )
+end
+function SmelteryScreen.prototype.orderNeeds(self)
+    local fluid = self.fluid
+    local known = __TS__ArrayFind(
+        self:manualFluids(),
+        function(____, candidate) return candidate.name == fluid end
+    )
+    local result = {have = known and known.amount or 0, stored = known and known.stored or 0}
+    if fluid == nil then
+        return result
+    end
+    local needs = 0
+    for ____, line in ipairs(self:orderLines()) do
+        local amount = self:castInfo(line.format, fluid).amount
+        needs = amount ~= nil and needs ~= nil and needs + amount * line.count or nil
+    end
+    if needs ~= nil then
+        result.needs = needs
+    end
+    return result
 end
 function SmelteryScreen.prototype.pickFluid(self, row)
-    local ____opt_53 = self:fluids()[row + 1]
-    self.fluid = ____opt_53 and ____opt_53.name
+    local ____opt_69 = self:fluids()[row + 1]
+    self.fluid = ____opt_69 and ____opt_69.name
     self:sync()
 end
-function SmelteryScreen.prototype.pickFormat(self, row)
-    local ____opt_55 = self:manualGroups()[row + 1]
-    self.format = ____opt_55 and ____opt_55.format
+function SmelteryScreen.prototype.stepCount(self, cell, direction)
+    local group = self:pageFormats()[cell + 1]
+    if group == nil or self.fluid == nil then
+        return
+    end
+    local count = math.max(
+        0,
+        math.min(
+            MAX_COUNT,
+            self:countOf(group.format) + direction
+        )
+    )
+    if count == 0 then
+        self.counts:delete(group.format)
+    else
+        self.counts:set(group.format, count)
+    end
+    self:sync()
+end
+function SmelteryScreen.prototype.clearOrder(self)
+    self.counts:clear()
+    self:sync()
+end
+function SmelteryScreen.prototype.sendOrder(self)
+    if self.orderView == "craft" then
+        self:sendCraft()
+        return
+    end
+    local fluid = self.fluid
+    local lines = self:orderLines()
+    if fluid == nil then
+        self:notify("pick a fluid first", N.red)
+    elseif #lines == 0 then
+        self:notify("touch + on a shape first", N.red)
+    else
+        self.actions:queueOrder(
+            {fluid = fluid, lines = lines},
+            function()
+                self.counts:clear()
+                self:sync()
+            end
+        )
+    end
+    self:sync()
+end
+function SmelteryScreen.prototype.setOrderView(self, view)
+    self.orderView = view
+    self:sync()
+end
+function SmelteryScreen.prototype.craftCasters(self)
+    local ____opt_71 = self.state
+    return __TS__ArraySlice(____opt_71 and ____opt_71.craftCasters or ({}), 0, CRAFT_CASTERS)
+end
+function SmelteryScreen.craftPlace(self, slot)
+    local caster = math.floor(slot / CRAFT_RECIPE_ROWS)
+    return {x = 39, y = 8 + caster * (CRAFT_RECIPE_ROWS + 1) + slot % CRAFT_RECIPE_ROWS}
+end
+function SmelteryScreen.prototype.craftAt(self, slot)
+    local caster = self:craftCasters()[math.floor(slot / CRAFT_RECIPE_ROWS) + 1]
+    local recipe = caster and caster.recipes[slot % CRAFT_RECIPE_ROWS + 1]
+    return caster ~= nil and recipe ~= nil and ({caster = caster, recipe = recipe}) or nil
+end
+function SmelteryScreen.prototype.pickedCraft(self)
+    local pick = self.craftPick
+    local ____temp_81
+    if pick ~= nil then
+        local ____opt_79 = self.state
+        local ____opt_75 = ____opt_79 and ____opt_79.craftCasters
+        if ____opt_75 ~= nil then
+            local ____opt_76 = self.state
+            ____opt_75 = __TS__ArrayFind(
+                ____opt_76 and ____opt_76.craftCasters,
+                function(____, candidate) return candidate.name == pick.caster end
+            )
+        end
+        ____temp_81 = ____opt_75
+    else
+        ____temp_81 = nil
+    end
+    local caster = ____temp_81
+    local ____opt_82 = caster
+    local recipe = ____opt_82 and __TS__ArrayFind(
+        caster and caster.recipes,
+        function(____, candidate) return candidate.index == (pick and pick.index) end
+    )
+    return caster ~= nil and recipe ~= nil and ({caster = caster, recipe = recipe}) or nil
+end
+function SmelteryScreen.prototype.pickCraft(self, slot)
+    local craft = self:craftAt(slot)
+    if craft ~= nil then
+        self.craftPick = {caster = craft.caster.name, index = craft.recipe.index}
+        self.craftCount = 1
+    end
+    self:sync()
+end
+function SmelteryScreen.prototype.stepCraft(self, direction)
+    self.craftCount = math.max(
+        1,
+        math.min(MAX_COUNT, self.craftCount + direction)
+    )
+    self:sync()
+end
+function SmelteryScreen.prototype.sendCraft(self)
+    local craft = self:pickedCraft()
+    if craft == nil then
+        self:notify("pick a recipe first", N.red)
+        self:sync()
+        return
+    end
+    self.actions:queueCraft(
+        {caster = craft.caster.name, recipe = craft.recipe.index, count = self.craftCount},
+        function()
+            self.craftCount = 1
+            self:sync()
+        end
+    )
+end
+function SmelteryScreen.prototype.askTrashStack(self, row)
+    local ____opt_88 = self.state
+    local fluid = __TS__ArrayReverse({unpack(____opt_88 and ____opt_88.fluids or ({}))})[row + 1]
+    local ____temp_92 = fluid == nil
+    if not ____temp_92 then
+        local ____opt_90 = self.state
+        ____temp_92 = (____opt_90 and ____opt_90.trash) == nil
+    end
+    if ____temp_92 then
+        return
+    end
+    self.confirm = {
+        kind = "trash",
+        fluid = fluid.name,
+        amount = fluid.amount,
+        step = 1,
+        deadline = 0
+    }
+    self:sync()
+end
+function SmelteryScreen.prototype.askTrashReservoir(self)
+    local ____opt_93 = self.assigning
+    local name = ____opt_93 and ____opt_93.reservoir
+    local ____opt_95 = self.state
+    if ____opt_95 ~= nil then
+        local ____opt_96 = self.state
+        ____opt_95 = __TS__ArrayFind(
+            ____opt_96 and ____opt_96.reservoirs,
+            function(____, candidate) return candidate.name == name end
+        )
+    end
+    local reservoir = ____opt_95
+    local ____temp_103 = (reservoir and reservoir.fluid) == nil or reservoir.amount <= 0
+    if not ____temp_103 then
+        local ____opt_101 = self.state
+        ____temp_103 = (____opt_101 and ____opt_101.trash) == nil
+    end
+    if ____temp_103 then
+        return
+    end
+    self.confirm = {
+        kind = "trash",
+        fluid = reservoir.fluid,
+        amount = reservoir.amount,
+        reservoir = reservoir.name,
+        step = 1,
+        deadline = 0
+    }
+    self:sync()
+end
+function SmelteryScreen.prototype.cancelOrder(self, row)
+    local order = self:pageOrders()[row + 1]
+    if order ~= nil then
+        self.actions:cancelOrder(order.id)
+    end
+end
+function SmelteryScreen.prototype.openDetails(self, open)
+    self.inputDetails = open
     self:sync()
 end
 function SmelteryScreen.prototype.toggleAuto(self, row)
     local group = self:castGroups()[(self.castPage - 1) * CASTS_PER_PAGE + row + 1]
     if group ~= nil and group.format ~= "no cast" then
         self.actions:setFormat({format = group.format, auto = not group.auto})
-    end
-end
-function SmelteryScreen.prototype.pressCast(self)
-    if self.fluid ~= nil and self.format ~= nil then
-        self.actions:cast({fluid = self.fluid, format = self.format})
     end
 end
 function SmelteryScreen.prototype.setLogFilter(self, filter)
@@ -2160,22 +2540,22 @@ function SmelteryScreen.prototype.setLogFilter(self, filter)
 end
 function SmelteryScreen.prototype.logLines(self)
     local lines = {}
-    local ____opt_57 = self.state
-    for ____, raw in ipairs(____opt_57 and ____opt_57.log or ({})) do
+    local ____opt_104 = self.state
+    for ____, raw in ipairs(____opt_104 and ____opt_104.log or ({})) do
         do
-            local __continue241
+            local __continue313
             repeat
                 if __TS__StringSubstring(raw, 8, 11) == "   " then
-                    __continue241 = true
+                    __continue313 = true
                     break
                 end
                 local line = parseLogLine(raw)
                 if keeps(self.logFilter, line.kind) then
                     lines[#lines + 1] = line
                 end
-                __continue241 = true
+                __continue313 = true
             until true
-            if not __continue241 then
+            if not __continue313 then
                 break
             end
         end
@@ -2202,8 +2582,8 @@ function SmelteryScreen.prototype.button(self, label, rect, onPress)
         }),
         rect
     )
-    local ____self_allButtons_59 = self.allButtons
-    ____self_allButtons_59[#____self_allButtons_59 + 1] = button
+    local ____self_allButtons_106 = self.allButtons
+    ____self_allButtons_106[#____self_allButtons_106 + 1] = button
     return button
 end
 function SmelteryScreen.prototype.pagination(self, pageSize, rect, onPageChange)
@@ -2285,7 +2665,8 @@ function SmelteryScreen.prototype.sync(self)
     self:syncManual()
     self:syncLog()
     local confirm = self.confirm
-    local yes = (confirm and confirm.kind) == "delete" and (confirm.step == 2 and " DELETE " or " CONTINUE ") or ((confirm and confirm.step) == 2 and " FORCE INSERT " or " CONTINUE ")
+    local last = (confirm and confirm.kind) == "delete" and " DELETE " or ((confirm and confirm.kind) == "trash" and " TRASH " or " FORCE INSERT ")
+    local yes = (confirm and confirm.step) == 2 and last or " CONTINUE "
     self:neon(
         self.confirmYes,
         modal,
@@ -2308,8 +2689,9 @@ function SmelteryScreen.prototype.sync(self)
     local paginations = {
         self.castPages,
         self.itemPages,
-        self.manualFluidPages,
-        self.manualFormatPages,
+        self.fluidPages,
+        self.formatPages,
+        self.orderPages,
         self.stockPages,
         self.alloyPages,
         self.choicePages,
@@ -2440,6 +2822,39 @@ function SmelteryScreen.prototype.syncOverview(self)
             )
         end
     )
+    local ____opt_121 = self.state
+    local stack = __TS__ArrayReverse({unpack(____opt_121 and ____opt_121.fluids or ({}))})
+    local ____temp_125 = overview and not panel
+    if ____temp_125 then
+        local ____opt_123 = self.state
+        ____temp_125 = (____opt_123 and ____opt_123.trash) ~= nil
+    end
+    local trashing = ____temp_125
+    __TS__ArrayForEach(
+        self.stackButtons,
+        function(____, button, row)
+            local fluid = stack[row + 1]
+            if not trashing or fluid == nil then
+                self:show(button, false)
+                return
+            end
+            local width = 38 - #(tostring(fluid.amount) .. " mB")
+            local label = __TS__StringPadEnd(
+                fit(
+                    string.upper(fluidLabel(fluid.name)),
+                    math.min(24, width)
+                ),
+                24
+            )
+            self:show(
+                button,
+                true,
+                label,
+                fluidColor(fluid.name),
+                N.bg
+            )
+        end
+    )
     self:neon(
         self.setCapacity,
         overview,
@@ -2497,8 +2912,8 @@ function SmelteryScreen.prototype.syncOverview(self)
 end
 function SmelteryScreen.prototype.syncStock(self)
     local stock = self.tab == "stock" and self.state ~= nil
-    local ____opt_72 = self.state
-    local count = ____opt_72 and #____opt_72.reservoirs or 0
+    local ____opt_126 = self.state
+    local count = ____opt_126 and #____opt_126.reservoirs or 0
     self.stockPage = math.min(
         self.stockPage,
         math.max(
@@ -2521,9 +2936,9 @@ function SmelteryScreen.prototype.syncStock(self)
                 1,
                 1
             )
-            local ____reservoir_name_76 = reservoir.name
-            local ____opt_74 = self.assigning
-            local color = ____reservoir_name_76 == (____opt_74 and ____opt_74.reservoir) and N.yellow or (reservoir.fluid ~= nil and N.cyan or N.text)
+            local ____reservoir_name_130 = reservoir.name
+            local ____opt_128 = self.assigning
+            local color = ____reservoir_name_130 == (____opt_128 and ____opt_128.reservoir) and N.yellow or (reservoir.fluid ~= nil and N.cyan or N.text)
             self:show(
                 button,
                 true,
@@ -2538,34 +2953,14 @@ function SmelteryScreen.prototype.syncManual(self)
     local state = self.state
     local tab = self.tab == "manual" and state ~= nil
     local manual = tab and state.mode == "manual"
-    local count = state and #state.inputItems or 0
-    self.itemPage = math.min(
-        self.itemPage,
-        math.max(
+    local details = manual and self.inputDetails
+    local compose = manual and not self.inputDetails
+    local function pages(____, count, size)
+        return math.max(
             1,
-            math.ceil(count / ITEMS_PER_PAGE)
+            math.ceil(count / size)
         )
-    )
-    local items = self:pageItems()
-    local fluidCount = #self:manualFluids()
-    local groupCount = #self:castGroups()
-    self.manualFluidPage = math.min(
-        self.manualFluidPage,
-        math.max(
-            1,
-            math.ceil(fluidCount / MANUAL_ROWS)
-        )
-    )
-    self.manualFormatPage = math.min(
-        self.manualFormatPage,
-        math.max(
-            1,
-            math.ceil(groupCount / MANUAL_ROWS)
-        )
-    )
-    self.manualFluidPages:setProps({visible = tab and fluidCount > MANUAL_ROWS, totalItems = fluidCount, page = self.manualFluidPage})
-    self.manualFormatPages:setProps({visible = tab and groupCount > MANUAL_ROWS, totalItems = groupCount, page = self.manualFormatPage})
-    local groups = self:manualGroups()
+    end
     self:neon(
         self.switchManual,
         tab and not manual,
@@ -2573,18 +2968,195 @@ function SmelteryScreen.prototype.syncManual(self)
         N.yellow,
         true
     )
-    self.itemPages:setProps({visible = tab and count > ITEMS_PER_PAGE, totalItems = count, page = self.itemPage})
+    local fluidCount = #self:manualFluids()
+    self.fluidPage = math.min(
+        self.fluidPage,
+        pages(nil, fluidCount, FLUID_ROWS)
+    )
+    self.fluidPages:setProps({visible = compose and fluidCount > FLUID_ROWS, totalItems = fluidCount, page = self.fluidPage})
+    local fluids = self:fluids()
+    __TS__ArrayForEach(
+        self.fluidButtons,
+        function(____, button, row)
+            local fluid = fluids[row + 1]
+            local label = fluid == nil and "" or ____exports.SmelteryScreen:fluidRow(fluid, 23)
+            self:show(
+                button,
+                compose and fluid ~= nil,
+                label,
+                (fluid and fluid.name) == self.fluid and N.text or N.soft,
+                N.bg
+            )
+        end
+    )
+    local ____opt_133 = state and state.craftCasters
+    local crafting = (____opt_133 and #____opt_133 or 0) > 0
+    if not crafting then
+        self.orderView = "cast"
+    end
+    local casting = compose and self.orderView == "cast"
+    local craftView = compose and self.orderView == "craft"
+    self:neon(
+        self.castViewButton,
+        compose and crafting,
+        " CAST ",
+        N.yellow,
+        self.orderView == "cast"
+    )
+    self:neon(
+        self.craftViewButton,
+        compose and crafting,
+        " CRAFT ",
+        N.yellow,
+        self.orderView == "craft"
+    )
+    local picked = self:pickedCraft()
+    __TS__ArrayForEach(
+        self.craftButtons,
+        function(____, button, slot)
+            local craft = self:craftAt(slot)
+            if not craftView or craft == nil then
+                self:show(button, false)
+                return
+            end
+            local chosen = (picked and picked.caster.name) == craft.caster.name and picked.recipe.index == craft.recipe.index
+            self:show(
+                button,
+                true,
+                ____exports.SmelteryScreen:craftRow(craft.recipe, 56),
+                chosen and N.yellow or N.soft,
+                chosen and N.panel or N.bg
+            )
+        end
+    )
+    self:neon(
+        self.craftLess,
+        craftView and picked ~= nil,
+        " - ",
+        N.cyan,
+        self.craftCount > 1
+    )
+    self:neon(
+        self.craftMore,
+        craftView and picked ~= nil,
+        " + ",
+        N.cyan,
+        true
+    )
+    local formatCount = #self:orderFormats()
+    self.formatPage = math.min(
+        self.formatPage,
+        pages(nil, formatCount, FORMAT_PAGE)
+    )
+    self.formatPages:setProps({visible = casting and formatCount > FORMAT_PAGE, totalItems = formatCount, page = self.formatPage})
+    local formats = self:pageFormats()
+    local fluid = self.fluid
+    do
+        local cell = 0
+        while cell < FORMAT_PAGE do
+            local group = formats[cell + 1]
+            local shown = casting and group ~= nil and fluid ~= nil and self:castInfo(group.format, fluid).castable
+            local count = group ~= nil and self:countOf(group.format) or 0
+            self:neon(
+                self.countLess[cell + 1],
+                shown,
+                " - ",
+                count > 0 and N.cyan or N.dim,
+                count > 0
+            )
+            self:neon(
+                self.countMore[cell + 1],
+                shown,
+                " + ",
+                N.cyan,
+                true
+            )
+            cell = cell + 1
+        end
+    end
+    local ____temp_139
+    if self.orderView == "craft" then
+        ____temp_139 = picked ~= nil
+    else
+        ____temp_139 = fluid ~= nil and #self:orderLines() > 0
+    end
+    local ready = ____temp_139
+    self:neon(
+        self.clearButton,
+        casting,
+        " CLEAR ",
+        N.soft,
+        false
+    )
+    local send = "SEND " .. Glyph.right
+    local left = math.floor((20 - #send) / 2)
+    self:show(
+        self.sendButton,
+        compose,
+        __TS__StringPadEnd(
+            string.rep(
+                " ",
+                math.floor(left)
+            ) .. send,
+            20
+        ),
+        ready and N.bg or N.dim,
+        ready and N.lime or N.panel
+    )
+    local ____opt_140 = state and state.orders
+    local orderCount = ____opt_140 and #____opt_140 or 0
+    self.orderPage = math.min(
+        self.orderPage,
+        pages(nil, orderCount, ORDER_ROWS)
+    )
+    self.orderPages:setProps({visible = tab and not details and orderCount > ORDER_ROWS, totalItems = orderCount, page = self.orderPage})
+    local orders = self:pageOrders()
+    __TS__ArrayForEach(
+        self.cancelButtons,
+        function(____, button, row) return self:neon(
+            button,
+            tab and not details and orders[row + 1] ~= nil,
+            " x ",
+            N.red,
+            false
+        ) end
+    )
+    local items = state and state.inputItems or ({})
+    local anyReady = __TS__ArraySome(
+        items,
+        function(____, item) return item.status == "ok" end
+    )
+    self:neon(
+        self.insertReadyButton,
+        compose,
+        " INSERT READY ",
+        anyReady and N.lime or N.dim,
+        anyReady
+    )
+    self:neon(
+        self.detailsButton,
+        compose,
+        (" DETAILS " .. Glyph.right) .. " ",
+        N.cyan,
+        true
+    )
+    self.itemPage = math.min(
+        self.itemPage,
+        pages(nil, #items, ITEMS_PER_PAGE)
+    )
+    self.itemPages:setProps({visible = details and #items > ITEMS_PER_PAGE, totalItems = #items, page = self.itemPage})
+    local pageItems = self:pageItems()
     __TS__ArrayForEach(
         self.itemButtons,
         function(____, button, row)
-            local item = items[row + 1]
-            if not manual or item == nil or item.status == "unknown" then
+            local item = pageItems[row + 1]
+            if not details or item == nil or item.status == "unknown" then
                 self:show(button, false)
             elseif item.status == "ok" then
                 self:neon(
                     button,
                     true,
-                    " INSERT ",
+                    " INSERT  ",
                     N.lime,
                     true
                 )
@@ -2592,64 +3164,48 @@ function SmelteryScreen.prototype.syncManual(self)
                 self:neon(
                     button,
                     true,
-                    " FORCE  ",
+                    " FORCE   ",
                     N.red,
                     true
                 )
             end
         end
     )
-    local fluids = self:fluids()
-    __TS__ArrayForEach(
-        self.fluidButtons,
-        function(____, button, row)
-            local fluid = fluids[row + 1]
-            local label = fluid == nil and "" or fit(
-                manualFluidLabel(fluid),
-                28
-            )
-            self:show(
-                button,
-                manual and fluid ~= nil,
-                __TS__StringPadEnd(label, 28),
-                (fluid and fluid.name) == self.fluid and N.text or N.soft,
-                N.bg
-            )
-        end
-    )
-    __TS__ArrayForEach(
-        self.formatButtons,
-        function(____, button, row)
-            local group = groups[row + 1]
-            local total = group == nil and 0 or group.free + group.casting + group.ready
-            local label = group == nil and "" or ((__TS__StringPadEnd(
-                fit(
-                    formatLabel(group.format),
-                    16
-                ),
-                17
-            ) .. tostring(group.free)) .. " free / ") .. tostring(total)
-            self:show(
-                button,
-                manual and group ~= nil,
-                __TS__StringPadEnd(label, 31),
-                (group and group.format) == self.format and N.text or N.soft,
-                N.bg
-            )
-        end
-    )
-    local canCast = self.fluid ~= nil and self.format ~= nil
-    local castLabel = canCast and fit(
-        string.upper((((" POUR " .. fluidLabel(self.fluid)) .. " INTO ") .. formatLabel(self.format)) .. " "),
-        31
-    ) or " PICK A FLUID AND A CAST "
     self:neon(
-        self.castButton,
-        manual,
-        castLabel,
-        canCast and N.orange or N.dim,
-        canCast
+        self.backButton,
+        details,
+        (" " .. Glyph.left) .. " BACK ",
+        N.cyan,
+        true
     )
+    self:neon(
+        self.detailsReadyButton,
+        details,
+        " INSERT READY ",
+        anyReady and N.lime or N.dim,
+        anyReady
+    )
+end
+function SmelteryScreen.craftRow(self, recipe, width)
+    local keeps = recipe.consumed and "" or " (item stays)"
+    return __TS__StringPadEnd(
+        fit(
+            ((((((tostring(recipe.amount) .. " mB ") .. fluidLabel(recipe.fluid)) .. " ") .. Glyph.right) .. " ") .. placeLabel(recipe.result)) .. keeps,
+            width
+        ),
+        width
+    )
+end
+function SmelteryScreen.fluidRow(self, fluid, width)
+    local amount = fluid.amount > 0 and tostring(fluid.amount) .. " mB" or shortAmount(fluid.stored) .. " st."
+    local name = fit(
+        fluidLabel(fluid.name),
+        width - #amount - 1
+    )
+    return (name .. string.rep(
+        " ",
+        math.floor(width - #name - #amount)
+    )) .. amount
 end
 function SmelteryScreen.prototype.syncLog(self)
     local log = self.tab == "log" and self.state ~= nil
@@ -2775,17 +3331,17 @@ function SmelteryScreen.prototype.syncChoices(self, editing)
         N.cyan,
         true
     )
-    local ____self_neon_103 = self.neon
-    local ____self_freeButton_101 = self.freeButton
-    local ____N_soft_102 = N.soft
-    local ____opt_99 = self.assigning
-    ____self_neon_103(
+    local ____self_neon_166 = self.neon
+    local ____self_freeButton_164 = self.freeButton
+    local ____N_soft_165 = N.soft
+    local ____opt_162 = self.assigning
+    ____self_neon_166(
         self,
-        ____self_freeButton_101,
+        ____self_freeButton_164,
         assigning,
         " FREE ",
-        ____N_soft_102,
-        (____opt_99 and ____opt_99.fluid) == nil
+        ____N_soft_165,
+        (____opt_162 and ____opt_162.fluid) == nil
     )
     self:neon(
         self.capacityLess,
@@ -2815,6 +3371,32 @@ function SmelteryScreen.prototype.syncChoices(self, editing)
         panel,
         " CANCEL ",
         N.soft,
+        false
+    )
+    local ____opt_167 = self.state
+    if ____opt_167 ~= nil then
+        local ____opt_171 = self.state
+        ____opt_167 = __TS__ArrayFind(
+            ____opt_171 and ____opt_171.reservoirs,
+            function(____, candidate)
+                local ____candidate_name_170 = candidate.name
+                local ____opt_168 = self.assigning
+                return ____candidate_name_170 == (____opt_168 and ____opt_168.reservoir)
+            end
+        )
+    end
+    local held = ____opt_167
+    local ____assigning_176 = assigning
+    if ____assigning_176 then
+        local ____opt_174 = self.state
+        ____assigning_176 = (____opt_174 and ____opt_174.trash) ~= nil
+    end
+    local trashable = ____assigning_176 and (held and held.fluid) ~= nil and held.amount > 0
+    self:neon(
+        self.trashButton,
+        trashable,
+        " TRASH ",
+        N.red,
         false
     )
     local fluids = picking and self:pickerFluids() or ({})
@@ -2920,19 +3502,19 @@ function SmelteryScreen.prototype.syncChoices(self, editing)
     )
 end
 function SmelteryScreen.prototype.hideUnderPicker(self)
-    local ____Set_105 = Set
-    local ____array_104 = __TS__SparseArrayNew(unpack(self.pickerButtons))
+    local ____Set_180 = Set
+    local ____array_179 = __TS__SparseArrayNew(unpack(self.pickerButtons))
     __TS__SparseArrayPush(
-        ____array_104,
+        ____array_179,
         unpack(self.knownButtons)
     )
     __TS__SparseArrayPush(
-        ____array_104,
+        ____array_179,
         unpack(self.letterButtons)
     )
     local picker = __TS__New(
-        ____Set_105,
-        {__TS__SparseArraySpread(____array_104)}
+        ____Set_180,
+        {__TS__SparseArraySpread(____array_179)}
     )
     picker:add(self.pickerFree)
     picker:add(self.pickerCancel)
@@ -2947,8 +3529,9 @@ function SmelteryScreen.prototype.hideUnderPicker(self)
     local under = {
         self.castPages,
         self.itemPages,
-        self.manualFluidPages,
-        self.manualFormatPages,
+        self.fluidPages,
+        self.formatPages,
+        self.orderPages,
         self.stockPages,
         self.alloyPages,
         self.logPages
@@ -3050,8 +3633,8 @@ function SmelteryScreen.prototype.paintHeader(self, p)
         end
         x = x + (#label + 4)
     end
-    local ____opt_106 = self.state
-    local mode = ____opt_106 and ____opt_106.mode
+    local ____opt_181 = self.state
+    local mode = ____opt_181 and ____opt_181.mode
     if mode ~= nil then
         p:text(
             84,
@@ -3170,9 +3753,9 @@ function SmelteryScreen.prototype.paintOverview(self, p, state)
         N.cyan,
         ("MOLTEN " .. Glyph.mid) .. " 10 MIN"
     )
-    local ____array_108 = __TS__SparseArrayNew(unpack(state.history or ({})))
-    __TS__SparseArrayPush(____array_108, total)
-    local points = {__TS__SparseArraySpread(____array_108)}
+    local ____array_183 = __TS__SparseArrayNew(unpack(state.history or ({})))
+    __TS__SparseArrayPush(____array_183, total)
+    local points = {__TS__SparseArraySpread(____array_183)}
     local scale = capacity or math.max(
         1,
         unpack(points)
@@ -3278,11 +3861,11 @@ function SmelteryScreen.prototype.paintOverview(self, p, state)
         46,
         24,
         N.purple,
-        "STACK"
+        state.trash ~= nil and ("STACK " .. Glyph.mid) .. " touch a fluid to trash it" or "STACK"
     )
     local stack = __TS__ArrayReverse({unpack(state.fluids)})
     __TS__ArrayForEach(
-        __TS__ArraySlice(stack, 0, 4),
+        __TS__ArraySlice(stack, 0, STACK_ROWS),
         function(____, fluid, index)
             local y = 26 + index * 3
             local color = fluidColor(fluid.name)
@@ -3292,7 +3875,7 @@ function SmelteryScreen.prototype.paintOverview(self, p, state)
                 y,
                 fit(
                     string.upper(fluidLabel(fluid.name)),
-                    38 - #amount
+                    math.min(24, 38 - #amount)
                 ),
                 color
             )
@@ -3307,11 +3890,11 @@ function SmelteryScreen.prototype.paintOverview(self, p, state)
             )
         end
     )
-    if #stack > 4 then
+    if #stack > STACK_ROWS then
         p:text(
             6,
             37,
-            ("+ " .. tostring(#stack - 4)) .. " more",
+            ("+ " .. tostring(#stack - STACK_ROWS)) .. " more",
             N.dim
         )
     end
@@ -3632,9 +4215,9 @@ function SmelteryScreen.prototype.paintModes(self, p, state)
         MODES,
         function(____, mode, index)
             local color = MODE_COLORS[mode]
-            local ____cardPlace_result_109 = cardPlace(index)
-            local x = ____cardPlace_result_109.x
-            local y = ____cardPlace_result_109.y
+            local ____cardPlace_result_184 = cardPlace(index)
+            local x = ____cardPlace_result_184.x
+            local y = ____cardPlace_result_184.y
             local active = state.mode == mode
             self:bracket(
                 p,
@@ -4036,9 +4619,9 @@ function SmelteryScreen.prototype.paintEditor(self, p, editor)
     end
     p:text(6, 25, "STEP", N.dim)
     p:text(31, 25, "mB", N.dim)
-    local ____temp_110 = self:editedRecipe()
-    local recipe = ____temp_110.recipe
-    local problem = ____temp_110.problem
+    local ____temp_185 = self:editedRecipe()
+    local recipe = ____temp_185.recipe
+    local problem = ____temp_185.problem
     if recipe ~= nil then
         local function amount(____, mB, fluid)
             return ((mB % INGOT == 0 and tostring(mB / INGOT) .. " ing" or tostring(mB) .. " mB") .. " ") .. fluidLabel(fluid)
@@ -4170,140 +4753,560 @@ function SmelteryScreen.prototype.paintFluidPicker(self, p)
 end
 function SmelteryScreen.prototype.paintManual(self, p, state)
     local manual = state.mode == "manual"
-    local ink = manual and N.text or N.dim
-    p:fill(
-        3,
-        5,
-        96,
-        3,
-        N.panel
-    )
-    p:fill(
-        3,
-        5,
-        1,
-        3,
-        manual and N.lime or N.yellow
-    )
+    if manual and self.inputDetails then
+        self:paintInputDetails(p, state)
+        return
+    end
     if manual then
-        p:text(
-            6,
-            6,
-            fit(("MANUAL MODE " .. Glyph.mid) .. " touch INSERT, or pick a fluid and a cast", 90),
-            N.lime,
+        self:paintFluidCard(p)
+        self:paintOrderCard(p)
+        self:paintInputBand(p, state)
+    else
+        p:fill(
+            3,
+            5,
+            96,
+            3,
             N.panel
         )
-    else
+        p:fill(
+            3,
+            5,
+            1,
+            3,
+            N.yellow
+        )
         p:text(
             6,
             6,
-            fit(("MANUAL MODE IS OFF " .. Glyph.mid) .. " insert and cast need it", 70),
+            fit(("MANUAL MODE IS OFF " .. Glyph.mid) .. " orders and inserts need it", 70),
             N.yellow,
             N.panel
         )
     end
+    self:paintQueue(p, state, manual)
+end
+function SmelteryScreen.prototype.paintFluidCard(self, p)
     self:bracket(
         p,
         3,
-        10,
-        58,
-        37,
-        manual and N.cyan or N.dim,
-        "INSERT"
+        5,
+        30,
+        25,
+        N.cyan,
+        ("1 " .. Glyph.mid) .. " FLUID"
     )
+    local fluids = self:fluids()
     __TS__ArrayForEach(
-        self:pageItems(),
-        function(____, item, row)
-            local y = 13 + row * 4
-            p:text(
-                6,
-                y,
-                fit(
-                    string.upper(placeLabel(item.name)),
-                    42
-                ),
-                ink
-            )
-            local detail = (((("x" .. tostring(item.count)) .. " ") .. Glyph.right) .. " ") .. (item.fluid ~= nil and fluidLabel(item.fluid) or "no fluid")
-            local color = manual and N.soft or N.dim
-            if item.status == "alloy" then
-                detail = detail .. ((" " .. Glyph.mid) .. " would form ") .. fluidLabel(item.alloy or "an alloy")
-                color = manual and N.red or N.dim
-            elseif item.status == "heat" then
-                detail = detail .. (((" " .. Glyph.mid) .. " needs ") .. tostring(item.temperature or "?")) .. " K"
-                color = manual and N.red or N.dim
-            end
-            p:text(
-                6,
-                y + 1,
-                fit(detail, 42),
-                color
-            )
-        end
-    )
-    if #state.inputItems == 0 then
-        p:text(6, 13, "The input is empty.", N.dim)
-    end
-    self:bracket(
-        p,
-        63,
-        10,
-        36,
-        37,
-        manual and N.orange or N.dim,
-        "CAST"
-    )
-    p:text(66, 12, "FLUID", N.dim)
-    __TS__ArrayForEach(
-        self:fluids(),
+        fluids,
         function(____, fluid, row)
-            local y = 14 + row * 2
+            local y = 7 + row * 2
             if fluid.name == self.fluid then
-                p:text(64, y, Glyph.right, N.yellow)
+                p:text(4, y, Glyph.right, N.yellow)
             end
             p:fill(
-                66,
+                5,
                 y,
                 2,
                 1,
-                manual and fluidColor(fluid.name) or N.dim
+                fluidColor(fluid.name)
             )
-            if not manual then
+            if fluid.amount > 0 and fluid.stored > 0 then
+                local stored = ("+" .. shortAmount(fluid.stored)) .. " stored"
+                p:text(31 - #stored, y + 1, stored, N.dim)
+            end
+        end
+    )
+    if #fluids == 0 then
+        p:text(5, 7, "No fluid in the Smeltery", N.dim)
+        p:text(5, 8, "nor in the reservoirs.", N.dim)
+    end
+end
+function SmelteryScreen.prototype.paintOrderCard(self, p)
+    local fluid = self.fluid
+    local craft = self.orderView == "craft"
+    local title = fluid ~= nil and (((("2 " .. Glyph.mid) .. " ORDER ") .. Glyph.mid) .. " ") .. string.upper(fluidLabel(fluid)) or ("2 " .. Glyph.mid) .. " ORDER"
+    if craft then
+        title = ((("2 " .. Glyph.mid) .. " CRAFT ") .. Glyph.mid) .. " onto an item"
+    end
+    local ____self_bracket_196 = self.bracket
+    local ____p_194 = p
+    local ____N_yellow_195 = N.yellow
+    local ____opt_192 = self.state
+    local ____opt_190 = ____opt_192 and ____opt_192.craftCasters
+    ____self_bracket_196(
+        self,
+        ____p_194,
+        35,
+        5,
+        64,
+        25,
+        ____N_yellow_195,
+        (____opt_190 and #____opt_190 or 0) > 0 and fit(title, 40) or title
+    )
+    if craft then
+        self:paintCraftView(p)
+        return
+    end
+    local formats = self:pageFormats()
+    __TS__ArrayForEach(
+        formats,
+        function(____, group, cell)
+            local ____temp_197 = ____exports.SmelteryScreen:formatPlace(cell)
+            local x = ____temp_197.x
+            local y = ____temp_197.y
+            local count = self:countOf(group.format)
+            p:text(
+                x,
+                y,
+                fit(
+                    formatLabel(group.format),
+                    13
+                ),
+                fluid == nil and N.dim or (count > 0 and N.yellow or N.soft)
+            )
+            p:text(
+                x + 14,
+                y,
+                __TS__StringPadStart(
+                    (tostring(group.free) .. "/") .. tostring(group.free + group.casting + group.ready),
+                    5
+                ),
+                N.dim
+            )
+            if fluid ~= nil then
                 p:text(
-                    69,
+                    x + 24,
                     y,
-                    fit(
-                        manualFluidLabel(fluid),
-                        28
+                    __TS__StringPadStart(
+                        tostring(count),
+                        2
                     ),
-                    N.dim
+                    count > 0 and N.yellow or N.dim
                 )
             end
         end
     )
-    p:text(66, 25, "INTO", N.dim)
+    if #formats == 0 then
+        local none = fluid ~= nil and ("No cast on the network has a recipe for " .. fluidLabel(fluid)) .. "." or "No cast on the network."
+        p:text(
+            37,
+            7,
+            fit(none, 60),
+            N.dim
+        )
+    end
+    if fluid == nil then
+        p:text(37, 19, "Pick a fluid on the left, then set how many", N.dim)
+        p:text(37, 20, "castings of each shape (free / casters).", N.dim)
+        return
+    end
+    local lines = self:orderLines()
+    local ____temp_198 = self:orderNeeds()
+    local needs = ____temp_198.needs
+    local have = ____temp_198.have
+    local stored = ____temp_198.stored
+    local total = have + stored
+    p:text(37, 19, "ORDER", N.dim)
+    local what = table.concat(
+        __TS__ArrayMap(
+            lines,
+            function(____, line) return (tostring(line.count) .. " ") .. formatLabel(line.format) end
+        ),
+        (" " .. Glyph.mid) .. " " or ","
+    )
+    p:text(
+        45,
+        19,
+        fit(#lines > 0 and what or "nothing yet: touch + on a shape", 52),
+        #lines > 0 and N.soft or N.dim
+    )
+    p:text(37, 20, "NEEDS", N.dim)
+    p:text(
+        45,
+        20,
+        needs ~= nil and (tostring(needs) .. " mB ") .. fluidLabel(fluid) or "? mB (cast amounts unknown)",
+        N.text
+    )
+    p:text(37, 21, "HAVE", N.dim)
+    p:text(
+        45,
+        21,
+        fit(
+            stored > 0 and ((((tostring(have) .. " + ") .. tostring(stored)) .. " stored = ") .. tostring(total)) .. " mB" or tostring(have) .. " mB",
+            52
+        ),
+        N.text
+    )
+    if #lines > 0 and needs ~= nil then
+        if needs > total then
+            p:text(37, 22, "SHORT", N.dim)
+            p:text(
+                45,
+                22,
+                fit(
+                    tostring(needs - total) .. " mB: casts what it can, then waits",
+                    52
+                ),
+                N.orange
+            )
+        else
+            p:text(45, 22, "enough: it all casts", N.lime)
+        end
+    end
+    local ready = #lines > 0
+    p:fill(
+        77,
+        25,
+        20,
+        3,
+        ready and N.lime or N.panel
+    )
+end
+function SmelteryScreen.prototype.paintCraftView(self, p)
+    local casters = self:craftCasters()
     __TS__ArrayForEach(
-        self:manualGroups(),
-        function(____, group, row)
-            local y = 27 + row * 2
-            if group.format == self.format then
-                p:text(64, y, Glyph.right, N.yellow)
+        casters,
+        function(____, caster, index)
+            local y = 7 + index * (CRAFT_RECIPE_ROWS + 1)
+            local kind = caster.kind == "basin" and "BASIN" or "TABLE"
+            p:text(37, y, kind, N.cyan)
+            p:text(
+                43,
+                y,
+                fit(
+                    placeLabel(caster.name),
+                    16
+                ),
+                N.dim
+            )
+            local more = #caster.recipes > CRAFT_RECIPE_ROWS and (" (+" .. tostring(#caster.recipes - CRAFT_RECIPE_ROWS)) .. " recipes)" or ""
+            local holds = caster.item ~= nil and ("holds " .. placeLabel(caster.item)) .. more or "put an item on the " .. string.lower(kind)
+            p:text(
+                60,
+                y,
+                fit(holds, 37),
+                caster.item ~= nil and N.text or N.dim
+            )
+            if caster.item ~= nil and #caster.recipes == 0 then
+                p:text(39, y + 1, "No recipe casts onto this item.", N.dim)
             end
+        end
+    )
+    local ____opt_201 = self.state
+    local ____opt_199 = ____opt_201 and ____opt_201.craftCasters
+    local extra = (____opt_199 and #____opt_199 or 0) - #casters
+    if extra > 0 then
+        p:text(
+            37,
+            19,
+            ("+ " .. tostring(extra)) .. " craft caster(s) not shown",
+            N.dim
+        )
+    end
+    local picked = self:pickedCraft()
+    if picked == nil then
+        p:text(37, 21, "Put an item on a craft caster, pick a recipe,", N.dim)
+        p:text(37, 22, "then set how many castings.", N.dim)
+        return
+    end
+    local caster = picked.caster
+    local recipe = picked.recipe
+    local known = __TS__ArrayFind(
+        self:manualFluids(),
+        function(____, candidate) return candidate.name == recipe.fluid end
+    )
+    local have = known and known.amount or 0
+    local stored = known and known.stored or 0
+    local needs = recipe.amount * self.craftCount
+    p:text(37, 20, "CRAFT", N.dim)
+    p:text(
+        45,
+        20,
+        fit(
+            (placeLabel(recipe.result) .. " on ") .. placeLabel(caster.name),
+            52
+        ),
+        N.yellow
+    )
+    p:text(37, 21, "NEEDS", N.dim)
+    p:text(
+        45,
+        21,
+        fit(
+            ((tostring(needs) .. " mB ") .. fluidLabel(recipe.fluid)) .. (recipe.consumed and self.craftCount > 1 and (", one " .. placeLabel(caster.item or "item")) .. " each" or ""),
+            52
+        ),
+        N.text
+    )
+    p:text(37, 22, "HAVE", N.dim)
+    p:text(
+        45,
+        22,
+        fit(
+            stored > 0 and ((((tostring(have) .. " + ") .. tostring(stored)) .. " stored = ") .. tostring(have + stored)) .. " mB" or tostring(have) .. " mB",
+            30
+        ),
+        needs > have + stored and N.orange or N.text
+    )
+    p:text(37, 24, "COUNT", N.dim)
+    p:text(
+        49,
+        24,
+        __TS__StringPadStart(
+            tostring(self.craftCount),
+            2
+        ),
+        N.yellow
+    )
+    p:fill(
+        77,
+        25,
+        20,
+        3,
+        N.lime
+    )
+end
+function SmelteryScreen.prototype.paintQueue(self, p, state, manual)
+    local orders = state.orders or ({})
+    local how = manual and "side by side" or "PAUSED"
+    self:bracket(
+        p,
+        3,
+        31,
+        96,
+        13,
+        N.magenta,
+        (((((("QUEUE " .. Glyph.mid) .. " ") .. tostring(#orders)) .. " ") .. Glyph.mid) .. " ") .. how
+    )
+    if #orders == 0 then
+        p:text(5, 33, manual and "No order. Pick a fluid, set the counts, then SEND." or "No order.", N.dim)
+    end
+    __TS__ArrayForEach(
+        self:pageOrders(),
+        function(____, order, row)
+            local y = 33 + row * 2
+            p:text(
+                5,
+                y,
+                "#" .. tostring(order.id),
+                N.dim
+            )
+            p:fill(
+                10,
+                y,
+                2,
+                1,
+                fluidColor(order.fluid)
+            )
+            p:text(
+                13,
+                y,
+                fit(
+                    fluidLabel(order.fluid),
+                    10
+                ),
+                N.text
+            )
+            local status = {"QUEUED", N.soft}
             if not manual then
+                status = {"PAUSED", N.dim}
+            elseif order.status == "pouring" then
+                status = {"POURING", N.lime}
+            elseif order.status == "waiting" then
+                status = {"WAITING", N.orange}
+            end
+            p:text(24, y, status[1], status[2])
+            local craft = order.craft
+            local ____temp_213
+            if craft ~= nil then
+                local ____placeLabel_result_211 = placeLabel(craft.result)
+                local ____opt_207 = order.lines[1]
+                local ____temp_212 = ____opt_207 and ____opt_207.done or 0
+                local ____opt_209 = order.lines[1]
+                ____temp_213 = (((((____placeLabel_result_211 .. " ") .. tostring(____temp_212)) .. "/") .. tostring(____opt_209 and ____opt_209.count or 0)) .. " on ") .. placeLabel(craft.caster)
+            else
+                ____temp_213 = table.concat(
+                    __TS__ArrayMap(
+                        order.lines,
+                        function(____, line) return (((formatLabel(line.format) .. " ") .. tostring(line.done)) .. "/") .. tostring(line.count) end
+                    ),
+                    "  "
+                )
+            end
+            local lines = ____temp_213
+            p:text(
+                33,
+                y,
+                fit(lines, 37),
+                N.soft
+            )
+            if order.status == "waiting" then
+                local need = craft and craft.need
+                local why = need ~= nil and "put " .. (__TS__StringStartsWith(need, "#") and "any " .. placeLabel(__TS__StringSubstring(need, 1)) or placeLabel(need)) or (order.alloy ~= nil and "would form " .. fluidLabel(order.alloy) or ("needs " .. tostring(order.missing or "?")) .. " mB")
                 p:text(
-                    66,
+                    72,
                     y,
-                    ((__TS__StringPadEnd(
-                        fit(
-                            formatLabel(group.format),
-                            16
-                        ),
-                        17
-                    ) .. tostring(group.free)) .. " free / ") .. tostring(group.free + group.casting + group.ready),
-                    N.dim
+                    fit(why, 21),
+                    N.orange
                 )
             end
         end
+    )
+end
+function SmelteryScreen.prototype.paintInputBand(self, p, state)
+    local items = state.inputItems
+    p:fill(
+        3,
+        45,
+        96,
+        3,
+        N.panel
+    )
+    p:text(
+        5,
+        46,
+        "INPUT",
+        N.cyan,
+        N.panel
+    )
+    if #items == 0 then
+        p:text(
+            12,
+            46,
+            "empty",
+            N.dim,
+            N.panel
+        )
+        return
+    end
+    local function count(____, status)
+        return #__TS__ArrayFilter(
+            items,
+            function(____, item) return item.status == status end
+        )
+    end
+    local parts = {{
+        (tostring(#items) .. " slot") .. (#items > 1 and "s" or ""),
+        N.text
+    }}
+    if count(nil, "ok") > 0 then
+        parts[#parts + 1] = {
+            tostring(count(nil, "ok")) .. " ready",
+            N.lime
+        }
+    end
+    if count(nil, "alloy") > 0 then
+        parts[#parts + 1] = {
+            tostring(count(nil, "alloy")) .. " alloy",
+            N.red
+        }
+    end
+    if count(nil, "heat") > 0 then
+        parts[#parts + 1] = {
+            tostring(count(nil, "heat")) .. " too hot",
+            N.orange
+        }
+    end
+    if count(nil, "unknown") > 0 then
+        parts[#parts + 1] = {
+            tostring(count(nil, "unknown")) .. " no fluid",
+            N.dim
+        }
+    end
+    local x = 12
+    for ____, ____value in ipairs(parts) do
+        local text = ____value[1]
+        local color = ____value[2]
+        p:text(
+            x,
+            46,
+            text,
+            color,
+            N.panel
+        )
+        x = x + (#text + 2)
+    end
+end
+function SmelteryScreen.prototype.paintInputDetails(self, p, state)
+    local items = state.inputItems
+    self:bracket(
+        p,
+        3,
+        5,
+        96,
+        38,
+        N.cyan,
+        (((("INPUT " .. Glyph.mid) .. " ") .. tostring(#items)) .. " slot") .. (#items == 1 and "" or "s")
+    )
+    p:text(6, 7, "SLOT", N.dim)
+    p:text(12, 7, "ITEM", N.dim)
+    p:text(46, 7, "COUNT", N.dim)
+    p:text(53, 7, "STATUS", N.dim)
+    __TS__ArrayForEach(
+        self:pageItems(),
+        function(____, item, row)
+            local y = 9 + row * 2
+            p:text(
+                6,
+                y,
+                __TS__StringPadStart(
+                    tostring(item.slot),
+                    3
+                ),
+                N.dim
+            )
+            p:text(
+                12,
+                y,
+                fit(
+                    string.upper(placeLabel(item.name)),
+                    32
+                ),
+                N.text
+            )
+            p:text(
+                46,
+                y,
+                __TS__StringPadStart(
+                    tostring(item.count),
+                    5
+                ),
+                N.soft
+            )
+            local status = {
+                (("ready " .. Glyph.right) .. " ") .. (item.fluid ~= nil and fluidLabel(item.fluid) or ""),
+                N.lime
+            }
+            if item.status == "alloy" then
+                status = {
+                    "would form " .. fluidLabel(item.alloy or "an alloy"),
+                    N.red
+                }
+            elseif item.status == "heat" then
+                status = {
+                    ("needs " .. tostring(item.temperature or "?")) .. " K",
+                    N.orange
+                }
+            elseif item.status == "unknown" then
+                status = {"melts into nothing known", N.dim}
+            end
+            p:text(
+                53,
+                y,
+                fit(status[1], 31),
+                status[2]
+            )
+        end
+    )
+    if #items == 0 then
+        p:text(6, 9, "The input is empty.", N.dim)
+    end
+    p:text(
+        #items > ITEMS_PER_PAGE and 20 or 6,
+        40,
+        fit(("FORCE asks twice " .. Glyph.mid) .. " INSERT READY skips what is refused", 70),
+        N.dim
     )
 end
 function SmelteryScreen.prototype.paintStock(self, p, state)
@@ -4321,17 +5324,17 @@ function SmelteryScreen.prototype.paintStock(self, p, state)
     local scale = 0
     for ____, reservoir in ipairs(reservoirs) do
         do
-            local __continue427
+            local __continue548
             repeat
                 if reservoir.capacity == nil then
-                    __continue427 = true
+                    __continue548 = true
                     break
                 end
                 known = known + 1
                 scale = math.max(scale, reservoir.capacity)
-                __continue427 = true
+                __continue548 = true
             until true
-            if not __continue427 then
+            if not __continue548 then
                 break
             end
         end
@@ -4342,9 +5345,9 @@ function SmelteryScreen.prototype.paintStock(self, p, state)
     __TS__ArrayForEach(
         self:pageReservoirs(),
         function(____, reservoir, index)
-            local ____temp_115 = ____exports.SmelteryScreen:reservoirPlace(index)
-            local x = ____temp_115.x
-            local y = ____temp_115.y
+            local ____temp_216 = ____exports.SmelteryScreen:reservoirPlace(index)
+            local x = ____temp_216.x
+            local y = ____temp_216.y
             local fluid = reservoir.fluid
             local color = fluid ~= nil and fluidColor(fluid) or N.dim
             local tube = __TS__New(
@@ -4395,9 +5398,9 @@ function SmelteryScreen.prototype.paintStock(self, p, state)
             if reservoir.capacity ~= nil and reservoir.amount >= reservoir.capacity then
                 p:text(x + 6, y, "FULL", N.yellow)
             end
-            local ____reservoir_name_118 = reservoir.name
-            local ____opt_116 = self.assigning
-            if ____reservoir_name_118 == (____opt_116 and ____opt_116.reservoir) then
+            local ____reservoir_name_219 = reservoir.name
+            local ____opt_217 = self.assigning
+            if ____reservoir_name_219 == (____opt_217 and ____opt_217.reservoir) then
                 p:text(x - 1, y + 6, Glyph.right, N.yellow)
             end
             local label
@@ -4454,10 +5457,10 @@ function SmelteryScreen.prototype.paintStock(self, p, state)
     local totals = {}
     for ____, reservoir in ipairs(reservoirs) do
         do
-            local __continue442
+            local __continue563
             repeat
                 if reservoir.fluid == nil then
-                    __continue442 = true
+                    __continue563 = true
                     break
                 end
                 local entry = __TS__ArrayFind(
@@ -4469,9 +5472,9 @@ function SmelteryScreen.prototype.paintStock(self, p, state)
                 else
                     totals[#totals + 1] = {fluid = reservoir.fluid, amount = reservoir.amount}
                 end
-                __continue442 = true
+                __continue563 = true
             until true
-            if not __continue442 then
+            if not __continue563 then
                 break
             end
         end
@@ -4480,8 +5483,8 @@ function SmelteryScreen.prototype.paintStock(self, p, state)
         totals,
         function(____, a, b) return b.amount - a.amount end
     )
-    local ____opt_119 = totals[1]
-    local biggest = ____opt_119 and ____opt_119.amount or 1
+    local ____opt_220 = totals[1]
+    local biggest = ____opt_220 and ____opt_220.amount or 1
     __TS__ArrayForEach(
         __TS__ArraySlice(totals, 0, 4),
         function(____, total, index)
@@ -4847,6 +5850,48 @@ function SmelteryScreen.prototype.paintConfirm(self, p)
         )
         return
     end
+    if confirm.kind == "trash" then
+        p:text(x + 3, y + 2, "TRASH FLUID", color)
+        p:text(
+            x + 15,
+            y + 2,
+            ("step " .. tostring(confirm.step)) .. " of 2",
+            N.dim
+        )
+        p:text(
+            x + 3,
+            y + 4,
+            fit(
+                (tostring(confirm.amount) .. " mB ") .. fluidLabel(confirm.fluid),
+                45
+            ),
+            fluidColor(confirm.fluid)
+        )
+        p:text(
+            x + 3,
+            y + 5,
+            fit(
+                ("from " .. (confirm.reservoir ~= nil and placeLabel(confirm.reservoir) or "the Smeltery")) .. ", all of it",
+                45
+            ),
+            N.soft
+        )
+        if confirm.step == 1 then
+            p:text(x + 3, y + 7, "It goes to the fluid trash can.", N.dim)
+        else
+            p:text(x + 3, y + 7, "It cannot be undone.", N.dim)
+            p:text(
+                x + 21,
+                y + 12,
+                tostring(math.max(
+                    0,
+                    math.ceil(confirm.deadline - os.clock())
+                )) .. " s",
+                N.dim
+            )
+        end
+        return
+    end
     local item = confirm.item
     local what = item.status == "alloy" and ("will form " .. fluidLabel(item.alloy or "an alloy")) .. "." or ("needs " .. tostring(item.temperature or "?")) .. " K: it may not melt."
     p:text(x + 3, y + 2, "FORCE INSERT", color)
@@ -4917,8 +5962,8 @@ function SmelteryScreen.prototype.paintDelete(self, p, option, step, deadline, x
         colors.pink
     )
     local state = self.state
-    local ____opt_131 = state and state.alloy
-    local last = (____opt_131 and ____opt_131.result) == option.result and not __TS__ArraySome(
+    local ____opt_232 = state and state.alloy
+    local last = (____opt_232 and ____opt_232.result) == option.result and not __TS__ArraySome(
         self:alloyOptions(),
         function(____, other) return other.index ~= option.index and other.result == option.result end
     )

@@ -212,6 +212,98 @@ local function __TS__New(target, ...)
     instance:____constructor(...)
     return instance
 end
+
+local function __TS__StringSubstring(self, start, ____end)
+    if ____end ~= ____end then
+        ____end = 0
+    end
+    if ____end ~= nil and start > ____end then
+        start, ____end = ____end, start
+    end
+    if start >= 0 then
+        start = start + 1
+    else
+        start = 1
+    end
+    if ____end ~= nil and ____end < 0 then
+        ____end = 0
+    end
+    return string.sub(self, start, ____end)
+end
+
+local function __TS__Number(value)
+    local valueType = type(value)
+    if valueType == "number" then
+        return value
+    elseif valueType == "string" then
+        local numberValue = tonumber(value)
+        if numberValue then
+            return numberValue
+        end
+        if value == "Infinity" then
+            return math.huge
+        end
+        if value == "-Infinity" then
+            return -math.huge
+        end
+        local stringWithoutSpaces = string.gsub(value, "%s", "")
+        if stringWithoutSpaces == "" then
+            return 0
+        end
+        return 0 / 0
+    elseif valueType == "boolean" then
+        return value and 1 or 0
+    else
+        return 0 / 0
+    end
+end
+
+local __TS__StringSplit
+do
+    local sub = string.sub
+    local find = string.find
+    function __TS__StringSplit(source, separator, limit)
+        if limit == nil then
+            limit = 4294967295
+        end
+        if limit == 0 then
+            return {}
+        end
+        local result = {}
+        local resultIndex = 1
+        if separator == nil or separator == "" then
+            for i = 1, #source do
+                result[resultIndex] = sub(source, i, i)
+                resultIndex = resultIndex + 1
+            end
+        else
+            local currentPos = 1
+            while resultIndex <= limit do
+                local startPos, endPos = find(source, separator, currentPos, true)
+                if not startPos then
+                    break
+                end
+                result[resultIndex] = sub(source, currentPos, startPos - 1)
+                resultIndex = resultIndex + 1
+                currentPos = endPos + 1
+            end
+            if resultIndex <= limit then
+                result[resultIndex] = sub(source, currentPos)
+            end
+        end
+        return result
+    end
+end
+
+local function __TS__ObjectEntries(obj)
+    local result = {}
+    local len = 0
+    for key in pairs(obj) do
+        len = len + 1
+        result[len] = {key, obj[key]}
+    end
+    return result
+end
 -- End of Lua Library inline imports
 local ____exports = {}
 ____exports.FluidValues = {nugget = 10, ingot = 90, block = 810}
@@ -219,12 +311,16 @@ ____exports.DEFAULT_CAST_AMOUNTS = {{format = "nugget", amount = ____exports.Flu
 ____exports.CastAmounts = __TS__Class()
 local CastAmounts = ____exports.CastAmounts
 CastAmounts.name = "CastAmounts"
-function CastAmounts.prototype.____constructor(self, entries)
+function CastAmounts.prototype.____constructor(self, entries, recipes)
     if entries == nil then
         entries = ____exports.DEFAULT_CAST_AMOUNTS
     end
+    if recipes == nil then
+        recipes = {}
+    end
     self.byFormat = __TS__New(Map)
     self.byFluid = __TS__New(Map)
+    self.recipes = __TS__New(Map)
     for ____, entry in ipairs(entries) do
         if entry.fluid == nil then
             self.byFormat:set(entry.format, entry.amount)
@@ -234,6 +330,22 @@ function CastAmounts.prototype.____constructor(self, entries)
                 entry.amount
             )
         end
+    end
+    for ____, ____value in ipairs(__TS__ObjectEntries(recipes)) do
+        local fluid = ____value[1]
+        local list = ____value[2]
+        local casts = __TS__New(Map)
+        for ____, pair in ipairs(__TS__StringSplit(list, " ")) do
+            local colon = (string.find(pair, ":", nil, true) or 0) - 1
+            local amount = colon > 0 and __TS__Number(__TS__StringSubstring(pair, colon + 1)) or 0
+            if amount > 0 then
+                casts:set(
+                    __TS__StringSubstring(pair, 0, colon),
+                    amount
+                )
+            end
+        end
+        self.recipes:set(fluid, casts)
     end
 end
 function CastAmounts.prototype.forbid(self, format, fluid)
@@ -253,6 +365,10 @@ function CastAmounts.prototype.get(self, format, fluid)
         local exception = self.byFluid:get(____exports.CastAmounts:key(format, fluid))
         if exception ~= nil then
             return exception > 0 and exception or nil
+        end
+        local known = self.recipes:get(fluid)
+        if known ~= nil then
+            return known:get(format)
         end
     end
     return self.byFormat:get(format)
