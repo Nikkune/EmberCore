@@ -13,15 +13,16 @@ import type {AlloyGuard, AlloyRatio, CastAmounts, CasterState, MaterialMap} from
 import {alloyGuardOf, CATALOGUE_PATH, catalogueFluids, castAmountsOf, loadCatalogue, materialMapOf, saveCatalogue, temperatureMap} from '../shared/catalogue';
 import type {Catalogue}                                 from '../shared/catalogue';
 import {CONTROLLER_HOSTNAME, HISTORY_SECONDS, HISTORY_SIZE, Messages, MODES, PROTOCOL} from '../shared/protocol';
-import type {AlloyOption, AlloyView, CasterView, CastRequest, DeleteRecipeRequest, FluidForecast, FuelView, InputItemView, InsertRequest, InventoryView, Mode, SaveRecipeRequest, SetAlloyRequest, SetReservoirRequest, SetFormatRequest, SetModeRequest, SetSmelteryCapacityRequest, SmelteryState, WaitingItem} from '../shared/protocol';
+import type {AlloyOption, AlloyView, CancelOrderRequest, CasterView, CastOption, CastRequest, CraftCasterView, CraftRecipeView, QueueCraftRequest, TrashFluidRequest, DeleteRecipeRequest, FluidForecast, FuelView, InputItemView, InsertRequest, InventoryView, Mode, OrderView, QueueOrderRequest, SaveRecipeRequest, SetAlloyRequest, SetReservoirRequest, SetFormatRequest, SetModeRequest, SetSmelteryCapacityRequest, SmelteryState, WaitingItem} from '../shared/protocol';
+import {CRAFT_RECIPES}                              from '../shared/craftRecipesData';
 import {checkIndex, deleteRecipe, recipeProblem, saveRecipe} from '../shared/recipes';
 
 import {clearAlloy, CONFIG_PATH, loadAlloy, loadCapacities, loadControllerConfig, loadMode, saveAlloy, saveCapacities, saveControllerConfig, saveMode} from './config';
 import type {ControllerConfig}                          from './config';
 import {discoverNetwork}                                from './discovery';
 import type {Network}                                   from './discovery';
-import {assessInput, assessItem, planTick}              from './planner';
-import type {Action, InputSlot, Plan, PlanContext, Snapshot} from './planner';
+import {assessInput, assessItem, CRAFT_FORMAT, craftInputMatches, planTick} from './planner';
+import type {Action, InputSlot, OrderJob, OrderStatus, Plan, PlanContext, Snapshot} from './planner';
 
 /** Fluid of an item by name, or false when it melts into nothing known (cached: tags do not change). */
 type FluidCache = Map<string, string | false>;
@@ -30,13 +31,24 @@ type FluidCache = Map<string, string | false>;
 /** The pace of the input (SmelteryState.inputSeconds) is measured over this many seconds. */
 const INPUT_PACE_SECONDS = 300;
 
+/** Most castings of one format a manual order may ask. */
+const MAX_ORDER_COUNT = 64;
+
 /** Size from which the log file moves to <path>.old (about 300 lines). */
 const LOG_FILE_BYTES = 16 * 1024;
+
+/** A craft caster as read this tick, with the tags of the item it holds. */
+interface CraftReading {
+	name: string;
+	state: CasterState;
+	tags: string[];
+}
 
 interface Reading {
 	fluids: FluidStack[];
 	melting: ItemSummary[];
 	casters: CasterView[];
+	craft: CraftReading[];
 	input?: InventoryView;
 	output?: InventoryView;
 }
@@ -48,7 +60,7 @@ interface Reading {
  */
 export class Controller {
 	private mode: Mode;
-	private network: Network = {casters: [], reservoirs: [], problems: []};
+	private network: Network = {casters: [], craftCasters: [], reservoirs: [], problems: []};
 	private pool?: ReservoirPool | undefined;
 	/** Mode a purge goes back to. */
 	private previousMode: Mode;
@@ -60,6 +72,15 @@ export class Controller {
 	private alloy?: AlloyView | undefined;
 	private smeltery?: Smeltery | undefined;
 	private casters: Caster[]                    = [];
+	/** Casters for castings onto an item (config craftCasters): poured into only for craft orders. */
+	private craftCasters: Caster[]               = [];
+	private trash?: Tank | undefined;
+	/** Tags of the items put on the craft casters, by item name (read once). */
+	private readonly craftTags = new Map<string, string[]>();
+	/** The recipes of an item on a kind of caster ('table minecraft:apple'), found once. */
+	private readonly craftMatches = new Map<string, CraftRecipeView[]>();
+	/** Craft orders whose caster took none of the fluid this tick: they leave the queue. */
+	private refusedCrafts = new Set<number>();
 	private input?: Inventory | undefined;
 	private output?: Inventory | undefined;
 	private heatOutput?: Inventory | undefined;
@@ -99,6 +120,12 @@ export class Controller {
 	private readonly inserts: {time: number; count: number}[] = [];
 	/** Something moved during this tick. */
 	private worked = false;
+	/** Manual orders, oldest first: kept in memory only (a restart empties the queue). */
+	private orders: OrderJob[] = [];
+	private orderStatuses: OrderStatus[] = [];
+	private nextOrderId = 1;
+	/** INSERT READY was touched: the safe input goes in on the next tick. */
+	private insertReadyWanted = false;
 
 	public constructor(
 		private readonly config: ControllerConfig,
@@ -342,7 +369,10 @@ export class Controller {
 				const context = this.planContext();
 				this.inputItems = assessInput(snapshot, context);
 				plan            = planTick(this.mode, snapshot, context);
+				if (context.insertReady === true) this.insertReadyWanted = false;
 				this.execute(plan);
+				if (plan.orders !== undefined) this.orderStatuses = plan.orders;
+				this.settleOrders();
 				if (plan.actions.length > 0) this.refreshReading();
 				if (plan.finished === true) this.finish();
 				else this.checkIdle(plan, snapshot);
@@ -363,6 +393,180 @@ export class Controller {
 			this.lastAlerts = alertText;
 		}
 		return this.worked;
+	}
+
+	/**
+	 * Manual mode: an order joins the queue. Each format must have a caster on the network and a casting
+	 * recipe for the fluid; the same format twice is added up.
+	 */
+	public queueOrder(request: QueueOrderRequest): number {
+		this.requireManual();
+		const fluid = request.fluid;
+		if (typeof fluid !== 'string' || fluid === '') throw new EmberError('choose a fluid first', 'SMELTERY_ERROR');
+		if (type(request.lines) !== 'table') throw new EmberError('the order is empty', 'SMELTERY_ERROR');
+
+		const lines: OrderJob['lines'] = [];
+		for (const line of request.lines) {
+			const format = line.format;
+			const count  = line.count;
+			if (typeof format !== 'string' || !(typeof count === 'number' && count > 0 && count % 1 === 0)) {
+				throw new EmberError('each line needs a format and a positive count', 'SMELTERY_ERROR');
+			}
+			if (!this.casters.some((caster) => this.lastRead?.casters.find((view) => view.name === caster.name)?.format === format)) {
+				throw new EmberError(`no ${format} cast on the network`, 'SMELTERY_ERROR');
+			}
+			if (this.amounts.get(format, fluid) === undefined) {
+				throw new EmberError(`no ${format} recipe for ${Controller.shortName(fluid)}`, 'SMELTERY_ERROR');
+			}
+			const same = lines.find((candidate) => candidate.format === format);
+			if (same !== undefined) same.count += count;
+			else lines.push({format, count, done: 0});
+		}
+		if (lines.length === 0) throw new EmberError('the order is empty', 'SMELTERY_ERROR');
+		const tooMany = lines.find((line) => line.count > MAX_ORDER_COUNT);
+		if (tooMany !== undefined) throw new EmberError(`at most ${MAX_ORDER_COUNT} ${tooMany.format} per order`, 'SMELTERY_ERROR');
+
+		const id = this.nextOrderId++;
+		this.orders.push({id, fluid, lines});
+		this.orderStatuses.push({id, status: 'queued'});
+		this.state.orders = this.orderViews();
+		this.log(`order #${id}: ${Controller.orderText(fluid, lines)}`);
+		return id;
+	}
+
+	/** Takes an order out of the queue; what it already poured stays where it is. */
+	public cancelOrder(request: CancelOrderRequest): void {
+		const order = this.orders.find((candidate) => candidate.id === request.id);
+		if (order === undefined) throw new EmberError(`no order #${tostring(request.id)}`, 'SMELTERY_ERROR');
+
+		this.orders        = this.orders.filter((candidate) => candidate !== order);
+		this.orderStatuses = this.orderStatuses.filter((status) => status.id !== order.id);
+		this.state.orders  = this.orderViews();
+		const done  = order.lines.reduce((sum, line) => sum + line.done, 0);
+		const total = order.lines.reduce((sum, line) => sum + line.count, 0);
+		this.log(`order #${order.id} cancelled: ${done}/${total} poured`);
+	}
+
+	/** Manual mode: every input slot that is safe goes in on the next tick (the others stay). */
+	public insertReady(): void {
+		this.requireManual();
+		this.insertReadyWanted = true;
+	}
+
+	/**
+	 * Manual mode: castings onto the item of a craft caster join the queue. The item is put by the player;
+	 * the order waits for it (and for another one after each casting that uses it up).
+	 */
+	public queueCraft(request: QueueCraftRequest): number {
+		this.requireManual();
+		const caster = this.craftCasters.find((candidate) => candidate.name === request.caster);
+		if (caster === undefined) throw new EmberError(`no craft caster ${tostring(request.caster)}`, 'SMELTERY_ERROR');
+		const index  = request.recipe;
+		const recipe = typeof index === 'number' && index % 1 === 0 ? CRAFT_RECIPES[index] : undefined;
+		if (recipe === undefined || recipe[0] !== caster.kind) throw new EmberError('unknown craft recipe', 'SMELTERY_ERROR');
+		const count = request.count;
+		if (!(typeof count === 'number' && count > 0 && count % 1 === 0)) throw new EmberError('the count must be positive', 'SMELTERY_ERROR');
+		if (count > MAX_ORDER_COUNT) throw new EmberError(`at most ${MAX_ORDER_COUNT} castings per order`, 'SMELTERY_ERROR');
+
+		const [, input, fluid, amount, result, consumed] = recipe;
+		const id = this.nextOrderId++;
+		const craft = {caster: caster.name, input, result, amount, consumed};
+		this.orders.push({id, fluid, lines: [{format: CRAFT_FORMAT, count, done: 0}], craft});
+		this.orderStatuses.push({id, status: 'queued'});
+		this.state.orders = this.orderViews();
+		this.log(`order #${id}: ${count} ${Controller.itemName(result)} on ${caster.name} (${amount} mB ${Controller.shortName(fluid)} each)`);
+		return id;
+	}
+
+	/**
+	 * All of a fluid goes to the fluid trash can: from a reservoir, or from the Smeltery. It cannot be undone
+	 * (the display asks twice). Returns the mB trashed.
+	 */
+	public trashFluid(request: TrashFluidRequest): number {
+		const trash = this.trash;
+		if (trash === undefined) throw new EmberError('no fluid trash can on the network', 'SMELTERY_ERROR');
+		const fluid = request.fluid;
+		if (typeof fluid !== 'string' || fluid === '') throw new EmberError('choose a fluid first', 'SMELTERY_ERROR');
+
+		let source: Tank | undefined;
+		if (request.reservoir !== undefined) {
+			if (this.pool?.has(request.reservoir) !== true) throw new EmberError(`no reservoir ${tostring(request.reservoir)}`, 'SMELTERY_ERROR');
+			source = Tank.fromName(request.reservoir);
+		}
+		else {
+			source = this.smeltery?.drain;
+			if (source === undefined) throw new EmberError('no Smeltery on the network', 'SMELTERY_ERROR');
+		}
+
+		// A push may move less than asked (a tank per call): again until nothing is left or nothing moves.
+		let trashed = 0;
+		for (let pass = 0; pass < 64; pass++) {
+			const left = source.getAmount(fluid);
+			if (left <= 0) break;
+			const moved = source.pushTo(trash, left, fluid);
+			if (moved <= 0) break;
+			trashed += moved;
+		}
+
+		const from = request.reservoir ?? 'the Smeltery';
+		if (trashed <= 0) throw new EmberError(`nothing trashed: no ${Controller.shortName(fluid)} in ${from}, or the trash refused it`, 'SMELTERY_ERROR');
+		this.log(`trashed ${trashed} mB ${Controller.shortName(fluid)} from ${from}`);
+		this.pool?.refresh();
+		this.tickWanted = true;
+		return trashed;
+	}
+
+	/**
+	 * After a tick: an order whose castings were all poured leaves the queue; a format that turned out to
+	 * have no recipe for the fluid (learnt this tick) is dropped from its order.
+	 */
+	private settleOrders(): void {
+		const kept: OrderJob[] = [];
+		for (const order of this.orders) {
+			if (this.refusedCrafts.has(order.id)) {
+				this.log(`order #${order.id} dropped: ${order.craft?.caster ?? 'the caster'} took no ${Controller.shortName(order.fluid)}`);
+				continue;
+			}
+			order.lines = order.lines.filter((line) => {
+				if (order.craft !== undefined) return true;
+				if (line.done >= line.count || this.amounts.get(line.format, order.fluid) !== undefined) return true;
+				this.log(`order #${order.id}: no ${line.format} recipe for ${Controller.shortName(order.fluid)}, ${line.count - line.done} dropped`);
+				return false;
+			});
+			if (order.lines.every((line) => line.done >= line.count)) {
+				const total = order.lines.reduce((sum, line) => sum + line.done, 0);
+				this.log(`order #${order.id} done: ${total} ${order.craft !== undefined ? Controller.itemName(order.craft.result) : 'poured'}`);
+				continue;
+			}
+			kept.push(order);
+		}
+		this.refusedCrafts.clear();
+		this.orders        = kept;
+		this.orderStatuses = this.orderStatuses.filter((status) => kept.some((order) => order.id === status.id));
+	}
+
+	private orderViews(): OrderView[] {
+		return this.orders.map((order) => {
+			const status = this.orderStatuses.find((candidate) => candidate.id === order.id);
+			const view: OrderView = {
+				id:     order.id,
+				fluid:  order.fluid,
+				lines:  order.lines.map((line) => ({...line})),
+				status: status?.status ?? 'queued',
+			};
+			if (status?.missing !== undefined) view.missing = status.missing;
+			if (status?.alloy !== undefined) view.alloy = status.alloy;
+			if (order.craft !== undefined) {
+				view.craft = {caster: order.craft.caster, result: order.craft.result};
+				if (status?.need !== undefined) view.craft.need = status.need;
+			}
+			return view;
+		});
+	}
+
+	/** '3 pickaxe head, 2 large plate of gold'. */
+	private static orderText(fluid: string, lines: OrderJob['lines']): string {
+		return `${lines.map((line) => `${line.count} ${line.format}`).join(', ')} of ${Controller.shortName(fluid)}`;
 	}
 
 	/**
@@ -526,6 +730,36 @@ export class Controller {
 			return this.state;
 		});
 
+		channel.on(Messages.queueOrder, (payload) => {
+			this.queueOrder(payload as QueueOrderRequest);
+			this.tickWanted = true;
+			return this.state;
+		});
+
+		channel.on(Messages.cancelOrder, (payload) => {
+			this.cancelOrder(payload as CancelOrderRequest);
+			this.tickWanted = true;
+			return this.state;
+		});
+
+		channel.on(Messages.queueCraft, (payload) => {
+			this.queueCraft(payload as QueueCraftRequest);
+			this.tickWanted = true;
+			return this.state;
+		});
+
+		channel.on(Messages.trashFluid, (payload) => {
+			this.trashFluid(payload as TrashFluidRequest);
+			this.tickWanted = true;
+			return this.state;
+		});
+
+		channel.on(Messages.insertReady, () => {
+			this.insertReady();
+			this.tickWanted = true;
+			return this.state;
+		});
+
 		channel.on(Messages.setAlloy, (payload) => {
 			this.setAlloy(payload as SetAlloyRequest);
 			this.tickWanted = true;
@@ -622,8 +856,11 @@ export class Controller {
 		this.heatOutput    = heatOutput !== undefined ? Inventory.fromName(heatOutput) : undefined;
 		this.unknownOutput = unknownOutput !== undefined ? Inventory.fromName(unknownOutput) : undefined;
 		this.casters  = this.network.casters.map((name) => Caster.fromName(name, this.amounts));
+		this.craftCasters = this.network.craftCasters.map((name) => Caster.fromName(name, this.amounts));
+		this.trash    = this.network.trash !== undefined ? Tank.fromName(this.network.trash) : undefined;
 
-		this.log(`network: ${this.casters.length} caster(s)${this.network.problems.length > 0 ? `, ${this.network.problems.length} problem(s)` : ''}`);
+		const extras = `${this.craftCasters.length > 0 ? `, ${this.craftCasters.length} craft` : ''}${this.trash !== undefined ? `, trash ${this.trash.name}` : ''}`;
+		this.log(`network: ${this.casters.length} caster(s)${extras}${this.network.problems.length > 0 ? `, ${this.network.problems.length} problem(s)` : ''}`);
 
 		for (const caster of this.casters) {
 			try {
@@ -644,12 +881,8 @@ export class Controller {
 		const present = this.readPresent(smeltery);
 
 		// Each peripheral call waits a game tick: the casters are read all at once, not one by one.
-		const states: CasterState[] = [];
-		if (this.casters.length > 0) {
-			Parallel.all(...this.casters.map((caster, index) => () => {
-				states[index] = caster.read();
-			}));
-		}
+		const states = this.readCasters();
+		const craft  = this.readCraft(states);
 
 		const outputUsed = this.output !== undefined ? Controller.usedSlots(this.output) : 0;
 		const outputSize = this.output !== undefined ? this.sizeOf(this.output) : 0;
@@ -666,6 +899,7 @@ export class Controller {
 			input:         [],
 			outputFree:    outputSize - outputUsed,
 		};
+		if (craft.length > 0) snapshot.craft = craft;
 		if (present.uncertain) snapshot.uncertain = true;
 
 		const input = this.input;
@@ -683,6 +917,7 @@ export class Controller {
 			fluids:  present.fluids,
 			melting: present.items,
 			casters: this.casters.map((caster, index) => Controller.viewOf(caster, states[index]!)),
+			craft,
 		};
 		if (input !== undefined) reading.input = {name: input.name, size: this.sizeOf(input), used: snapshot.input.length};
 		if (this.output !== undefined) reading.output = {name: this.output.name, size: outputSize, used: outputUsed};
@@ -692,10 +927,71 @@ export class Controller {
 		return snapshot;
 	}
 
-	/**
-	 * After a tick that acted (poured, collected, inserted), reads again what the state shows, all at once:
-	 * the display sees this tick's result, not the reading taken before it.
-	 */
+	/** The casters, then the craft casters, all at once. */
+	private readCasters(): CasterState[] {
+		const all = [...this.casters, ...this.craftCasters];
+		const states: CasterState[] = [];
+		if (all.length > 0) {
+			Parallel.all(...all.map((caster, index) => () => {
+				states[index] = caster.read();
+			}));
+		}
+		return states;
+	}
+
+	/** The craft casters from their states (after those of the casters), with the tags of what they hold. */
+	private readCraft(states: CasterState[]): CraftReading[] {
+		return this.craftCasters.map((caster, index) => {
+			const state = states[this.casters.length + index]!;
+			return {name: caster.name, state, tags: this.tagsOf(caster, state.cast)};
+		});
+	}
+
+	/** Tags of the item on a craft caster, read once per item name. */
+	private tagsOf(caster: Caster, item: string | undefined): string[] {
+		if (item === undefined) return [];
+		const known = this.craftTags.get(item);
+		if (known !== undefined) return known;
+
+		const detail = caster.castDetail();
+		// Gone meanwhile: asked again next time.
+		if (detail?.name !== item) return [];
+		const tags: string[] = [];
+		if (detail.tags !== undefined) {
+			for (const [tag, present] of detail.tags) if (present) tags.push(tag);
+		}
+		this.craftTags.set(item, tags);
+		return tags;
+	}
+
+	/** A craft caster for the display, with the recipes for the item it holds. */
+	private craftView(caster: Caster, entry: CraftReading): CraftCasterView {
+		const state = entry.state;
+		const view: CraftCasterView = {name: caster.name, kind: caster.kind, status: state.status, amount: state.amount, recipes: []};
+		if (state.fluid !== undefined) view.fluid = state.fluid;
+		const item = state.cast;
+		if (item === undefined) return view;
+		view.item = item;
+
+		const key = `${caster.kind} ${item}`;
+		let recipes = this.craftMatches.get(key);
+		if (recipes === undefined) {
+			recipes = [];
+			CRAFT_RECIPES.forEach(([kind, input, fluid, amount, result, consumed], index) => {
+				if (kind !== caster.kind || !craftInputMatches(input, item, entry.tags)) return;
+				recipes!.push({index, fluid, amount, result, consumed});
+			});
+			this.craftMatches.set(key, recipes);
+		}
+		view.recipes = recipes;
+		return view;
+	}
+
+	/** A caster or craft caster by name. */
+	private casterNamed(name: string): Caster | undefined {
+		return this.casters.find((caster) => caster.name === name) ?? this.craftCasters.find((caster) => caster.name === name);
+	}
+
 	/**
 	 * Auto, alloy and melt drain the Smeltery and go idle once nothing happened for idleSeconds: nothing
 	 * done this tick, nothing melting, no caster at work.
@@ -758,7 +1054,7 @@ export class Controller {
 		if (reading === undefined || smeltery === undefined) return;
 
 		const states: CasterState[] = [];
-		const tasks: (() => void)[] = this.casters.map((caster, index) => () => {
+		const tasks: (() => void)[] = [...this.casters, ...this.craftCasters].map((caster, index) => () => {
 			states[index] = caster.read();
 		});
 		tasks.push(() => {
@@ -782,6 +1078,7 @@ export class Controller {
 
 		Parallel.all(...tasks);
 		reading.casters = this.casters.map((caster, index) => Controller.viewOf(caster, states[index]!));
+		reading.craft   = this.readCraft(states);
 	}
 
 	/**
@@ -827,27 +1124,38 @@ export class Controller {
 
 		switch (action.kind) {
 			case 'collect': {
-				const caster = this.casters.find((candidate) => candidate.name === action.caster);
+				const caster = this.casterNamed(action.caster);
 				const output = this.output;
 				if (caster === undefined || output === undefined) return 0;
 
 				// What it gives: the item the last reading saw in it.
-				const item  = this.lastRead?.casters.find((view) => view.name === caster.name)?.output?.name;
+				const item  = this.lastRead?.casters.find((view) => view.name === caster.name)?.output?.name
+				              ?? this.lastRead?.craft.find((entry) => entry.name === caster.name)?.state.output?.name;
 				const moved = caster.collectPlanned(output);
 				if (moved > 0) this.worked = true;
 				if (moved > 0) this.log(`collected ${moved} ${item ?? 'item'} from ${caster.name}`);
 				return 0;
 			}
 			case 'pour': {
-				const caster = this.casters.find((candidate) => candidate.name === action.caster);
+				const caster = this.casterNamed(action.caster);
 				if (caster === undefined) return 0;
 
 				const moved  = caster.pourPlanned(smeltery, action.fluid, action.amount);
-				const format = this.lastRead?.casters.find((view) => view.name === caster.name)?.format;
+				const craft  = action.order?.format === CRAFT_FORMAT;
+				const format = craft ? CRAFT_FORMAT : this.lastRead?.casters.find((view) => view.name === caster.name)?.format;
 				// Planned on an idle caster with enough fluid: taking nothing means no recipe.
-				if (moved === 0 && format !== undefined) this.learnUncastable(caster.name, format, action.fluid);
+				if (moved === 0 && craft) this.refusedCrafts.add(action.order!.id);
+				else if (moved === 0 && format !== undefined) this.learnUncastable(caster.name, format, action.fluid);
 				if (moved > 0) this.worked = true;
-				if (moved > 0) this.log(`poured ${moved} mB ${Controller.shortName(action.fluid)} into ${caster.name}${format !== undefined ? ` (${format})` : ''}`);
+				const forOrder = action.order !== undefined ? ` for #${action.order.id}` : '';
+				if (moved > 0) this.log(`poured ${moved} mB ${Controller.shortName(action.fluid)} into ${caster.name}${format !== undefined ? ` (${format})` : ''}${forOrder}`);
+
+				const ordered = action.order;
+				if (moved > 0 && ordered !== undefined) {
+					const order = this.orders.find((candidate) => candidate.id === ordered.id);
+					const line  = order?.lines.find((candidate) => candidate.format === ordered.format);
+					if (line !== undefined) line.done++;
+				}
 
 				const alloy = this.alloy;
 				if (moved > 0 && this.mode === 'alloy' && alloy !== undefined && alloy.result === action.fluid) {
@@ -890,7 +1198,9 @@ export class Controller {
 				if (taken < action.amount && (this.pool?.stored(action.fluid) ?? 0) > 0) this.learnSmelteryCapacity(smeltery);
 				const why   = action.why === 'stock'
 				              ? 'from the stock'
-				              : action.why === 'alloy' ? `for ${Controller.shortName(this.alloy?.result ?? 'the alloy')}` : 'to complete a cast';
+				              : action.why === 'alloy'
+				                ? `for ${Controller.shortName(this.alloy?.result ?? 'the alloy')}`
+				                : action.why === 'order' ? 'for an order' : 'to complete a cast';
 				if (taken > 0) this.worked = true;
 				if (taken > 0) this.log(`restored ${taken} mB ${Controller.shortName(action.fluid)} ${why}`);
 				return 0;
@@ -948,6 +1258,11 @@ export class Controller {
 		if (alloy !== undefined) {
 			context.alloy = {result: alloy.result, ratios: this.alloyRatios.filter((ratio) => ratio.result === alloy.result)};
 			if (alloy.target !== undefined) context.alloy.remaining = alloy.target - alloy.made;
+		}
+
+		if (this.mode === 'manual') {
+			if (this.orders.length > 0) context.orders = this.orders;
+			if (this.insertReadyWanted) context.insertReady = true;
 		}
 		return context;
 	}
@@ -1032,6 +1347,7 @@ export class Controller {
 			alloyOptions: this.alloyOptions(),
 		};
 		if (this.alloy !== undefined) state.alloy = {...this.alloy};
+		if (this.orders.length > 0) state.orders = this.orderViews();
 		if (smallStocks !== undefined) state.smallStocks = smallStocks;
 		this.applyCapacity(state);
 		state.modeSince = this.modeSince;
@@ -1050,7 +1366,15 @@ export class Controller {
 			if (reading.input !== undefined) state.input = reading.input;
 			if (reading.output !== undefined) state.output = reading.output;
 			state.forecast = this.forecast(reading);
+			state.castOptions = this.castOptions(reading);
+			const craft: CraftCasterView[] = [];
+			for (const entry of reading.craft) {
+				const caster = this.craftCasters.find((candidate) => candidate.name === entry.name);
+				if (caster !== undefined) craft.push(this.craftView(caster, entry));
+			}
+			if (craft.length > 0) state.craftCasters = craft;
 		}
+		if (this.trash !== undefined) state.trash = this.trash.name;
 
 		return state;
 	}
@@ -1106,6 +1430,29 @@ export class Controller {
 				left -= count * amount;
 			}
 			return {fluid: fluid.name, amount: fluid.amount, casts, left};
+		});
+	}
+
+	/** What each fluid of the Smeltery and the reservoirs can be cast into with the casts on the network. */
+	private castOptions(reading: Reading): CastOption[] {
+		const formats: string[] = [];
+		for (const caster of reading.casters) {
+			if (caster.format !== undefined && !formats.includes(caster.format)) formats.push(caster.format);
+		}
+
+		const fluids: string[] = [];
+		const names = [...reading.fluids.map((fluid) => fluid.name), ...Controller.storedFluids(this.pool).map((entry) => entry.fluid)];
+		for (const name of names) {
+			if (!fluids.includes(name)) fluids.push(name);
+		}
+
+		return fluids.map((fluid) => {
+			const casts: {format: string; amount: number}[] = [];
+			for (const format of formats) {
+				const amount = this.amounts.get(format, fluid);
+				if (amount !== undefined) casts.push({format, amount});
+			}
+			return {fluid, casts};
 		});
 	}
 
@@ -1209,6 +1556,11 @@ export class Controller {
 			}
 		}
 		waiting.push({name, count, reason: 'full'});
+	}
+
+	/** 'minecraft:golden_apple' -> 'golden apple'. */
+	private static itemName(item: string): string {
+		return item.substring(item.indexOf(':') + 1).split('_').join(' ');
 	}
 
 	private static shortName(fluid: string): string {

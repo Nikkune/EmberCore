@@ -18,6 +18,8 @@ export interface Snapshot {
 	/** Fluids of the items still melting (they count for the alloy guard). */
 	meltingFluids: string[];
 	casters: {name: string; state: CasterState}[];
+	/** The craft casters (never poured into but for a craft order), with the tags of the item they hold. */
+	craft?: {name: string; state: CasterState; tags: string[]}[];
 	input: InputSlot[];
 	/** Free slots of the output inventory; results are only cast when there is room for them. */
 	outputFree: number;
@@ -44,11 +46,49 @@ export interface AlloyJob {
 
 export type Action =
 	| {kind: 'collect'; caster: string}
-	| {kind: 'pour'; caster: string; fluid: string; amount: number}
+	| {kind: 'pour'; caster: string; fluid: string; amount: number; order?: {id: number; format: string}}
 	| {kind: 'insert'; slot: number; name: string; count: number; fluid: string; seen: string[]}
 	| {kind: 'reject'; slot: number; name: string; count: number; reason: 'heat' | 'unknown'; temperature?: number}
 	| {kind: 'store'; fluid: string; amount: number; why: StoreReason}
-	| {kind: 'restore'; fluid: string; amount: number; why: 'complete' | 'stock' | 'alloy'};
+	| {kind: 'restore'; fluid: string; amount: number; why: 'complete' | 'stock' | 'alloy' | 'order'};
+
+/**
+ * Manual mode: an order of the queue, castings of one fluid by format (`done`: already poured). A craft
+ * order has one line, of the format 'craft': castings onto the item on `craft.caster`.
+ */
+export interface OrderJob {
+	id: number;
+	fluid: string;
+	lines: {format: string; count: number; done: number}[];
+	craft?: CraftJob;
+}
+
+/** A casting onto an item: `input` is an item name or '#tag', `amount` the mB of one casting. */
+export interface CraftJob {
+	caster: string;
+	input: string;
+	result: string;
+	amount: number;
+	consumed: boolean;
+}
+
+export const CRAFT_FORMAT = 'craft';
+
+/** Whether an item (its name and tags) is the input of a craft recipe ('minecraft:apple', '#minecraft:planks'). */
+export function craftInputMatches(this: void, input: string, item: string | undefined, tags: string[]): boolean {
+	if (item === undefined) return false;
+	return input.startsWith('#') ? tags.includes(input.substring(1)) : input === item;
+}
+
+/** What became of an order this tick (OrderView without its lines). */
+export interface OrderStatus {
+	id: number;
+	status: 'pouring' | 'waiting' | 'queued';
+	missing?: number;
+	alloy?: string;
+	/** A craft order waits for this item on its caster. */
+	need?: string;
+}
 
 export interface Plan {
 	actions: Action[];
@@ -58,6 +98,8 @@ export interface Plan {
 	smallStocks?: FluidStack[];
 	/** A drain or purge has nothing left it can move: the controller ends it. */
 	finished?: boolean;
+	/** Manual mode: the status of each order, in queue order. */
+	orders?: OrderStatus[];
 }
 
 export interface PlanContext {
@@ -75,6 +117,10 @@ export interface PlanContext {
 	isAlloy?: (fluid: string) => boolean;
 	/** Alloy mode: what to make. */
 	alloy?: AlloyJob;
+	/** Manual mode: the queue, oldest first. */
+	orders?: OrderJob[];
+	/** Manual mode: every input slot that is safe goes in this tick (INSERT READY). */
+	insertReady?: boolean;
 }
 
 /** 'tconstruct:molten_rose_gold' -> 'rose gold', for alerts (the display cuts them at the first ': '). */
@@ -171,7 +217,7 @@ function restoreAll(this: void, snapshot: Snapshot, context: PlanContext, plan: 
 }
 
 function collectAll(this: void, snapshot: Snapshot, plan: Plan): void {
-	for (const caster of snapshot.casters) {
+	for (const caster of [...snapshot.casters, ...snapshot.craft ?? []]) {
 		if (caster.state.status === 'blocked') plan.actions.push({kind: 'collect', caster: caster.name});
 	}
 }
@@ -216,6 +262,127 @@ function pourAll(this: void, snapshot: Snapshot, context: PlanContext, plan: Pla
 
 			break;
 		}
+	}
+}
+
+/**
+ * Manual mode: the queue. Orders run side by side: each free caster takes the oldest order that still
+ * needs its format. A casting pours from the Smeltery; when the Smeltery lacks fluid, what it misses comes
+ * back from the reservoirs this tick and the casting is poured on the next one (as auto completes a cast).
+ * A fluid that is not in the Smeltery never comes back when it would form an alloy there. An order with
+ * more castings left than the Smeltery and the reservoirs can fill waits, the others go on.
+ */
+function pourOrders(this: void, snapshot: Snapshot, context: PlanContext, plan: Plan): void {
+	const orders = context.orders ?? [];
+	if (orders.length === 0) return;
+
+	const castingPaused = snapshot.outputFree <= 0;
+	if (castingPaused) plan.alerts.push('output full: casting paused');
+
+	const collected = new Set<string>();
+	for (const action of plan.actions) if (action.kind === 'collect') collected.add(action.caster);
+	const free = (caster: {name: string; state: CasterState}): boolean =>
+		!castingPaused && (caster.state.status === 'idle' || (caster.state.status === 'blocked' && collected.has(caster.name)));
+
+	const inside = new Map<string, number>();
+	for (const fluid of snapshot.fluids) inside.set(fluid.name, (inside.get(fluid.name) ?? 0) + fluid.amount);
+	const stock = new Map<string, number>();
+	for (const entry of snapshot.stored) stock.set(entry.fluid, (stock.get(entry.fluid) ?? 0) + entry.amount);
+	const present: string[] = [...snapshot.meltingFluids, ...snapshot.fluids.map((fluid) => fluid.name)];
+
+	const used     = new Set<string>();
+	const restores = new Map<string, number>();
+	const pours: Action[] = [];
+	plan.orders = [];
+
+	for (const order of orders) {
+		const fluid = order.fluid;
+		// Not in the Smeltery: the stock may only come back if it forms no alloy with what is there.
+		const alloy = present.includes(fluid) ? undefined : context.guard.wouldForm(present, fluid);
+		const craft = order.craft;
+		const craftCaster = craft !== undefined ? snapshot.craft?.find((caster) => caster.name === craft.caster) : undefined;
+		let pouring = craft !== undefined
+		              ? craftCaster?.state.status === 'busy'
+		              : snapshot.casters.some((caster) => caster.state.status === 'busy' && caster.state.fluid === fluid
+		                  && order.lines.some((line) => line.format === caster.state.format));
+		let remaining = 0;
+		let need: string | undefined;
+
+		for (const line of order.lines) {
+			const amount = craft !== undefined ? craft.amount : context.amounts.get(line.format, fluid);
+			if (amount === undefined) continue;
+			let left = line.count - line.done;
+			// A craft order pours into its own caster only, once it holds the item (the player puts it).
+			let candidates = snapshot.casters.filter((caster) => caster.state.format === line.format);
+			if (craft !== undefined) {
+				candidates = craftCaster !== undefined ? [craftCaster] : [];
+				const holds = craftCaster !== undefined && craftInputMatches(craft.input, craftCaster.state.cast, craftCaster.tags);
+				// A consumed item is gone once cast: the order waits for the player to put another one.
+				if (left > 0 && craftCaster !== undefined && craftCaster.state.status !== 'busy' && !holds) {
+					need = craft.input;
+					candidates = [];
+				}
+			}
+
+			for (const caster of candidates) {
+				if (left <= 0) break;
+				if (used.has(caster.name) || !free(caster)) continue;
+
+				const have = inside.get(fluid) ?? 0;
+				if (have >= amount) {
+					inside.set(fluid, have - amount);
+					pours.push({kind: 'pour', caster: caster.name, fluid, amount, order: {id: order.id, format: line.format}});
+				}
+				else {
+					const stored = stock.get(fluid) ?? 0;
+					if (alloy !== undefined || have + stored < amount) break;
+					restores.set(fluid, (restores.get(fluid) ?? 0) + amount - have);
+					stock.set(fluid, stored - (amount - have));
+					inside.set(fluid, 0);
+					if (!present.includes(fluid)) present.push(fluid);
+				}
+				used.add(caster.name);
+				left--;
+				pouring = true;
+			}
+
+			remaining += left * amount;
+		}
+
+		const available = (inside.get(fluid) ?? 0) + (alloy !== undefined ? 0 : stock.get(fluid) ?? 0);
+		const status: OrderStatus = {id: order.id, status: pouring ? 'pouring' : 'queued'};
+		if (remaining > available) {
+			status.status  = 'waiting';
+			status.missing = remaining - available;
+			if (alloy !== undefined) status.alloy = alloy.result;
+		}
+		if (need !== undefined && !pouring) {
+			status.status = 'waiting';
+			status.need   = need;
+		}
+		plan.orders.push(status);
+	}
+
+	restores.forEach((amount, fluid) => plan.actions.push({kind: 'restore', fluid, amount, why: 'order'}));
+	for (const pour of pours) plan.actions.push(pour);
+}
+
+/**
+ * Manual mode, INSERT READY: every input slot that is safe goes in (checked against the Smeltery, what is
+ * melting and what this same plan sends); the others stay, nothing is rejected or stored.
+ */
+function insertReady(this: void, snapshot: Snapshot, context: PlanContext, plan: Plan): void {
+	if (snapshot.pauseInput !== undefined) return;
+	if (snapshot.uncertain === true) {
+		plan.alerts.push('an item melting cannot be identified: input paused for this tick');
+		return;
+	}
+
+	const present: string[] = [...snapshot.meltingFluids, ...snapshot.fluids.map((fluid) => fluid.name)];
+	for (const item of snapshot.input) {
+		if (assessItem(item, present, context).status !== 'ok') continue;
+		plan.actions.push({kind: 'insert', slot: item.slot, name: item.name, count: item.count, fluid: item.fluid!, seen: [...present]});
+		present.push(item.fluid!);
 	}
 }
 
@@ -494,7 +661,7 @@ function takeStock(this: void, snapshot: Snapshot, context: PlanContext, plan: P
 /**
  * What to do this tick. Collecting comes first (a blocked caster is freed), then casting, then the input:
  * idle:   nothing;
- * manual: collect only, the rest comes from the display;
+ * manual: collect, the orders of the queue, INSERT READY; the rest comes from the display;
  * lock:   collect and cast, nothing new goes in;
  * drain:  collect, every fluid to the reservoirs;
  * purge:  collect, leftovers and alloys to the reservoirs;
@@ -510,7 +677,11 @@ export function planTick(this: void, mode: Mode, snapshot: Snapshot, context: Pl
 	if (mode === 'idle') return plan;
 
 	collectAll(snapshot, plan);
-	if (mode === 'manual') return plan;
+	if (mode === 'manual') {
+		pourOrders(snapshot, context, plan);
+		if (context.insertReady === true) insertReady(snapshot, context, plan);
+		return plan;
+	}
 
 	if (mode === 'drain') {
 		drainAll(snapshot, plan);

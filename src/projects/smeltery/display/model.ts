@@ -209,6 +209,8 @@ export function parseLogLine(this: void, line: string): LogLine {
 			return {time, kind: 'held', text: `${placeLabel(word(2))} x${word(1)} > ${placeLabel(word(4))} (${reasonOf(body)})`};
 		case 'stored':
 			return {time, kind: 'store', text: `${fluidLabel(word(3))} ${word(1)} mB > reservoirs (${reasonOf(body)})`};
+		case 'trashed':
+			return {time, kind: 'store', text: `${fluidLabel(word(3))} ${word(1)} mB > trash (from ${words.slice(5).join(' ')})`};
 		case 'restored':
 			return {time, kind: 'stock', text: `${fluidLabel(word(3))} ${word(1)} mB back ${words.slice(4).join(' ')}`};
 		case 'FORCED':
