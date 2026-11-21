@@ -14,7 +14,8 @@ import {alloyGuardOf, CATALOGUE_PATH, catalogueFluids, castAmountsOf, loadCatalo
 import type {Catalogue}                                 from '../shared/catalogue';
 import {CONTROLLER_HOSTNAME, HISTORY_SECONDS, HISTORY_SIZE, Messages, MODES, PROTOCOL} from '../shared/protocol';
 import type {AlloyOption, AlloyView, CancelOrderRequest, CasterView, CastOption, CastRequest, CraftCasterView, CraftRecipeView, QueueCraftRequest, TrashFluidRequest, InjectFluidRequest, DeleteRecipeRequest, FluidForecast, FluidInputView, FuelView, InputItemView, InsertRequest, InventoryView, Mode, OrderView, QueueOrderRequest, SaveRecipeRequest, SetAlloyRequest, SetReservoirRequest, SetFormatRequest, SetModeRequest, SetSmelteryCapacityRequest, SmelteryState, WaitingItem} from '../shared/protocol';
-import {CRAFT_RECIPES}                              from '../shared/craftRecipesData';
+import {craftRecipeAt, craftRecipeCount}            from '../shared/crafts';
+import {materialLabel}                              from '../shared/labels';
 import {checkIndex, deleteRecipe, recipeProblem, saveRecipe} from '../shared/recipes';
 
 import {clearAlloy, CONFIG_PATH, loadAlloy, loadCapacities, loadControllerConfig, loadMode, saveAlloy, saveCapacities, saveControllerConfig, saveMode} from './config';
@@ -22,7 +23,7 @@ import type {ControllerConfig}                          from './config';
 import {discoverNetwork}                                from './discovery';
 import type {Network}                                   from './discovery';
 import {assessInput, assessItem, CRAFT_FORMAT, craftInputMatches, planTick} from './planner';
-import type {Action, InputSlot, OrderJob, OrderStatus, Plan, PlanContext, Snapshot} from './planner';
+import type {Action, CraftJob, InputSlot, OrderJob, OrderStatus, Plan, PlanContext, Snapshot} from './planner';
 
 /** Fluid of an item by name, or false when it melts into nothing known (cached: tags do not change). */
 type FluidCache = Map<string, string | false>;
@@ -465,19 +466,21 @@ export class Controller {
 		const caster = this.craftCasters.find((candidate) => candidate.name === request.caster);
 		if (caster === undefined) throw new EmberError(`no craft caster ${tostring(request.caster)}`, 'SMELTERY_ERROR');
 		const index  = request.recipe;
-		const recipe = typeof index === 'number' && index % 1 === 0 ? CRAFT_RECIPES[index] : undefined;
-		if (recipe === undefined || recipe[0] !== caster.kind) throw new EmberError('unknown craft recipe', 'SMELTERY_ERROR');
+		const recipe = typeof index === 'number' ? craftRecipeAt(index) : undefined;
+		if (recipe === undefined || recipe.kind !== caster.kind) throw new EmberError('unknown craft recipe', 'SMELTERY_ERROR');
 		const count = request.count;
 		if (!(typeof count === 'number' && count > 0 && count % 1 === 0)) throw new EmberError('the count must be positive', 'SMELTERY_ERROR');
 		if (count > MAX_ORDER_COUNT) throw new EmberError(`at most ${MAX_ORDER_COUNT} castings per order`, 'SMELTERY_ERROR');
 
-		const [, input, fluid, amount, result, consumed] = recipe;
+		const {input, fluid, amount, result, consumed, material} = recipe;
 		const id = this.nextOrderId++;
-		const craft = {caster: caster.name, input, result, amount, consumed};
+		const craft: CraftJob = {caster: caster.name, input, result, amount, consumed};
+		if (material !== undefined) craft.material = material;
 		this.orders.push({id, fluid, lines: [{format: CRAFT_FORMAT, count, done: 0}], craft});
 		this.orderStatuses.push({id, status: 'queued'});
 		this.state.orders = this.orderViews();
-		this.log(`order #${id}: ${count} ${Controller.itemName(result)} on ${caster.name} (${amount} mB ${Controller.shortName(fluid)} each)`);
+		const what = Controller.craftName(craft);
+		this.log(`order #${id}: ${count} ${what} on ${caster.name} (${amount} mB ${Controller.shortName(fluid)} each)`);
 		return id;
 	}
 
@@ -589,7 +592,7 @@ export class Controller {
 			});
 			if (order.lines.every((line) => line.done >= line.count)) {
 				const total = order.lines.reduce((sum, line) => sum + line.done, 0);
-				this.log(`order #${order.id} done: ${total} ${order.craft !== undefined ? Controller.itemName(order.craft.result) : 'poured'}`);
+				this.log(`order #${order.id} done: ${total} ${order.craft !== undefined ? Controller.craftName(order.craft) : 'poured'}`);
 				continue;
 			}
 			kept.push(order);
@@ -613,6 +616,7 @@ export class Controller {
 			if (order.craft !== undefined) {
 				view.craft = {caster: order.craft.caster, result: order.craft.result};
 				if (status?.need !== undefined) view.craft.need = status.need;
+				if (order.craft.material !== undefined) view.craft.material = order.craft.material;
 			}
 			return view;
 		});
@@ -1044,10 +1048,15 @@ export class Controller {
 		let recipes = this.craftMatches.get(key);
 		if (recipes === undefined) {
 			recipes = [];
-			CRAFT_RECIPES.forEach(([kind, input, fluid, amount, result, consumed], index) => {
-				if (kind !== caster.kind || !craftInputMatches(input, item, entry.tags)) return;
-				recipes!.push({index, fluid, amount, result, consumed});
-			});
+			for (let index = 0; index < craftRecipeCount(); index++) {
+				const recipe = craftRecipeAt(index);
+				if (recipe?.kind !== caster.kind || !craftInputMatches(recipe.input, item, entry.tags)) continue;
+				const {fluid, amount, result, consumed} = recipe;
+				const found: CraftRecipeView = {index, fluid, amount, result, consumed};
+				if (recipe.material !== undefined) found.material = recipe.material;
+				if (recipe.from !== undefined) found.from = recipe.from;
+				recipes.push(found);
+			}
 			this.craftMatches.set(key, recipes);
 		}
 		view.recipes = recipes;
@@ -1645,6 +1654,12 @@ export class Controller {
 			}
 		}
 		waiting.push({name, count, reason: 'full'});
+	}
+
+	/** What a craft order makes: 'golden apple', or with its material 'nahuatl tool handle'. */
+	private static craftName(craft: CraftJob): string {
+		const item = Controller.itemName(craft.result);
+		return craft.material !== undefined ? `${materialLabel(craft.material)} ${item}` : item;
 	}
 
 	/** 'minecraft:golden_apple' -> 'golden apple'. */

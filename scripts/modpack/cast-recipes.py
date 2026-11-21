@@ -6,6 +6,9 @@ of kubejs/server_scripts) and writes:
 - src/projects/smeltery/shared/craftRecipesData.ts: the castings onto an item (an apple and 720 mB of gold
   make a golden apple), for the craft table and basin, and the castings onto an empty table (250 mB of
   obsidian make an obsidian pane), whose item is '';
+- craftRecipesData.ts also lists the composite castings: a tool part on the table and a fluid turn the
+  part into another material (wood + obsidian: nahuatl), COMPOSITE_PARTS (part, item cost) and
+  COMPOSITE_MATERIALS (from, fluid, mB per unit, to);
 - src/projects/smeltery/shared/meltingData.ts: the fluid each item melts into (tconstruct:melting,
   ore_melting, damagable_melting), for the items whose tags do not tell it (obsidian: forge:obsidian).
 
@@ -160,6 +163,8 @@ def format_of_cast(cast):
 casts = {}  # fluid -> {format: amount}
 crafts = set()  # (caster kind, input item or #tag, fluid, amount, result item, cast consumed)
 melting = {}  # item -> fluid it melts into
+composite_parts = set()  # (part item, item cost)
+composite_materials = set()  # (from material, fluid, mB per material unit, to material)
 MELTING_TYPES = ('tconstruct:melting', 'tconstruct:ore_melting', 'tconstruct:damagable_melting')
 
 
@@ -230,6 +235,20 @@ for path, entry in files.items():
             continue
         for fluid, amount in fluids_of(recipe.get('fluid')):
             add(fluid, fmt, amount)
+    elif kind == 'tconstruct:table_casting_composite':
+        result = item_of(recipe.get('result'))
+        if result is not None:
+            composite_parts.add((result, recipe.get('item_cost', 1)))
+    elif kind == 'tconstruct:material_fluid' and 'input' in recipe:
+        source, output = recipe.get('input'), recipe.get('output')
+        output = output if isinstance(output, str) else (output or {}).get('material')
+        if isinstance(source, str) and output:
+            for fluid, amount in fluids_of(recipe.get('fluid')):
+                if amount > 0:
+                    composite_materials.add((source, fluid, amount, output))
+        # Counted for the casts too, as before this list existed (castRecipesData unchanged).
+        if output:
+            material_fluids.append((output.split('#')[0], fluids_of(recipe.get('fluid'))))
     elif kind in MELTING_TYPES:
         result = recipe.get('result')
         fluid = result.get('fluid') if isinstance(result, dict) else None
@@ -295,6 +314,22 @@ craft = [
 for caster, source, fluid, amount, result, consumed in sorted(crafts):
     craft.append(f"\t['{caster}', '{source}', '{fluid}', {amount}, '{result}', {'true' if consumed else 'false'}],")
 craft.append('];')
+craft += [
+    '',
+    '/** Composite castings: the tool parts a fluid can turn into another material, with their item cost. */',
+    'export const COMPOSITE_PARTS: [string, number][] = [',
+]
+for part, cost in sorted(composite_parts):
+    craft.append(f"\t['{part}', {cost}],")
+craft += [
+    '];',
+    '',
+    '/** Composite castings: [material of the part, fluid, mB per material unit, material it becomes]. */',
+    'export const COMPOSITE_MATERIALS: [string, string, number, string][] = [',
+]
+for source, fluid, amount, output in sorted(composite_materials):
+    craft.append(f"\t['{source}', '{fluid}', {amount}, '{output}'],")
+craft.append('];')
 open(CRAFT_OUT, 'w', encoding='utf-8').write('\n'.join(craft) + '\n')
 by_fluid = {}
 for item, fluid in melting.items():
@@ -313,6 +348,6 @@ for fluid in sorted(by_fluid):
 melt.append('};')
 open(MELT_OUT, 'w', encoding='utf-8').write('\n'.join(melt) + '\n')
 print(f'{len(melting)} melting items -> {MELT_OUT}')
-print(f'{len(crafts)} craft castings -> {CRAFT_OUT}')
+print(f'{len(crafts)} craft castings, {len(composite_parts)} composite parts, {len(composite_materials)} composite materials -> {CRAFT_OUT}')
 print(f'{len(casts)} fluids, {sum(len(v) for v in casts.values())} casts, {len(material_fluids)} material fluids, '
       f'{len(set(parts))} parts, {len(mod_ids)} mods -> {OUT}')
