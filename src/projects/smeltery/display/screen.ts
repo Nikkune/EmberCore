@@ -3,7 +3,7 @@ import type {AlloyRatio}                     from '@modules/tinkers/index';
 import {ButtonComponent, PaginationComponent} from '@modules/ui/components';
 import type {Rect}                           from '@modules/ui/types';
 
-import type {AlloyOption, CraftCasterView, CraftRecipeView, DeleteRecipeRequest, InputItemView, QueueCraftRequest, TrashFluidRequest, InsertRequest, Mode, OrderView, QueueOrderRequest, SaveRecipeRequest, SetAlloyRequest, SetReservoirRequest, SetFormatRequest, SetSmelteryCapacityRequest, SmelteryState} from '../shared/protocol';
+import type {AlloyOption, CraftCasterView, CraftRecipeView, DeleteRecipeRequest, InputItemView, QueueCraftRequest, TrashFluidRequest, InjectFluidRequest, InsertRequest, Mode, OrderView, QueueOrderRequest, SaveRecipeRequest, SetAlloyRequest, SetReservoirRequest, SetFormatRequest, SetSmelteryCapacityRequest, SmelteryState} from '../shared/protocol';
 import {MAX_INGREDIENTS, MODES}              from '../shared/protocol';
 import {recipeProblem}                       from '../shared/recipes';
 
@@ -67,6 +67,7 @@ export interface ScreenActions {
 	/** `sent` runs once the controller took the order. */
 	queueCraft(request: QueueCraftRequest, sent: () => void): void;
 	trashFluid(request: TrashFluidRequest): void;
+	injectFluid(request: InjectFluidRequest): void;
 	setFormat(request: SetFormatRequest): void;
 	setAlloy(request: SetAlloyRequest): void;
 	setReservoir(request: SetReservoirRequest): void;
@@ -76,11 +77,15 @@ export interface ScreenActions {
 	deleteRecipe(request: DeleteRecipeRequest): void;
 }
 
-/** A two-step confirmation: a forced insert, deleting a recipe, or trashing a fluid (from a reservoir or the Smeltery). */
+/**
+ * A two-step confirmation: a forced insert, deleting a recipe, trashing a fluid (from a reservoir or the
+ * Smeltery), or injecting a fluid that forms an alloy (from a reservoir or the fluid input).
+ */
 type Confirm = (
 	| {kind: 'force'; item: InputItemView}
 	| {kind: 'delete'; option: AlloyOption}
 	| {kind: 'trash'; fluid: string; amount: number; reservoir?: string | undefined}
+	| {kind: 'inject'; fluid: string; amount: number; alloy: string; reservoir?: string | undefined; all: boolean}
 ) & {
 	step: 1 | 2;
 	/** os.clock() after which the second step is cancelled. */
@@ -93,6 +98,8 @@ interface Assigning {
 	fluid?: string | undefined;
 	/** Set by hand, in mB; undefined: auto (learnt, or given by its type). */
 	capacity?: number | undefined;
+	/** TO SMELTERY: mB to inject; undefined: all it holds. */
+	inject?: number | undefined;
 }
 
 /** A recipe being written in the editor; a fluid is undefined until chosen. */
@@ -126,7 +133,7 @@ const MODE_COLORS: Record<Mode, number> = {
 
 /** Card texts: 19 columns at most. The alloy card names the chosen alloy (alloyLines). */
 const MODE_LINES: Record<Mode, string[]> = {
-	idle:   ['Full stop.', 'Nothing moves.'],
+	idle:   ['Full stop.', 'Finished castings', 'still leave.'],
 	auto:   ['Melts the input and', 'casts pure metals', 'into AUTO casts.'],
 	manual: ['You insert and cast', 'from the Manual tab.'],
 	lock:   ['Nothing new goes in;', 'casts under way', 'finish.'],
@@ -167,6 +174,13 @@ const STACK_ROWS  = 4;
 /** CRAFT view: craft casters shown, and recipe rows under each. */
 const CRAFT_CASTERS     = 3;
 const CRAFT_RECIPE_ROWS = 3;
+/** How many pages `count` rows of `size` make (at least 1). */
+function pages(this: void, count: number, size: number): number {
+	return Math.max(1, Math.ceil(count / size));
+}
+
+/** Stock, TO SMELTERY: the steps of the mB to inject. */
+const INJECT_STEPS = [-1000, -100, 100, 1000];
 const ALLOYS_PER_PAGE = 10;
 /** mB of an ingot: the amounts of alloy mode are chosen in ingots. */
 const INGOT = 90;
@@ -266,6 +280,8 @@ export class SmelteryScreen {
 	private orderView: 'cast' | 'craft' = 'cast';
 	/** CRAFT view: the recipe picked (on its caster), and how many castings. */
 	private craftPick?: {caster: string; index: number} | undefined;
+	/** CRAFT view: the page of recipes of each craft caster (1-based), by caster name. */
+	private readonly craftPages = new Map<string, number>();
 	private craftCount = 1;
 	private stockPage = 1;
 	private logPage   = 1;
@@ -306,6 +322,12 @@ export class SmelteryScreen {
 	private readonly craftLess: ButtonComponent;
 	private readonly craftMore: ButtonComponent;
 	private readonly trashButton: ButtonComponent;
+	private readonly craftPrev: ButtonComponent[] = [];
+	private readonly craftNext: ButtonComponent[] = [];
+	private readonly injectSteps: ButtonComponent[] = [];
+	private readonly injectAll: ButtonComponent;
+	private readonly injectButton: ButtonComponent;
+	private readonly fluidInButton: ButtonComponent;
 	private readonly autoButtons: ButtonComponent[] = [];
 	private readonly clearButton: ButtonComponent;
 	private readonly sendButton: ButtonComponent;
@@ -434,6 +456,12 @@ export class SmelteryScreen {
 			const place = SmelteryScreen.craftPlace(index);
 			this.craftButtons.push(this.button('', {x: place.x, y: place.y, width: 56, height: 1}, () => this.pickCraft(index)));
 		}
+		for (let row = 0; row < CRAFT_CASTERS; row++) {
+			const index = row;
+			const y     = 7 + index * (CRAFT_RECIPE_ROWS + 1);
+			this.craftPrev.push(this.button(` ${Glyph.left} `, {x: 88, y, width: 3, height: 1}, () => this.stepCraftPage(index, -1)));
+			this.craftNext.push(this.button(` ${Glyph.right} `, {x: 95, y, width: 3, height: 1}, () => this.stepCraftPage(index, 1)));
+		}
 		this.craftLess   = this.button(' - ', {x: 45, y: 24, width: 3, height: 1}, () => this.stepCraft(-1));
 		this.craftMore   = this.button(' + ', {x: 52, y: 24, width: 3, height: 1}, () => this.stepCraft(1));
 		this.clearButton = this.button(' CLEAR ', {x: 37, y: 26, width: 7, height: 1}, () => this.clearOrder());
@@ -446,8 +474,9 @@ export class SmelteryScreen {
 			this.orderPage = page;
 			this.sync();
 		});
-		this.insertReadyButton = this.button(' INSERT READY ', {x: 66, y: 46, width: 14, height: 1}, () => this.actions.insertReady());
-		this.detailsButton     = this.button(` DETAILS ${Glyph.right} `, {x: 83, y: 46, width: 11, height: 1}, () => this.openDetails(true));
+		this.insertReadyButton = this.button(' INSERT READY ', {x: 66, y: 45, width: 14, height: 1}, () => this.actions.insertReady());
+		this.detailsButton     = this.button(` DETAILS ${Glyph.right} `, {x: 83, y: 45, width: 11, height: 1}, () => this.openDetails(true));
+		this.fluidInButton     = this.button(' INJECT ', {x: 66, y: 47, width: 8, height: 1}, () => this.askInjectInput());
 		for (let row = 0; row < ITEMS_PER_PAGE; row++) {
 			const index = row;
 			this.itemButtons.push(this.button('', {x: 86, y: 9 + index * 2, width: 9, height: 1}, () => this.pressItem(index)));
@@ -504,6 +533,15 @@ export class SmelteryScreen {
 		this.panelSave    = this.button(' SAVE ', {x: 70, y: 43, width: 6, height: 1}, () => this.savePanel());
 		this.panelCancel  = this.button(' CANCEL ', {x: 79, y: 43, width: 8, height: 1}, () => this.cancelPanel());
 		this.trashButton  = this.button(' TRASH ', {x: 89, y: 43, width: 7, height: 1}, () => this.askTrashReservoir());
+		let injectX = 70;
+		for (const step of INJECT_STEPS) {
+			const label = step < 0 ? `${step}` : `+${step >= 1000 ? `${step / 1000}k` : step}`;
+			const rect  = {x: injectX, y: 25, width: label.length, height: 1};
+			this.injectSteps.push(this.button(label, rect, () => this.stepInject(step)));
+			injectX += label.length + 1 + (step === -100 ? 9 : 0);
+		}
+		this.injectAll    = this.button(' ALL ', {x: 70, y: 27, width: 5, height: 1}, () => this.setInjectAll());
+		this.injectButton = this.button(' INJECT ', {x: 77, y: 27, width: 8, height: 1}, () => this.askInjectReservoir());
 
 		// The recipe editor.
 		this.resultButton = this.button('', {x: 9, y: 9, width: 20, height: 1}, () => this.pickSlot('result'));
@@ -969,6 +1007,10 @@ export class SmelteryScreen {
 			this.confirm = undefined;
 			this.actions.insert({slot: confirm.item.slot, force: true});
 		}
+		else if (confirm.kind === 'inject') {
+			this.confirm = undefined;
+			this.sendInject(confirm.fluid, confirm.reservoir, confirm.all ? undefined : confirm.amount, true);
+		}
 		else if (confirm.kind === 'trash') {
 			this.confirm = undefined;
 			const request: TrashFluidRequest = {fluid: confirm.fluid};
@@ -1136,11 +1178,41 @@ export class SmelteryScreen {
 		return {x: 39, y: 8 + caster * (CRAFT_RECIPE_ROWS + 1) + slot % CRAFT_RECIPE_ROWS};
 	}
 
+	/**
+	 * The recipes of a craft caster as the CRAFT view lists them: those its fluid (Smeltery and reservoirs)
+	 * can pour now first, then the others, each group in the order of the modpack.
+	 */
+	private craftRecipes(caster: CraftCasterView): CraftRecipeView[] {
+		const fluids = this.manualFluids();
+		const ready  = (recipe: CraftRecipeView): boolean => {
+			const known = fluids.find((fluid) => fluid.name === recipe.fluid);
+			return known !== undefined && known.amount + known.stored >= recipe.amount;
+		};
+		return [...caster.recipes.filter(ready), ...caster.recipes.filter((recipe) => !ready(recipe))];
+	}
+
+	/** The page of recipes a craft caster shows, kept within its pages. */
+	private craftPage(caster: CraftCasterView): number {
+		const page = Math.min(this.craftPages.get(caster.name) ?? 1, pages(caster.recipes.length, CRAFT_RECIPE_ROWS));
+		this.craftPages.set(caster.name, page);
+		return page;
+	}
+
+	private stepCraftPage(row: number, direction: number): void {
+		const caster = this.craftCasters()[row];
+		if (caster === undefined) return;
+		const last = pages(caster.recipes.length, CRAFT_RECIPE_ROWS);
+		this.craftPages.set(caster.name, Math.max(1, Math.min(last, this.craftPage(caster) + direction)));
+		this.sync();
+	}
+
 	/** The recipe of a row of the CRAFT view, with its caster. */
 	private craftAt(slot: number): {caster: CraftCasterView; recipe: CraftRecipeView} | undefined {
 		const caster = this.craftCasters()[Math.floor(slot / CRAFT_RECIPE_ROWS)];
-		const recipe = caster?.recipes[slot % CRAFT_RECIPE_ROWS];
-		return caster !== undefined && recipe !== undefined ? {caster, recipe} : undefined;
+		if (caster === undefined) return undefined;
+		const first  = (this.craftPage(caster) - 1) * CRAFT_RECIPE_ROWS;
+		const recipe = this.craftRecipes(caster)[first + slot % CRAFT_RECIPE_ROWS];
+		return recipe !== undefined ? {caster, recipe} : undefined;
 	}
 
 	/** The recipe picked, while its caster still offers it (the item may have been taken off). */
@@ -1176,6 +1248,68 @@ export class SmelteryScreen {
 			this.craftCount = 1;
 			this.sync();
 		});
+	}
+
+	/** Stock, TO SMELTERY: the mB chosen, within what the reservoir holds (undefined: all of it). */
+	private injectAmount(): {amount: number; all: boolean} | undefined {
+		const reservoir = this.state?.reservoirs.find((candidate) => candidate.name === this.assigning?.reservoir);
+		if (reservoir?.fluid === undefined || reservoir.amount <= 0) return undefined;
+		const chosen = this.assigning?.inject;
+		if (chosen === undefined || chosen >= reservoir.amount) return {amount: reservoir.amount, all: true};
+		return {amount: chosen, all: false};
+	}
+
+	private stepInject(step: number): void {
+		const assigning = this.assigning;
+		const current   = this.injectAmount();
+		if (assigning === undefined || current === undefined) return;
+		const next = current.amount + step;
+		assigning.inject = next >= this.injectHeld() ? undefined : Math.max(INJECT_STEPS[2]!, next);
+		this.sync();
+	}
+
+	private injectHeld(): number {
+		return this.state?.reservoirs.find((candidate) => candidate.name === this.assigning?.reservoir)?.amount ?? 0;
+	}
+
+	private setInjectAll(): void {
+		if (this.assigning !== undefined) this.assigning.inject = undefined;
+		this.sync();
+	}
+
+	/** Stock: the reservoir's fluid goes into the Smeltery; asked twice when it forms an alloy. */
+	private askInjectReservoir(): void {
+		const reservoir = this.state?.reservoirs.find((candidate) => candidate.name === this.assigning?.reservoir);
+		const chosen    = this.injectAmount();
+		if (reservoir?.fluid === undefined || chosen === undefined) return;
+		this.askInject(reservoir.fluid, chosen.amount, chosen.all, reservoir.name);
+	}
+
+	/** Manual, FLUID IN: all of the fluid input goes into the Smeltery; asked twice when it forms an alloy. */
+	private askInjectInput(): void {
+		const input = this.state?.fluidInput;
+		if (input?.fluid === undefined || input.amount <= 0) return;
+		this.askInject(input.fluid, input.amount, true, undefined);
+	}
+
+	private askInject(fluid: string, amount: number, all: boolean, reservoir: string | undefined): void {
+		const alloy = this.state?.wouldForm?.[fluid];
+		if (alloy !== undefined) {
+			this.confirm = {kind: 'inject', fluid, amount, alloy, reservoir, all, step: 1, deadline: 0};
+			this.sync();
+			return;
+		}
+		this.sendInject(fluid, reservoir, all ? undefined : amount, false);
+		this.sync();
+	}
+
+	private sendInject(fluid: string, reservoir: string | undefined, amount: number | undefined, force: boolean): void {
+		const request: InjectFluidRequest = {fluid};
+		if (reservoir !== undefined) request.reservoir = reservoir;
+		if (amount !== undefined) request.amount = amount;
+		if (force) request.force = true;
+		this.actions.injectFluid(request);
+		if (this.assigning !== undefined) this.assigning.inject = undefined;
 	}
 
 	/** Overview, STACK: the fluid of that row (top first) goes to the trash can, after two confirmations. */
@@ -1289,7 +1423,8 @@ export class SmelteryScreen {
 		this.syncLog();
 
 		const confirm = this.confirm;
-		const last = confirm?.kind === 'delete' ? ' DELETE ' : confirm?.kind === 'trash' ? ' TRASH ' : ' FORCE INSERT ';
+		const lastLabels: Record<Confirm['kind'], string> = {delete: ' DELETE ', trash: ' TRASH ', inject: ' INJECT ', force: ' FORCE INSERT '};
+		const last = lastLabels[confirm?.kind ?? 'force'];
 		const yes  = confirm?.step === 2 ? last : ' CONTINUE ';
 		this.neon(this.confirmYes, modal, yes, confirm?.step === 2 ? N.red : N.yellow, true);
 		this.neon(this.confirmNo, modal, ' CANCEL ', N.soft, false);
@@ -1395,7 +1530,6 @@ export class SmelteryScreen {
 		const manual  = tab && state.mode === 'manual';
 		const details = manual && this.inputDetails;
 		const compose = manual && !this.inputDetails;
-		const pages   = (count: number, size: number): number => Math.max(1, Math.ceil(count / size));
 
 		this.neon(this.switchManual, tab && !manual, ' SWITCH TO MANUAL ', N.yellow, true);
 
@@ -1426,8 +1560,18 @@ export class SmelteryScreen {
 				return;
 			}
 			const chosen = picked?.caster.name === craft.caster.name && picked.recipe.index === craft.recipe.index;
-			this.show(button, true, SmelteryScreen.craftRow(craft.recipe, 56), chosen ? N.yellow : N.soft, chosen ? N.panel : N.bg);
+			const row    = SmelteryScreen.craftRow(craft.recipe, 56, craft.caster.item === undefined);
+			this.show(button, true, row, chosen ? N.yellow : N.soft, chosen ? N.panel : N.bg);
 		});
+		const craftCasters = this.craftCasters();
+		for (let row = 0; row < CRAFT_CASTERS; row++) {
+			const caster = craftCasters[row];
+			const paged  = craftView && caster !== undefined && caster.recipes.length > CRAFT_RECIPE_ROWS;
+			const page   = caster !== undefined ? this.craftPage(caster) : 1;
+			const last   = caster !== undefined ? pages(caster.recipes.length, CRAFT_RECIPE_ROWS) : 1;
+			this.neon(this.craftPrev[row]!, paged, undefined, page > 1 ? N.cyan : N.dim, false);
+			this.neon(this.craftNext[row]!, paged, undefined, page < last ? N.cyan : N.dim, false);
+		}
 		this.neon(this.craftLess, craftView && picked !== undefined, ' - ', N.cyan, this.craftCount > 1);
 		this.neon(this.craftMore, craftView && picked !== undefined, ' + ', N.cyan, true);
 
@@ -1462,6 +1606,9 @@ export class SmelteryScreen {
 		const anyReady = items.some((item) => item.status === 'ok');
 		this.neon(this.insertReadyButton, compose, ' INSERT READY ', anyReady ? N.lime : N.dim, anyReady);
 		this.neon(this.detailsButton, compose, ` DETAILS ${Glyph.right} `, N.cyan, true);
+		const fluidIn = state?.fluidInput;
+		const filled  = fluidIn?.fluid !== undefined && fluidIn.amount > 0;
+		this.neon(this.fluidInButton, compose && fluidIn !== undefined, ' INJECT ', filled ? N.orange : N.dim, filled);
 
 		this.itemPage = Math.min(this.itemPage, pages(items.length, ITEMS_PER_PAGE));
 		this.itemPages.setProps({visible: details && items.length > ITEMS_PER_PAGE, totalItems: items.length, page: this.itemPage});
@@ -1476,9 +1623,9 @@ export class SmelteryScreen {
 		this.neon(this.detailsReadyButton, details, ' INSERT READY ', anyReady ? N.lime : N.dim, anyReady);
 	}
 
-	/** A recipe of the CRAFT view: '720 mB Gold > golden apple', and whether the item stays. */
-	private static craftRow(recipe: CraftRecipeView, width: number): string {
-		const keeps = recipe.consumed ? '' : ' (item stays)';
+	/** A recipe of the CRAFT view: '720 mB Gold > golden apple', and whether the item stays (on an empty caster, none). */
+	private static craftRow(recipe: CraftRecipeView, width: number, empty: boolean): string {
+		const keeps = recipe.consumed || empty ? '' : ' (item stays)';
 		return fit(`${recipe.amount} mB ${fluidLabel(recipe.fluid)} ${Glyph.right} ${placeLabel(recipe.result)}${keeps}`, width).padEnd(width);
 	}
 
@@ -1541,6 +1688,10 @@ export class SmelteryScreen {
 		const held = this.state?.reservoirs.find((candidate) => candidate.name === this.assigning?.reservoir);
 		const trashable = assigning && this.state?.trash !== undefined && held?.fluid !== undefined && held.amount > 0;
 		this.neon(this.trashButton, trashable, ' TRASH ', N.red, false);
+		const injectable = assigning && this.state?.mode === 'manual' && this.injectAmount() !== undefined;
+		this.injectSteps.forEach((button) => this.neon(button, injectable, undefined, N.cyan, true));
+		this.neon(this.injectAll, injectable, ' ALL ', N.cyan, this.injectAmount()?.all === true);
+		this.neon(this.injectButton, injectable, ' INJECT ', N.orange, true);
 
 		const fluids = picking ? this.pickerFluids() : [];
 		this.choicePage = Math.min(this.choicePage, Math.max(1, Math.ceil(fluids.length / PICKER_PAGE)));
@@ -2146,9 +2297,16 @@ export class SmelteryScreen {
 			const kind = caster.kind === 'basin' ? 'BASIN' : 'TABLE';
 			p.text(37, y, kind, N.cyan);
 			p.text(43, y, fit(placeLabel(caster.name), 16), N.dim);
-			const more  = caster.recipes.length > CRAFT_RECIPE_ROWS ? ` (+${caster.recipes.length - CRAFT_RECIPE_ROWS} recipes)` : '';
-			const holds = caster.item !== undefined ? `holds ${placeLabel(caster.item)}${more}` : `put an item on the ${kind.toLowerCase()}`;
-			p.text(60, y, fit(holds, 37), caster.item !== undefined ? N.text : N.dim);
+			const paged = caster.recipes.length > CRAFT_RECIPE_ROWS;
+			let holds: [string, number];
+			if (caster.item !== undefined) holds = [`holds ${placeLabel(caster.item)}`, N.text];
+			else if (caster.recipes.length > 0) holds = ['empty: casts without a cast', N.soft];
+			else holds = [`put an item on the ${kind.toLowerCase()}`, N.dim];
+			p.text(60, y, fit(holds[0], paged ? 27 : 37), holds[1]);
+			if (paged) {
+				const page = `${this.craftPage(caster)}/${pages(caster.recipes.length, CRAFT_RECIPE_ROWS)}`;
+				p.text(91, y, page.padStart(4).substring(0, 4), N.dim);
+			}
 			if (caster.item !== undefined && caster.recipes.length === 0) p.text(39, y + 1, 'No recipe casts onto this item.', N.dim);
 		});
 		const extra = (this.state?.craftCasters?.length ?? 0) - casters.length;
@@ -2168,7 +2326,10 @@ export class SmelteryScreen {
 		p.text(37, 20, 'CRAFT', N.dim);
 		p.text(45, 20, fit(`${placeLabel(recipe.result)} on ${placeLabel(caster.name)}`, 52), N.yellow);
 		p.text(37, 21, 'NEEDS', N.dim);
-		p.text(45, 21, fit(`${needs} mB ${fluidLabel(recipe.fluid)}${recipe.consumed && this.craftCount > 1 ? `, one ${placeLabel(caster.item ?? 'item')} each` : ''}`, 52), N.text);
+		let each = '';
+		if (caster.item === undefined) each = `, the ${caster.kind} kept empty`;
+		else if (recipe.consumed && this.craftCount > 1) each = `, one ${placeLabel(caster.item)} each`;
+		p.text(45, 21, fit(`${needs} mB ${fluidLabel(recipe.fluid)}${each}`, 52), N.text);
 		p.text(37, 22, 'HAVE', N.dim);
 		p.text(45, 22, fit(stored > 0 ? `${have} + ${stored} stored = ${have + stored} mB` : `${have} mB`, 30), needs > have + stored ? N.orange : N.text);
 		p.text(37, 24, 'COUNT', N.dim);
@@ -2201,9 +2362,10 @@ export class SmelteryScreen {
 			p.text(33, y, fit(lines, 37), N.soft);
 			if (order.status === 'waiting') {
 				const need = craft?.need;
-				const why  = need !== undefined
-				             ? `put ${need.startsWith('#') ? `any ${placeLabel(need.substring(1))}` : placeLabel(need)}`
-				             : order.alloy !== undefined ? `would form ${fluidLabel(order.alloy)}` : `needs ${order.missing ?? '?'} mB`;
+				let why: string;
+				if (need === '') why = `clear the ${craft?.caster.includes('basin') === true ? 'basin' : 'table'}`;
+				else if (need !== undefined) why = `put ${need.startsWith('#') ? `any ${placeLabel(need.substring(1))}` : placeLabel(need)}`;
+				else why = order.alloy !== undefined ? `would form ${fluidLabel(order.alloy)}` : `needs ${order.missing ?? '?'} mB`;
 				p.text(72, y, fit(why, 21), N.orange);
 			}
 		});
@@ -2213,9 +2375,10 @@ export class SmelteryScreen {
 	private paintInputBand(p: Painter, state: SmelteryState): void {
 		const items = state.inputItems;
 		p.fill(3, 45, 96, 3, N.panel);
-		p.text(5, 46, 'INPUT', N.cyan, N.panel);
+		this.paintFluidIn(p, state);
+		p.text(5, 45, 'INPUT', N.cyan, N.panel);
 		if (items.length === 0) {
-			p.text(12, 46, 'empty', N.dim, N.panel);
+			p.text(16, 45, 'empty', N.dim, N.panel);
 			return;
 		}
 
@@ -2225,11 +2388,27 @@ export class SmelteryScreen {
 		if (count('alloy') > 0) parts.push([`${count('alloy')} alloy`, N.red]);
 		if (count('heat') > 0) parts.push([`${count('heat')} too hot`, N.orange]);
 		if (count('unknown') > 0) parts.push([`${count('unknown')} no fluid`, N.dim]);
-		let x = 12;
+		let x = 16;
 		for (const [text, color] of parts) {
-			p.text(x, 46, text, color, N.panel);
+			p.text(x, 45, text, color, N.panel);
 			x += text.length + 2;
 		}
+	}
+
+	/** The fluid input under INPUT: what it holds, and the alloy it would form in the Smeltery. */
+	private paintFluidIn(p: Painter, state: SmelteryState): void {
+		const input = state.fluidInput;
+		if (input === undefined) return;
+		p.text(5, 47, 'FLUID IN', N.cyan, N.panel);
+		if (input.fluid === undefined || input.amount <= 0) {
+			p.text(16, 47, 'empty', N.dim, N.panel);
+			return;
+		}
+		p.fill(16, 47, 2, 1, fluidColor(input.fluid));
+		const text = fit(`${fluidLabel(input.fluid)} ${input.amount} mB`, 22);
+		p.text(19, 47, text, N.text, N.panel);
+		const alloy = state.wouldForm?.[input.fluid];
+		if (alloy !== undefined) p.text(42, 47, fit(`forms ${fluidLabel(alloy)}`, 23), N.red, N.panel);
 	}
 
 	/** The input slot by slot: INSERT what is safe, FORCE (asked twice) an alloy or a cold fuel. */
@@ -2395,6 +2574,8 @@ export class SmelteryScreen {
 		}
 
 		// Capacity: set by hand, or auto (learnt when it refused fluid, or given by its type).
+		this.paintInject(p, state);
+
 		p.text(70, 38, 'CAPACITY', N.dim);
 		const source = reservoir?.capacitySource;
 		let value: string;
@@ -2418,6 +2599,25 @@ export class SmelteryScreen {
 	}
 
 	// ------------------------------------------------------------------ log
+
+	/** Stock, ASSIGN panel: TO SMELTERY, the mB to inject and the alloy it would form (manual mode only). */
+	private paintInject(p: Painter, state: SmelteryState): void {
+		const reservoir = state.reservoirs.find((candidate) => candidate.name === this.assigning?.reservoir);
+		if (reservoir?.fluid === undefined || reservoir.amount <= 0) return;
+		p.text(70, 24, 'TO SMELTERY', N.dim);
+		if (state.mode !== 'manual') {
+			p.text(70, 25, 'in manual mode only', N.dim);
+			return;
+		}
+		const chosen = this.injectAmount();
+		if (chosen === undefined) return;
+		p.text(81, 25, `${chosen.amount} mB`.padStart(8).substring(0, 8), N.yellow);
+		const alloy = state.wouldForm?.[reservoir.fluid];
+		if (alloy !== undefined) {
+			p.text(70, 29, fit(`forms ${fluidLabel(alloy)}`, 27), N.red);
+			p.text(70, 30, 'with what the Smeltery holds', N.dim);
+		}
+	}
 
 	private paintLog(p: Painter, state: SmelteryState): void {
 		const lines = this.pageLogLines();
@@ -2447,6 +2647,21 @@ export class SmelteryScreen {
 
 		if (confirm.kind === 'delete') {
 			this.paintDelete(p, confirm.option, confirm.step, confirm.deadline, x, y, color);
+			return;
+		}
+		if (confirm.kind === 'inject') {
+			p.text(x + 3, y + 2, 'INJECT FLUID', color);
+			p.text(x + 16, y + 2, `step ${confirm.step} of 2`, N.dim);
+			p.text(x + 3, y + 4, fit(`${confirm.amount} mB ${fluidLabel(confirm.fluid)}`, 45), fluidColor(confirm.fluid));
+			p.text(x + 3, y + 5, fit(`from ${confirm.reservoir !== undefined ? placeLabel(confirm.reservoir) : 'the fluid input'} into the Smeltery`, 45), N.soft);
+			p.text(x + 3, y + 6, fit(`forms ${fluidLabel(confirm.alloy)} with what it holds.`, 45), N.orange);
+			if (confirm.step === 1) {
+				p.text(x + 3, y + 8, 'Check what will happen before going on.', N.dim);
+			}
+			else {
+				p.text(x + 3, y + 8, 'An alloy cannot be undone.', N.dim);
+				p.text(x + 21, y + 12, `${Math.max(0, Math.ceil(confirm.deadline - os.clock()))} s`, N.dim);
+			}
 			return;
 		}
 		if (confirm.kind === 'trash') {

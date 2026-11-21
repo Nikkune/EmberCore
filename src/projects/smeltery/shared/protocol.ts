@@ -43,6 +43,8 @@ export const Messages = {
 	queueCraft:  'queueCraft',
 	/** Display → controller, request: TrashFluidRequest, a fluid goes to the fluid trash can, all of it. */
 	trashFluid:  'trashFluid',
+	/** Display → controller, request (manual mode): InjectFluidRequest, a fluid goes into the Smeltery. */
+	injectFluid: 'injectFluid',
 	/** Display → controller, request: SetAlloyRequest. */
 	setAlloy: 'setAlloy',
 	/** Display → controller, request: SetFormatRequest. */
@@ -184,6 +186,13 @@ export interface SmelteryState {
 	craftCasters?: CraftCasterView[];
 	/** The fluid trash can, when there is one: fluids can be trashed from the Stock and Overview tabs. */
 	trash?: string;
+	/** The fluid input tank (fluidInput of the config): what the player brought, for INJECT. */
+	fluidInput?: FluidInputView;
+	/**
+	 * For each fluid of the reservoirs and the fluid input that is not in the Smeltery: the alloy it would
+	 * form if it went in now (lava with water: obsidian). INJECT asks twice for those.
+	 */
+	wouldForm?: Record<string, string>;
 	/** Latest events, newest last. */
 	log: string[];
 }
@@ -262,6 +271,23 @@ export interface QueueCraftRequest {
 export interface TrashFluidRequest {
 	fluid: string;
 	reservoir?: string;
+}
+
+export interface FluidInputView {
+	name: string;
+	fluid?: string;
+	amount: number;
+}
+
+/**
+ * `amount` mB of `fluid` (all of it when unset) go into the Smeltery: from `reservoir`, or from the fluid
+ * input when none is named. Refused when it would form an alloy, unless `force`.
+ */
+export interface InjectFluidRequest {
+	fluid: string;
+	reservoir?: string;
+	amount?: number;
+	force?: boolean;
 }
 
 /** Samples of SmelteryState.history: one every this many seconds, this many kept (10 minutes). */

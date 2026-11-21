@@ -6,6 +6,7 @@ import {DEFAULT_CAST_AMOUNTS}                                 from './castAmount
 import {CAST_RECIPES}                                         from './castRecipesData';
 import {DEFAULT_ALLOY_RATIOS, DEFAULT_ALLOYS, DEFAULT_MOLTEN_FLUIDS} from './catalogueData';
 import {DEFAULT_FUELS, DEFAULT_MELTING_TEMPERATURES}           from './temperaturesData';
+import {MELTING}                                              from './meltingData';
 import type {FluidTemperature}                               from './temperaturesData';
 
 export const CATALOGUE_PATH = '/smeltery/catalogue.db';
@@ -92,8 +93,18 @@ export function catalogueFluids(this: void, catalogue: Catalogue): string[] {
 	return [...fluids].sort();
 }
 
+/**
+ * Fluid of an item: the catalogue's overrides first, then the melting recipes of the modpack (meltingData),
+ * then its tags (forge:ingots/iron).
+ */
 export function materialMapOf(this: void, catalogue: Catalogue): MaterialMap {
-	return new MaterialMap({fluids: catalogue.moltenFluids, overrides: catalogue.overrides});
+	const overrides: MaterialOverride[] = [];
+	for (const [fluid, items] of Object.entries(MELTING)) {
+		for (const item of items.split(' ')) overrides.push({item, fluid});
+	}
+	// Set after the modpack's: an override of the catalogue wins.
+	for (const override of catalogue.overrides) overrides.push(override);
+	return new MaterialMap({fluids: catalogue.moltenFluids, overrides});
 }
 
 /** The catalogue's amounts (and those learnt), then the casting recipes of the modpack (castRecipesData). */

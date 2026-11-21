@@ -105,6 +105,7 @@ export function runDisplay(this: void): void {
 		insertReady: () => request(Messages.insertReady, undefined, 'inserting what is ready'),
 		queueCraft:  (craft, sent) => request(Messages.queueCraft, craft, `craft sent: ${craft.count} casting(s)`, sent),
 		trashFluid:  (trash) => request(Messages.trashFluid, trash, `${trash.fluid.substring(trash.fluid.indexOf(':') + 1)} trashed`),
+		injectFluid: (inject) => request(Messages.injectFluid, inject, `${inject.fluid.substring(inject.fluid.indexOf(':') + 1)} injected`),
 
 		setFormat: (format) => request(Messages.setFormat, format, `${format.format}: ${format.auto ? 'auto' : 'off'}`),
 		setAlloy:  (alloy) => request(Messages.setAlloy, alloy, `alloy ${alloy.result.substring(alloy.result.indexOf(':') + 1)}`),

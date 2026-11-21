@@ -1402,6 +1402,9 @@ test('smeltery: the default catalogue is written once, then read from its file',
 	local map = catalogue.materialMapOf(c)
 	expect(map:fluidOf({ name = 'x:duralumin_ingot', tags = { ['forge:ingots/duralumin'] = true } }) == 'tinkers_reforged:molten_duralumin',
 		'a Tinkers Reforged metal must map to its own fluid')
+	-- The melting recipes of the modpack tell what tags cannot: obsidian only has forge:obsidian.
+	expect(map:fluidOf({ name = 'minecraft:obsidian', tags = { ['forge:obsidian'] = true } }) == 'tconstruct:molten_obsidian',
+		'obsidian must melt into molten obsidian (meltingData)')
 
 	-- A local change in the file survives the next start.
 	local edited = textutils.unserialise(FILES['/smeltery/catalogue.db'])
@@ -1467,13 +1470,13 @@ test('planner: auto sends at once to the reservoirs a fluid no caster there can 
 	expect(kinds(planner.planTick('lock', s, context)) == '', 'lock moves nothing to the reservoirs')
 end)
 
-test('planner: idle does nothing, manual only collects, lock collects and casts but inserts nothing', function()
+test('planner: idle only collects (castings finish and leave the casters), manual only collects, lock collects and casts but inserts nothing', function()
 	local s = snapshot({
 		fluids = { { name = IRON, amount = 900 } },
 		casters = { basinIdle, basinBlocked },
 		input = { { slot = 1, name = 'minecraft:raw_gold', count = 4, fluid = GOLD } },
 	})
-	expect(#planner.planTick('idle', s, planContext()).actions == 0, 'idle planned something')
+	expect(kinds(planner.planTick('idle', s, planContext())) == 'collect:basin_1', 'idle: ' .. kinds(planner.planTick('idle', s, planContext())))
 	expect(kinds(planner.planTick('manual', s, planContext())) == 'collect:basin_1', 'manual: ' .. kinds(planner.planTick('manual', s, planContext())))
 	expect(kinds(planner.planTick('lock', s, planContext())) == 'collect:basin_1 pour:basin_0/iron', 'lock: ' .. kinds(planner.planTick('lock', s, planContext())))
 	local auto = kinds(planner.planTick('auto', s, planContext()))
@@ -1576,6 +1579,17 @@ test('planner: a craft order pours onto the item of its caster, waits for the pl
 	s.craft = { craftTable('idle', 'minecraft:oak_planks', { 'minecraft:planks' }) }
 	plan = planner.planTick('manual', s, manualContext({ craftOrder(1, GOLD, 1, 0, '#minecraft:planks') }))
 	expect(kinds(plan) == 'pour:table_9/gold', 'oak planks are #minecraft:planks: ' .. kinds(plan))
+end)
+
+test('planner: a casting onto the empty table pours into it only while nothing is on it', function()
+	local s = snapshot({ fluids = { { name = GOLD, amount = 1500 } }, casters = { tableIdle }, craft = { craftTable('idle', nil) } })
+	local plan = planner.planTick('manual', s, manualContext({ craftOrder(1, GOLD, 2, 0, '', false) }))
+	expect(kinds(plan) == 'pour:table_9/gold' and plan.orders[1].status == 'pouring', 'the empty table must be poured into: ' .. kinds(plan))
+
+	s.craft = { craftTable('idle', 'minecraft:stick') }
+	plan = planner.planTick('manual', s, manualContext({ craftOrder(1, GOLD, 2, 0, '', false) }))
+	expect(kinds(plan) == '' and plan.orders[1].status == 'waiting' and plan.orders[1].need == '',
+		'something on the table: the order waits for it to be cleared: ' .. kinds(plan) .. ' ' .. tostring(plan.orders[1].need))
 end)
 
 test('planner: a craft order brings back its fluid from the stock; other modes never pour into a craft caster', function()
@@ -2173,6 +2187,80 @@ test('controller: a fluid goes to the trash can, all of it, from a reservoir or 
 	expect(not ok and tostring(err.message or err):find('nothing trashed', 1, true), 'nothing left: must say so: ' .. tostring(err))
 end)
 
+test('controller: a fluid is injected from the fluid input or a reservoir; an alloy needs force', function()
+	FILES = {}
+	local LAVA, WATER, OBSIDIAN = 'minecraft:lava', 'minecraft:water', 'tconstruct:molten_obsidian'
+	local fake = fakeTinkers()
+	fake.smeltery({ { name = LAVA, amount = 1000 } })
+	fake.caster('tconstruct:basin_0', 810)
+	local drum = fake.reservoir('drum_0', 4000, { { name = LAVA, amount = 1000 } })
+	-- Empty reservoirs: their fluid (nil) must not hide the fluid input's from the alloy check.
+	fake.reservoir('a_drum', 4000)
+	fake.reservoir('drum_2', 4000)
+	local input = fake.reservoir('fluid_in_0', 8000, { { name = WATER, amount = 2000 } })
+	fake.chest('minecraft:chest_in', 27)
+	fake.chest('minecraft:chest_out', 27)
+	fake.install()
+
+	local c = controllerWith(fake, function(config) config.fluidInput = 'fluid_in_0' end)
+	quiet(function() c:tick() end)
+	local state = c:getState()
+	for _, reservoir in ipairs(state.reservoirs) do
+		expect(reservoir.name ~= 'fluid_in_0', 'the fluid input must not be a reservoir')
+	end
+	expect(state.fluidInput and state.fluidInput.fluid == WATER and state.fluidInput.amount == 2000, 'the fluid input must be in the state')
+	expect(state.wouldForm and state.wouldForm[WATER] == OBSIDIAN and state.wouldForm[LAVA] == nil,
+		'water would form obsidian with the lava of the Smeltery; lava is already in')
+
+	local ok, err = pcall(function() quiet(function() c:injectFluid({ fluid = WATER }) end) end)
+	expect(not ok and tostring(err.message or err):find('manual mode', 1, true), 'inject needs manual mode: ' .. tostring(err))
+	quiet(function() c:setMode('manual'); c:tick() end)
+	ok, err = pcall(function() quiet(function() c:injectFluid({ fluid = WATER }) end) end)
+	expect(not ok and tostring(err.message or err):find('would form molten_obsidian', 1, true), 'an alloy must be refused: ' .. tostring(err))
+	expect(input.fluids.fluids[1].amount == 2000, 'nothing must move when refused')
+
+	expect(quiet(function() return c:injectFluid({ fluid = WATER, force = true }) end) == 2000, 'forced: all the water goes in')
+	expect(#input.fluids.fluids == 0, 'the fluid input must be empty')
+	local log = table.concat(c.logLines, '\n')
+	expect(log:find('injected 2000 mB water from fluid_in_0 into the Smeltery (forms molten_obsidian)', 1, true), 'inject not logged: ' .. log)
+
+	expect(quiet(function() return c:injectFluid({ fluid = LAVA, reservoir = 'drum_0', amount = 300 }) end) == 300, '300 mB of lava')
+	expect(drum.fluids.fluids[1].amount == 700, 'the drum keeps the rest: ' .. tostring(drum.fluids.fluids[1].amount))
+	ok = pcall(function() quiet(function() c:injectFluid({ fluid = LAVA, reservoir = 'drum_0', amount = 2.5 }) end) end)
+	expect(not ok, 'an amount must be a whole number of mB')
+end)
+
+test('controller: an empty craft table offers the castings without a cast, and a craft order keeps it empty', function()
+	FILES = {}
+	local OBSIDIAN, PANE = 'tconstruct:molten_obsidian', 'tconstruct:obsidian_pane'
+	local fake = fakeTinkers()
+	fake.smeltery({ { name = OBSIDIAN, amount = 1000 } })
+	fake.caster('tconstruct:basin_0', 810)
+	local craft = fake.caster('tconstruct:table_9', 1000)
+	fake.chest('minecraft:chest_in', 27)
+	fake.chest('minecraft:chest_out', 27)
+	fake.install()
+
+	local c = controllerWith(fake, function(config) config.craftCasters = { 'tconstruct:table_9' } end)
+	quiet(function() c:setMode('manual'); c:tick() end)
+	local view = c:getState().craftCasters[1]
+	local recipe
+	for _, candidate in ipairs(view.recipes) do if candidate.result == PANE then recipe = candidate end end
+	expect(view.item == nil and recipe and recipe.fluid == OBSIDIAN and recipe.amount == 250 and not recipe.consumed,
+		'the empty table must offer the obsidian pane (250 mB)')
+
+	quiet(function() c:queueCraft({ caster = 'tconstruct:table_9', recipe = recipe.index, count = 2 }) end)
+	quiet(function() c:tick() end)
+	expect(craft.fluids.fluids[1] and craft.fluids.fluids[1].amount == 250, 'the empty table must get 250 mB')
+
+	craft.fluids.fluids = {}
+	craft.items.slots[2] = { name = PANE, count = 1 }
+	craft.items.slots[1] = { name = 'minecraft:stick', count = 1 }
+	quiet(function() c:tick() end)
+	local order = c:getState().orders[1]
+	expect(order.status == 'waiting' and order.craft.need == '', 'a stick on the table: the order waits: ' .. order.status)
+end)
+
 test('controller: a caster refusing a fluid is learnt, saved, and the fluid then goes to the reservoirs', function()
 	FILES = {}
 	-- A fluid the modpack recipes do not list: only the refusal tells it has no ingot recipe.
@@ -2441,6 +2529,9 @@ local function screenFor(calls)
 			sent()
 		end,
 		trashFluid = function(_, r) calls[#calls + 1] = 'trash ' .. r.fluid .. ' ' .. tostring(r.reservoir) end,
+		injectFluid = function(_, r)
+			calls[#calls + 1] = 'inject ' .. r.fluid .. ' ' .. tostring(r.reservoir) .. ' ' .. tostring(r.amount or 'all') .. (r.force and ' force' or '')
+		end,
 		setFormat = function(_, r) calls[#calls + 1] = 'format ' .. r.format .. ' ' .. tostring(r.auto) end,
 		setAlloy = function(_, r) calls[#calls + 1] = 'alloy ' .. r.result .. ' ' .. tostring(r.target) .. (r.activate and ' on' or '') end,
 		setReservoir = function(_, r) calls[#calls + 1] = 'assign ' .. r.reservoir .. ' ' .. tostring(r.fluid) .. (r.capacity and (' ' .. r.capacity) or '') end,
@@ -2571,8 +2662,8 @@ test('display: Force asks twice before a forced insert, and can be cancelled', f
 
 	state.mode = 'manual'
 	show(screen, runtime, state)
-	expect(terminal.line(46):find('2 slots', 1, true) and terminal.line(46):find('1 ready', 1, true) and terminal.line(46):find('1 alloy', 1, true),
-		'the input band: ' .. terminal.line(46))
+	expect(terminal.line(45):find('2 slots', 1, true) and terminal.line(45):find('1 ready', 1, true) and terminal.line(45):find('1 alloy', 1, true),
+		'the input band: ' .. terminal.line(45))
 	tap(runtime, terminal, ' INSERT READY ')
 	expect(calls[#calls] == 'insertReady', 'INSERT READY not asked: ' .. tostring(calls[#calls]))
 	tap(runtime, terminal, ' DETAILS ')
@@ -3600,6 +3691,73 @@ test('display: a fluid is trashed from STACK or from a reservoir, after two conf
 	show(screen, runtime, state)
 	tap(runtime, terminal, 'OVERVIEW')
 	expect(not screenText(terminal):find('trash', 1, true), 'no trash can: no trash')
+end)
+
+test('display: an empty craft table pages its castings, those it can pour first; the queue asks to clear it', function()
+	local calls = {}
+	local screen, runtime, terminal = screenFor(calls)
+	local recipe = function(index, fluid, result) return { index = index, fluid = fluid, amount = 250, result = result, consumed = false } end
+	local state = smelteryState({
+		mode = 'manual',
+		craftCasters = { { name = 'tconstruct:table_9', kind = 'table', status = 'idle', amount = 0, recipes = {
+			recipe(1, 'tconstruct:molten_glass', 'tconstruct:clear_glass_pane'),
+			recipe(2, 'tconstruct:molten_ender', 'minecraft:ender_pearl'),
+			recipe(3, 'tconstruct:blood', 'tconstruct:blood_slime_ball'),
+			recipe(4, GOLD, 'tconstruct:gold_bars'),
+		} } },
+	})
+	show(screen, runtime, state)
+	tap(runtime, terminal, 'MANUAL')
+	tap(runtime, terminal, ' CRAFT ')
+	local text = screenText(terminal)
+	expect(text:find('empty: casts without a cast', 1, true) and terminal.line(7):find('1/2', 1, true), 'the empty table: ' .. terminal.line(7))
+	expect(terminal.line(8):find('gold bars', 1, true), 'gold is in the Smeltery: its casting first: ' .. terminal.line(8))
+	touch(runtime, 96, 7)
+	expect(terminal.line(7):find('2/2', 1, true) and terminal.line(8):find('blood slime ball', 1, true), 'page 2: ' .. terminal.line(8))
+	tap(runtime, terminal, 'blood slime ball')
+	expect(screenText(terminal):find('the table kept empty', 1, true), 'needs: ' .. terminal.line(21))
+
+	state.orders = { {
+		id = 4, fluid = GOLD, status = 'waiting', lines = { { format = 'craft', count = 2, done = 0 } },
+		craft = { caster = 'tconstruct:table_9', result = 'tconstruct:gold_bars', need = '' },
+	} }
+	show(screen, runtime, state)
+	expect(screenText(terminal):find('clear the table', 1, true), 'the queue must ask to clear the table: ' .. terminal.line(33))
+end)
+
+test('display: the fluid input and a reservoir are injected; an alloy asks twice', function()
+	local calls = {}
+	local screen, runtime, terminal = screenFor(calls)
+	local state = smelteryState({
+		mode = 'manual',
+		fluidInput = { name = 'fluid_in_0', fluid = 'minecraft:water', amount = 4000 },
+		wouldForm = { ['minecraft:water'] = 'tconstruct:molten_obsidian' },
+		reservoirs = { { name = 'drum_1', fluid = 'minecraft:lava', amount = 2000 } },
+	})
+	show(screen, runtime, state)
+	tap(runtime, terminal, 'MANUAL')
+	expect(terminal.line(47):find('FLUID IN', 1, true) and terminal.line(47):find('4000 mB', 1, true)
+		and terminal.line(47):find('forms obsidian', 1, true), 'the fluid input line: ' .. terminal.line(47))
+	tap(runtime, terminal, ' INJECT ')
+	expect(screenText(terminal):find('INJECT FLUID', 1, true) and screenText(terminal):find('from the fluid input', 1, true), 'first step')
+	tap(runtime, terminal, 'CONTINUE')
+	tap(runtime, terminal, ' INJECT ', 1, 28)
+	expect(calls[#calls] == 'inject minecraft:water nil all force', 'water not injected: ' .. tostring(calls[#calls]))
+
+	tap(runtime, terminal, 'STOCK')
+	tap(runtime, terminal, 'drum')
+	expect(terminal.line(25):find('2000 mB', 1, true), 'all of the drum by default: ' .. terminal.line(25))
+	tap(runtime, terminal, '-1000')
+	tap(runtime, terminal, '-100 ')
+	expect(terminal.line(25):find('900 mB', 1, true), '2000 - 1000 - 100: ' .. terminal.line(25))
+	tap(runtime, terminal, ' INJECT ')
+	expect(calls[#calls] == 'inject minecraft:lava drum_1 900', 'no alloy: sent at once: ' .. tostring(calls[#calls]))
+
+	state.mode = 'auto'
+	show(screen, runtime, state)
+	tap(runtime, terminal, 'drum')
+	expect(screenText(terminal):find('in manual mode only', 1, true) and not screenText(terminal):find(' INJECT ', 1, true),
+		'no inject outside manual mode')
 end)
 
 realPrint(('\n%d passed, %d failed'):format(passed, failed))
