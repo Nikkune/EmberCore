@@ -13,7 +13,7 @@ import type {AlloyGuard, AlloyRatio, CastAmounts, CasterState, MaterialMap} from
 import {alloyGuardOf, CATALOGUE_PATH, catalogueFluids, castAmountsOf, loadCatalogue, materialMapOf, saveCatalogue, temperatureMap} from '../shared/catalogue';
 import type {Catalogue}                                 from '../shared/catalogue';
 import {CONTROLLER_HOSTNAME, HISTORY_SECONDS, HISTORY_SIZE, Messages, MODES, PROTOCOL} from '../shared/protocol';
-import type {AlloyOption, AlloyView, CancelOrderRequest, CasterView, CastOption, CastRequest, CraftCasterView, CraftRecipeView, QueueCraftRequest, TrashFluidRequest, DeleteRecipeRequest, FluidForecast, FuelView, InputItemView, InsertRequest, InventoryView, Mode, OrderView, QueueOrderRequest, SaveRecipeRequest, SetAlloyRequest, SetReservoirRequest, SetFormatRequest, SetModeRequest, SetSmelteryCapacityRequest, SmelteryState, WaitingItem} from '../shared/protocol';
+import type {AlloyOption, AlloyView, CancelOrderRequest, CasterView, CastOption, CastRequest, CraftCasterView, CraftRecipeView, QueueCraftRequest, TrashFluidRequest, InjectFluidRequest, DeleteRecipeRequest, FluidForecast, FluidInputView, FuelView, InputItemView, InsertRequest, InventoryView, Mode, OrderView, QueueOrderRequest, SaveRecipeRequest, SetAlloyRequest, SetReservoirRequest, SetFormatRequest, SetModeRequest, SetSmelteryCapacityRequest, SmelteryState, WaitingItem} from '../shared/protocol';
 import {CRAFT_RECIPES}                              from '../shared/craftRecipesData';
 import {checkIndex, deleteRecipe, recipeProblem, saveRecipe} from '../shared/recipes';
 
@@ -51,6 +51,7 @@ interface Reading {
 	craft: CraftReading[];
 	input?: InventoryView;
 	output?: InventoryView;
+	fluidInput?: FluidInputView;
 }
 
 /**
@@ -75,6 +76,8 @@ export class Controller {
 	/** Casters for castings onto an item (config craftCasters): poured into only for craft orders. */
 	private craftCasters: Caster[]               = [];
 	private trash?: Tank | undefined;
+	/** The fluid input tank (config fluidInput): only emptied into the Smeltery from the Manual tab. */
+	private fluidInput?: Tank | undefined;
 	/** Tags of the items put on the craft casters, by item name (read once). */
 	private readonly craftTags = new Map<string, string[]>();
 	/** The recipes of an item on a kind of caster ('table minecraft:apple'), found once. */
@@ -517,6 +520,57 @@ export class Controller {
 	}
 
 	/**
+	 * Manual mode: a fluid goes into the Smeltery, from a reservoir or from the fluid input (lava and water
+	 * for obsidian). Refused when it would form an alloy, unless `force` (the display asks twice first).
+	 * Returns the mB injected.
+	 */
+	public injectFluid(request: InjectFluidRequest): number {
+		this.requireManual();
+		const smeltery = this.smeltery;
+		if (smeltery === undefined) throw new EmberError('no Smeltery on the network', 'SMELTERY_ERROR');
+		const fluid = request.fluid;
+		if (typeof fluid !== 'string' || fluid === '') throw new EmberError('choose a fluid first', 'SMELTERY_ERROR');
+		const wanted = request.amount;
+		if (wanted !== undefined && (typeof wanted !== 'number' || wanted % 1 !== 0 || wanted < 1)) {
+			throw new EmberError(`amount must be a whole number of mB (got ${tostring(wanted)})`, 'SMELTERY_ERROR');
+		}
+
+		let source: Tank;
+		if (request.reservoir !== undefined) {
+			if (this.pool?.has(request.reservoir) !== true) throw new EmberError(`no reservoir ${tostring(request.reservoir)}`, 'SMELTERY_ERROR');
+			source = Tank.fromName(request.reservoir);
+		}
+		else {
+			if (this.fluidInput === undefined) throw new EmberError('no fluid input on the network (fluidInput of the config)', 'SMELTERY_ERROR');
+			source = this.fluidInput;
+		}
+
+		const present = smeltery.fluids().map((stack) => stack.name);
+		const alloy   = present.includes(fluid) ? undefined : this.guard.wouldForm(present, fluid);
+		if (alloy !== undefined && request.force !== true) {
+			throw new EmberError(`${Controller.shortName(fluid)} would form ${Controller.shortName(alloy.result)} in the Smeltery`, 'SMELTERY_ERROR');
+		}
+
+		// A push may move less than asked (a tank per call, a full Smeltery): again until done or stuck.
+		let injected = 0;
+		for (let pass = 0; pass < 64; pass++) {
+			const left = Math.min(source.getAmount(fluid), (wanted ?? Infinity) - injected);
+			if (left <= 0) break;
+			const moved = source.pushTo(smeltery.drain, left, fluid);
+			if (moved <= 0) break;
+			injected += moved;
+		}
+
+		const from = request.reservoir ?? source.name;
+		if (injected <= 0) throw new EmberError(`nothing injected: no ${Controller.shortName(fluid)} in ${from}, or the Smeltery is full`, 'SMELTERY_ERROR');
+		const forms = alloy !== undefined ? ` (forms ${Controller.shortName(alloy.result)})` : '';
+		this.log(`injected ${injected} mB ${Controller.shortName(fluid)} from ${from} into the Smeltery${forms}`);
+		this.pool?.refresh();
+		this.tickWanted = true;
+		return injected;
+	}
+
+	/**
 	 * After a tick: an order whose castings were all poured leaves the queue; a format that turned out to
 	 * have no recipe for the fluid (learnt this tick) is dropped from its order.
 	 */
@@ -754,6 +808,11 @@ export class Controller {
 			return this.state;
 		});
 
+		channel.on(Messages.injectFluid, (payload) => {
+			this.injectFluid(payload as InjectFluidRequest);
+			return this.state;
+		});
+
 		channel.on(Messages.insertReady, () => {
 			this.insertReady();
 			this.tickWanted = true;
@@ -858,8 +917,11 @@ export class Controller {
 		this.casters  = this.network.casters.map((name) => Caster.fromName(name, this.amounts));
 		this.craftCasters = this.network.craftCasters.map((name) => Caster.fromName(name, this.amounts));
 		this.trash    = this.network.trash !== undefined ? Tank.fromName(this.network.trash) : undefined;
+		this.fluidInput = this.network.fluidInput !== undefined ? Tank.fromName(this.network.fluidInput) : undefined;
 
-		const extras = `${this.craftCasters.length > 0 ? `, ${this.craftCasters.length} craft` : ''}${this.trash !== undefined ? `, trash ${this.trash.name}` : ''}`;
+		const craftText = this.craftCasters.length > 0 ? `, ${this.craftCasters.length} craft` : '';
+		const trashText = this.trash !== undefined ? `, trash ${this.trash.name}` : '';
+		const extras    = `${craftText}${trashText}${this.fluidInput !== undefined ? `, fluid input ${this.fluidInput.name}` : ''}`;
 		this.log(`network: ${this.casters.length} caster(s)${extras}${this.network.problems.length > 0 ? `, ${this.network.problems.length} problem(s)` : ''}`);
 
 		for (const caster of this.casters) {
@@ -921,6 +983,11 @@ export class Controller {
 		};
 		if (input !== undefined) reading.input = {name: input.name, size: this.sizeOf(input), used: snapshot.input.length};
 		if (this.output !== undefined) reading.output = {name: this.output.name, size: outputSize, used: outputUsed};
+		if (this.fluidInput !== undefined) {
+			const stack = this.fluidInput.getFluids()[0];
+			reading.fluidInput = {name: this.fluidInput.name, amount: stack?.amount ?? 0};
+			if (stack !== undefined) reading.fluidInput.fluid = stack.name;
+		}
 		this.lastRead = reading;
 		this.sampleHistory(reading);
 
@@ -964,16 +1031,16 @@ export class Controller {
 		return tags;
 	}
 
-	/** A craft caster for the display, with the recipes for the item it holds. */
+	/** A craft caster for the display, with the recipes for the item it holds (or for the empty table). */
 	private craftView(caster: Caster, entry: CraftReading): CraftCasterView {
 		const state = entry.state;
 		const view: CraftCasterView = {name: caster.name, kind: caster.kind, status: state.status, amount: state.amount, recipes: []};
 		if (state.fluid !== undefined) view.fluid = state.fluid;
+		// Nothing on it: the castings onto the empty table (obsidian pane, iron bars).
 		const item = state.cast;
-		if (item === undefined) return view;
-		view.item = item;
+		if (item !== undefined) view.item = item;
 
-		const key = `${caster.kind} ${item}`;
+		const key = `${caster.kind} ${item ?? ''}`;
 		let recipes = this.craftMatches.get(key);
 		if (recipes === undefined) {
 			recipes = [];
@@ -1373,10 +1440,32 @@ export class Controller {
 				if (caster !== undefined) craft.push(this.craftView(caster, entry));
 			}
 			if (craft.length > 0) state.craftCasters = craft;
+			if (reading.fluidInput !== undefined) state.fluidInput = {...reading.fluidInput};
+			const wouldForm = this.wouldFormOf(reading, state.reservoirs.map((reservoir) => reservoir.fluid));
+			if (wouldForm !== undefined) state.wouldForm = wouldForm;
 		}
 		if (this.trash !== undefined) state.trash = this.trash.name;
 
 		return state;
+	}
+
+	/** The alloy each fluid out of the Smeltery (reservoirs, fluid input) would form if it went in now. */
+	private wouldFormOf(reading: Reading, stored: (string | undefined)[]): Record<string, string> | undefined {
+		const present = reading.fluids.map((stack) => stack.name);
+		// No undefined in the list: an empty reservoir would be a nil, and the Lua loop stops at the first one.
+		const fluids: string[] = [];
+		for (const fluid of stored) if (fluid !== undefined) fluids.push(fluid);
+		if (reading.fluidInput?.fluid !== undefined) fluids.push(reading.fluidInput.fluid);
+
+		let found: Record<string, string> | undefined;
+		for (const fluid of fluids) {
+			if (present.includes(fluid) || found?.[fluid] !== undefined) continue;
+			const alloy = this.guard.wouldForm(present, fluid);
+			if (alloy === undefined) continue;
+			if (found === undefined) found = {};
+			found[fluid] = alloy.result;
+		}
+		return found;
 	}
 
 	private applyCapacity(state: SmelteryState): void {
