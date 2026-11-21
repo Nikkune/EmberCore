@@ -212,6 +212,9 @@ export interface CraftRecipeView {
 	result: string;
 	/** The item is used up by each casting (the player puts another one). */
 	consumed: boolean;
+	/** Composite casting: the material the part becomes, and the one it must be made of. */
+	material?: string;
+	from?: string;
 }
 
 /** A craft table or basin: the item on it (put by the player) and what can be cast onto that item. */
@@ -247,7 +250,7 @@ export interface OrderView {
 	 * A casting onto an item (its one line has the format 'craft'): the caster, the result, and `need`,
 	 * the item to put on the caster when it is waiting for it.
 	 */
-	craft?: {caster: string; result: string; need?: string};
+	craft?: {caster: string; result: string; need?: string; material?: string};
 }
 
 /** A manual order: castings of one fluid, by format. */

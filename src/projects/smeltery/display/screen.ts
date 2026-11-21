@@ -5,6 +5,7 @@ import type {Rect}                           from '@modules/ui/types';
 
 import type {AlloyOption, CraftCasterView, CraftRecipeView, DeleteRecipeRequest, InputItemView, QueueCraftRequest, TrashFluidRequest, InjectFluidRequest, InsertRequest, Mode, OrderView, QueueOrderRequest, SaveRecipeRequest, SetAlloyRequest, SetReservoirRequest, SetFormatRequest, SetSmelteryCapacityRequest, SmelteryState} from '../shared/protocol';
 import {MAX_INGREDIENTS, MODES}              from '../shared/protocol';
+import {materialLabel}                       from '../shared/labels';
 import {recipeProblem}                       from '../shared/recipes';
 
 import {attentionLines, fit, fluidColor, fluidLabel, formatLabel, Glyph, groupCasters, itemAmount, knownFluids, parseLogLine, placeLabel} from './model';
@@ -1625,8 +1626,16 @@ export class SmelteryScreen {
 
 	/** A recipe of the CRAFT view: '720 mB Gold > golden apple', and whether the item stays (on an empty caster, none). */
 	private static craftRow(recipe: CraftRecipeView, width: number, empty: boolean): string {
-		const keeps = recipe.consumed || empty ? '' : ' (item stays)';
-		return fit(`${recipe.amount} mB ${fluidLabel(recipe.fluid)} ${Glyph.right} ${placeLabel(recipe.result)}${keeps}`, width).padEnd(width);
+		// A composite casting names the material the part becomes, and the one it must be made of.
+		let note = recipe.consumed || empty ? '' : ' (item stays)';
+		if (recipe.from !== undefined) note = ` (${materialLabel(recipe.from)} only)`;
+		const result = SmelteryScreen.craftResult(recipe.result, recipe.material);
+		return fit(`${recipe.amount} mB ${fluidLabel(recipe.fluid)} ${Glyph.right} ${result}${note}`, width).padEnd(width);
+	}
+
+	/** 'golden apple', or a part with its new material: 'nahuatl tool handle'. */
+	private static craftResult(result: string, material: string | undefined): string {
+		return material !== undefined ? `${materialLabel(material)} ${placeLabel(result)}` : placeLabel(result);
 	}
 
 	/** A row of the FLUID card: its name, and on the right its mB in the Smeltery (or 'stored'). */
@@ -2324,7 +2333,7 @@ export class SmelteryScreen {
 		const have   = known?.amount ?? 0, stored = known?.stored ?? 0;
 		const needs  = recipe.amount * this.craftCount;
 		p.text(37, 20, 'CRAFT', N.dim);
-		p.text(45, 20, fit(`${placeLabel(recipe.result)} on ${placeLabel(caster.name)}`, 52), N.yellow);
+		p.text(45, 20, fit(`${SmelteryScreen.craftResult(recipe.result, recipe.material)} on ${placeLabel(caster.name)}`, 52), N.yellow);
 		p.text(37, 21, 'NEEDS', N.dim);
 		let each = '';
 		if (caster.item === undefined) each = `, the ${caster.kind} kept empty`;
@@ -2357,7 +2366,7 @@ export class SmelteryScreen {
 
 			const craft = order.craft;
 			const lines = craft !== undefined
-			              ? `${placeLabel(craft.result)} ${order.lines[0]?.done ?? 0}/${order.lines[0]?.count ?? 0} on ${placeLabel(craft.caster)}`
+			              ? `${SmelteryScreen.craftResult(craft.result, craft.material)} ${order.lines[0]?.done ?? 0}/${order.lines[0]?.count ?? 0} on ${placeLabel(craft.caster)}`
 			              : order.lines.map((line) => `${formatLabel(line.format)} ${line.done}/${line.count}`).join('  ');
 			p.text(33, y, fit(lines, 37), N.soft);
 			if (order.status === 'waiting') {
