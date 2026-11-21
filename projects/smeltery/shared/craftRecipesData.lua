@@ -1634,4 +1634,48 @@ ____exports.CRAFT_RECIPES = {
         true
     }
 }
+____exports.COMPOSITE_PARTS = {
+    {"materialis:wrench_head", 2},
+    {"tconstruct:bow_grip", 2},
+    {"tconstruct:bow_limb", 2},
+    {"tconstruct:bowstring", 1},
+    {"tconstruct:broad_axe_head", 8},
+    {"tconstruct:broad_blade", 8},
+    {"tconstruct:hammer_head", 8},
+    {"tconstruct:large_plate", 4},
+    {"tconstruct:pick_head", 2},
+    {"tconstruct:repair_kit", 2},
+    {"tconstruct:round_plate", 2},
+    {"tconstruct:small_axe_head", 2},
+    {"tconstruct:small_blade", 2},
+    {"tconstruct:tool_binding", 1},
+    {"tconstruct:tool_handle", 1},
+    {"tconstruct:tough_handle", 3},
+    {"tinker_rapier:slender_blade", 6},
+    {"tinkers_reforged:great_blade", 4},
+    {"tinkers_reforged:large_round_plate", 6}
+}
+____exports.COMPOSITE_MATERIALS = {
+    {"materialis:cloggrum", "materialis:molten_forgotten_metal", 30, "materialis:forgotten_metal"},
+    {"materialis:terrasteel", "materialis:molten_alfsteel", 30, "materialis:alfsteel"},
+    {"tconstruct:bone", "tconstruct:blood", 250, "tconstruct:bloodbone"},
+    {"tconstruct:chorus", "tinkers_reforged:molten_kepu", 90, "tinkers_reforged:chorus_metal"},
+    {"tconstruct:cobalt", "tconstruct:liquid_soul", 500, "tinkers_reforged:lavium"},
+    {"tconstruct:cobalt", "tconstruct:magma", 500, "tinkers_reforged:qivium"},
+    {"tconstruct:copper#default", "minecraft:water", 250, "tconstruct:copper#oxidized"},
+    {"tconstruct:flint", "tconstruct:magma", 250, "tconstruct:scorched_stone"},
+    {"tconstruct:iron#default", "minecraft:water", 250, "tconstruct:iron#oxidized"},
+    {"tconstruct:leather", "tconstruct:molten_debris", 90, "tconstruct:ancient_hide"},
+    {"tconstruct:necrotic_bone", "tconstruct:blazing_blood", 200, "tconstruct:blazing_bone"},
+    {"tconstruct:necrotic_bone", "tconstruct:molten_uranium", 90, "tconstruct:necronium"},
+    {"tconstruct:rock", "tconstruct:molten_aluminum", 90, "tconstruct:whitestone"},
+    {"tconstruct:rock", "tconstruct:molten_clay", 250, "tconstruct:seared_stone"},
+    {"tconstruct:rock", "tconstruct:molten_tin", 90, "tconstruct:whitestone"},
+    {"tconstruct:rock", "tconstruct:molten_zinc", 90, "tconstruct:whitestone"},
+    {"tconstruct:slimewood", "tconstruct:molten_brass", 90, "tconstruct:plated_slimewood"},
+    {"tconstruct:slimewood#bloodshroom", "tconstruct:molten_obsidian", 500, "tinkers_reforged:wavy"},
+    {"tconstruct:string", "tconstruct:molten_obsidian", 250, "tconstruct:darkthread"},
+    {"tconstruct:wood", "tconstruct:earth_slime", 250, "tconstruct:slimewood#composite"},
+    {"tconstruct:wood", "tconstruct:molten_obsidian", 1000, "tconstruct:nahuatl"}
+}
 return ____exports

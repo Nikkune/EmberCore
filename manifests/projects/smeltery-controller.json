@@ -3,7 +3,7 @@
   "type": "project",
   "id": "projects/smeltery-controller",
   "name": "Smeltery (controller)",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "entry": "projects/smeltery/main.lua",
   "files": [
     "projects/smeltery/main.lua",
@@ -16,6 +16,8 @@
     "projects/smeltery/shared/catalogue.lua",
     "projects/smeltery/shared/catalogueData.lua",
     "projects/smeltery/shared/craftRecipesData.lua",
+    "projects/smeltery/shared/crafts.lua",
+    "projects/smeltery/shared/labels.lua",
     "projects/smeltery/shared/meltingData.lua",
     "projects/smeltery/shared/protocol.lua",
     "projects/smeltery/shared/recipes.lua",

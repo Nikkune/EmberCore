@@ -864,6 +864,8 @@ local SmelteryState = ____protocol.SmelteryState
 local ____protocol = require("projects.smeltery.shared.protocol")
 local MAX_INGREDIENTS = ____protocol.MAX_INGREDIENTS
 local MODES = ____protocol.MODES
+local ____labels = require("projects.smeltery.shared.labels")
+local materialLabel = ____labels.materialLabel
 local ____recipes = require("projects.smeltery.shared.recipes")
 local recipeProblem = ____recipes.recipeProblem
 local ____model = require("projects.smeltery.display.model")
@@ -3494,14 +3496,21 @@ function SmelteryScreen.prototype.syncManual(self)
     )
 end
 function SmelteryScreen.craftRow(self, recipe, width, empty)
-    local keeps = (recipe.consumed or empty) and "" or " (item stays)"
+    local note = (recipe.consumed or empty) and "" or " (item stays)"
+    if recipe.from ~= nil then
+        note = (" (" .. materialLabel(recipe.from)) .. " only)"
+    end
+    local result = ____exports.SmelteryScreen:craftResult(recipe.result, recipe.material)
     return __TS__StringPadEnd(
         fit(
-            ((((((tostring(recipe.amount) .. " mB ") .. fluidLabel(recipe.fluid)) .. " ") .. Glyph.right) .. " ") .. placeLabel(recipe.result)) .. keeps,
+            ((((((tostring(recipe.amount) .. " mB ") .. fluidLabel(recipe.fluid)) .. " ") .. Glyph.right) .. " ") .. result) .. note,
             width
         ),
         width
     )
+end
+function SmelteryScreen.craftResult(self, result, material)
+    return material ~= nil and (materialLabel(material) .. " ") .. placeLabel(result) or placeLabel(result)
 end
 function SmelteryScreen.fluidRow(self, fluid, width)
     local amount = fluid.amount > 0 and tostring(fluid.amount) .. " mB" or shortAmount(fluid.stored) .. " st."
@@ -5392,7 +5401,7 @@ function SmelteryScreen.prototype.paintCraftView(self, p)
         45,
         20,
         fit(
-            (placeLabel(recipe.result) .. " on ") .. placeLabel(caster.name),
+            (____exports.SmelteryScreen:craftResult(recipe.result, recipe.material) .. " on ") .. placeLabel(caster.name),
             52
         ),
         N.yellow
@@ -5494,11 +5503,11 @@ function SmelteryScreen.prototype.paintQueue(self, p, state, manual)
             local craft = order.craft
             local ____temp_271
             if craft ~= nil then
-                local ____placeLabel_result_269 = placeLabel(craft.result)
+                local ____temp_269 = ____exports.SmelteryScreen:craftResult(craft.result, craft.material)
                 local ____opt_265 = order.lines[1]
                 local ____temp_270 = ____opt_265 and ____opt_265.done or 0
                 local ____opt_267 = order.lines[1]
-                ____temp_271 = (((((____placeLabel_result_269 .. " ") .. tostring(____temp_270)) .. "/") .. tostring(____opt_267 and ____opt_267.count or 0)) .. " on ") .. placeLabel(craft.caster)
+                ____temp_271 = (((((____temp_269 .. " ") .. tostring(____temp_270)) .. "/") .. tostring(____opt_267 and ____opt_267.count or 0)) .. " on ") .. placeLabel(craft.caster)
             else
                 ____temp_271 = table.concat(
                     __TS__ArrayMap(
@@ -5762,17 +5771,17 @@ function SmelteryScreen.prototype.paintStock(self, p, state)
     local scale = 0
     for ____, reservoir in ipairs(reservoirs) do
         do
-            local __continue605
+            local __continue607
             repeat
                 if reservoir.capacity == nil then
-                    __continue605 = true
+                    __continue607 = true
                     break
                 end
                 known = known + 1
                 scale = math.max(scale, reservoir.capacity)
-                __continue605 = true
+                __continue607 = true
             until true
-            if not __continue605 then
+            if not __continue607 then
                 break
             end
         end
@@ -5895,10 +5904,10 @@ function SmelteryScreen.prototype.paintStock(self, p, state)
     local totals = {}
     for ____, reservoir in ipairs(reservoirs) do
         do
-            local __continue620
+            local __continue622
             repeat
                 if reservoir.fluid == nil then
-                    __continue620 = true
+                    __continue622 = true
                     break
                 end
                 local entry = __TS__ArrayFind(
@@ -5910,9 +5919,9 @@ function SmelteryScreen.prototype.paintStock(self, p, state)
                 else
                     totals[#totals + 1] = {fluid = reservoir.fluid, amount = reservoir.amount}
                 end
-                __continue620 = true
+                __continue622 = true
             until true
-            if not __continue620 then
+            if not __continue622 then
                 break
             end
         end
