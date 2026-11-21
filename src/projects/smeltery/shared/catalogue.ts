@@ -3,6 +3,7 @@ import {AlloyGuard, CastAmounts, MaterialMap}                from '@modules/tink
 import type {AlloyRatio, AlloyRecipe, CastAmount, MaterialOverride} from '@modules/tinkers/index';
 
 import {DEFAULT_CAST_AMOUNTS}                                 from './castAmountsData';
+import {CAST_RECIPES}                                         from './castRecipesData';
 import {DEFAULT_ALLOY_RATIOS, DEFAULT_ALLOYS, DEFAULT_MOLTEN_FLUIDS} from './catalogueData';
 import {DEFAULT_FUELS, DEFAULT_MELTING_TEMPERATURES}           from './temperaturesData';
 import type {FluidTemperature}                               from './temperaturesData';
@@ -95,8 +96,9 @@ export function materialMapOf(this: void, catalogue: Catalogue): MaterialMap {
 	return new MaterialMap({fluids: catalogue.moltenFluids, overrides: catalogue.overrides});
 }
 
+/** The catalogue's amounts (and those learnt), then the casting recipes of the modpack (castRecipesData). */
 export function castAmountsOf(this: void, catalogue: Catalogue): CastAmounts {
-	return new CastAmounts(catalogue.castAmounts);
+	return new CastAmounts(catalogue.castAmounts, CAST_RECIPES);
 }
 
 export function temperatureMap(this: void, temperatures: FluidTemperature[]): Map<string, number> {

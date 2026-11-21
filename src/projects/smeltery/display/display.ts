@@ -100,7 +100,12 @@ export function runDisplay(this: void): void {
 	const screen = new SmelteryScreen({
 		setMode: (mode) => request(Messages.setMode, {mode}, `mode ${mode}`),
 		insert:  (insert) => request(Messages.insert, insert, insert.force === true ? 'forced insert sent' : 'inserted'),
-		cast:    (cast) => request(Messages.cast, cast, 'cast'),
+		queueOrder:  (order, sent) => request(Messages.queueOrder, order, `order sent: ${order.lines.length} shape(s)`, sent),
+		cancelOrder: (id) => request(Messages.cancelOrder, {id}, `order #${id} cancelled`),
+		insertReady: () => request(Messages.insertReady, undefined, 'inserting what is ready'),
+		queueCraft:  (craft, sent) => request(Messages.queueCraft, craft, `craft sent: ${craft.count} casting(s)`, sent),
+		trashFluid:  (trash) => request(Messages.trashFluid, trash, `${trash.fluid.substring(trash.fluid.indexOf(':') + 1)} trashed`),
+
 		setFormat: (format) => request(Messages.setFormat, format, `${format.format}: ${format.auto ? 'auto' : 'off'}`),
 		setAlloy:  (alloy) => request(Messages.setAlloy, alloy, `alloy ${alloy.result.substring(alloy.result.indexOf(':') + 1)}`),
 		setReservoir: (settings) => request(Messages.setReservoir, settings, 'reservoir saved'),
